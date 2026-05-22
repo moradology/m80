@@ -130,17 +130,22 @@ fn update_check_reports_unsafe_active_release_below_floor() {
 }
 
 #[test]
-fn update_check_refuses_apply_command_when_latest_target_is_below_floor() {
-    let report = active_report("v1.1.8");
-    let output = check_output(
-        &report,
-        latest("v1.1.9", Some("v1.2.0"), &[]),
-        UnixSeconds::new(timestamp("2026-05-21T12:30:00Z")),
+fn update_check_rejects_latest_target_below_floor_status() {
+    let err = parse_latest_status(
+        "fixture".to_owned(),
+        status_artifact("v1.1.9", Some("v1.2.0"), &[]),
     );
 
-    assert_eq!(output.state, UpdateCheckState::Unsafe);
-    assert_eq!(output.apply_command, None);
-    assert_eq!(output.next_command, None);
+    let err = err.expect_err("latest status below safety floor should fail before update output");
+    match err {
+        FcError::Config(ConfigError::InvalidValue { field, reason }) => {
+            assert_eq!(field, "update.latest_status");
+            assert!(reason.contains("safety_floor.minimum_safe_tag.tag"));
+            assert!(reason.contains("v1.2.0"));
+            assert!(reason.contains("v1.1.9"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[test]
@@ -327,7 +332,8 @@ fn status_artifact_at_option(
         .unwrap_or_default();
     let asset_tag = tag.unwrap_or("v1.2.3");
     let replacement_tag = minimum_safe_tag.unwrap_or(asset_tag);
-    let safety_floor = safety_floor_json(minimum_safe_tag, yanked_tags, replacement_tag);
+    let safety_floor =
+        safety_floor_json_at(minimum_safe_tag, yanked_tags, replacement_tag, published_at);
     format!(
         r#"{{
           "schema_version":1,
@@ -352,6 +358,20 @@ fn safety_floor_json(
     yanked_tags: &[&str],
     replacement_tag: &str,
 ) -> String {
+    safety_floor_json_at(
+        minimum_safe_tag,
+        yanked_tags,
+        replacement_tag,
+        "2026-05-21T12:00:00Z",
+    )
+}
+
+fn safety_floor_json_at(
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+    replacement_tag: &str,
+    published_at: &str,
+) -> String {
     let minimum = minimum_safe_tag
         .map(|tag| {
             format!(
@@ -364,14 +384,14 @@ fn safety_floor_json(
         .iter()
         .map(|tag| {
             format!(
-                r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"2026-05-21T12:00:00Z","replacement_command":"{}","no_replacement_reason":null}}"#,
+                r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"{published_at}","replacement_command":"{}","no_replacement_reason":null}}"#,
                 pinned_install_command(replacement_tag)
             )
         })
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        r#"{{"schema_version":1,"published_at":"2026-05-21T12:00:00Z","minimum_safe_tag":{minimum},"yanked_releases":[{yanked}]}}"#
+        r#"{{"schema_version":1,"published_at":"{published_at}","minimum_safe_tag":{minimum},"yanked_releases":[{yanked}]}}"#
     )
 }
 

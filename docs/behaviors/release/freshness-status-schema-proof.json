@@ -6,31 +6,40 @@
     "pending_has_no_proof_material": true,
     "public_green_requires_latest_and_pinned": true,
     "safety_floor_bad_replacement_command": true,
+    "safety_floor_duplicate_yanked_rejected": true,
     "safety_floor_explicit_empty": true,
     "safety_floor_minimum_safe": true,
+    "safety_floor_minimum_safe_not_newer_than_latest": true,
     "safety_floor_requires_reason": true,
+    "safety_floor_replacement_target_at_or_above_floor": true,
+    "safety_floor_replacement_target_not_yanked": true,
+    "safety_floor_status_publish_is_atomic": true,
+    "safety_floor_timestamp_not_after_status": true,
+    "safety_floor_unknown_yanked_tag": true,
+    "safety_floor_yanked_latest_requires_replacement_command": true,
     "safety_floor_yanked_release": true,
+    "safety_floor_yanked_timestamp_not_after_floor": true,
     "safety_floor_yanked_requires_replacement_guidance": true,
     "sorted_public_assets": true
   },
-  "bead_id": "m80-o3uh9.21.4.1",
-  "checked_at": "2026-05-22T12:33:45Z",
-  "command": "CI release script test cluster from .github/workflows/ci.yml, including python3 -m py_compile for freshness_status.py, verify-freshness-status.py, freshness_status_render.py, render-freshness-status.py, test-freshness-status.py, and test-freshness-status-render.py",
+  "bead_id": "m80-o3uh9.21.9.2",
+  "checked_at": "2026-05-22T12:50:25Z",
+  "command": "CI release script test cluster from .github/workflows/ci.yml plus m80-cli release/update gates, including safety-floor contradiction validation",
   "exit_status": 0,
   "resolved_tag": "v1.2.3",
   "schema_version": 1,
   "stderr": "",
-  "stdout": "test-release-freshness: 16 OK; test-freshness-status: 19 OK; test-freshness-status-render: 9 OK; test-update-freshness-status-from-public-access: 3 OK; render-freshness-status --check: OK",
+  "stdout": "test-release-freshness: 16 OK; test-freshness-status: 27 OK; test-freshness-status-render: 9 OK; test-update-freshness-status-from-public-access: 4 OK; render-freshness-status --check: OK; cargo test -p m80-cli --lib: 406 OK; cargo test -p m80-cli --test release: 61 OK",
   "substrate": "local hostless CI-equivalent release-script tests",
   "verification": [
     {
-      "command": "python3 -m py_compile scripts/freshness_status.py scripts/verify-freshness-status.py scripts/freshness_status_render.py scripts/render-freshness-status.py scripts/test-freshness-status.py scripts/test-freshness-status-render.py",
+      "command": "python3 -m py_compile scripts/freshness_status.py scripts/verify-freshness-status.py scripts/freshness_status_render.py scripts/render-freshness-status.py scripts/update-freshness-status-from-public-access.py scripts/test-freshness-status.py scripts/test-freshness-status-render.py scripts/test-update-freshness-status-from-public-access.py scripts/release_freshness.py scripts/test-release-freshness.py",
       "exit_status": 0
     },
     {
       "command": "python3 scripts/test-freshness-status.py",
       "exit_status": 0,
-      "summary": "Ran 19 tests"
+      "summary": "Ran 27 tests"
     },
     {
       "command": "python3 scripts/test-freshness-status-render.py",
@@ -45,12 +54,22 @@
     {
       "command": "python3 scripts/test-update-freshness-status-from-public-access.py",
       "exit_status": 0,
-      "summary": "Ran 3 tests"
+      "summary": "Ran 4 tests"
     },
     {
       "command": "python3 scripts/render-freshness-status.py --check",
       "exit_status": 0,
       "summary": "README.md and docs/runbook/release.md markers match docs/behaviors/release/freshness-status-docs.json"
+    },
+    {
+      "command": "cargo test -p m80-cli --lib -- --test-threads=2",
+      "exit_status": 0,
+      "summary": "406 passed"
+    },
+    {
+      "command": "cargo test -p m80-cli --test release -- --test-threads=2",
+      "exit_status": 0,
+      "summary": "61 passed"
     }
   ]
 }

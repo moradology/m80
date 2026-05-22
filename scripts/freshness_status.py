@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -120,7 +121,7 @@ def validate_freshness_status(status_path: Path, *, artifact_root: Path, docs_ro
     status = read_json(status_path, "freshness status")
     require_exact_fields(status, TOP_LEVEL_FIELDS, "freshness status")
     require(status["schema_version"] == SCHEMA_VERSION, "freshness status schema_version mismatch")
-    require_rfc3339(status, "generated_at", "freshness status")
+    generated_at = require_rfc3339(status, "generated_at", "freshness status")
 
     status_value = require_nonempty_str(status, "status", "freshness status")
     require(status_value in STATUS_VALUES, f"freshness status unknown status: {status_value}")
@@ -170,7 +171,11 @@ def validate_freshness_status(status_path: Path, *, artifact_root: Path, docs_ro
         proof_paths=proof_paths,
     )
     validate_public_assets(status["public_assets"], status_value=status_value, resolved_tag=resolved_tag)
-    validate_safety_floor(status["safety_floor"])
+    validate_safety_floor(
+        status["safety_floor"],
+        resolved_tag=resolved_tag,
+        generated_at=generated_at,
+    )
 
     if status_value == "public_green":
         require(
@@ -321,39 +326,98 @@ def validate_public_assets(value: object, *, status_value: str, resolved_tag: st
         )
 
 
-def validate_safety_floor(value: object) -> None:
+def validate_safety_floor(value: object, *, resolved_tag: str, generated_at: str) -> None:
     label = "freshness status safety_floor"
     require(isinstance(value, dict), f"{label} must be an object")
     require_exact_fields(value, SAFETY_FLOOR_FIELDS, label)
     require(value["schema_version"] == 1, f"{label} schema_version mismatch")
-    require_rfc3339(value, "published_at", label)
+    published_at = require_rfc3339(value, "published_at", label)
+    require_not_after(
+        label,
+        "published_at",
+        published_at,
+        "freshness status generated_at",
+        generated_at,
+        tag=None,
+    )
+
     minimum = value["minimum_safe_tag"]
+    minimum_rule: dict[str, str] | None = None
     if minimum is not None:
-        validate_minimum_safe_tag(minimum)
+        minimum_rule = validate_minimum_safe_tag(minimum)
+        minimum_tag = minimum_rule["tag"]
+        require(
+            stable_version(minimum_tag) <= stable_version(resolved_tag),
+            f"{label}.minimum_safe_tag tag {minimum_tag} is newer than resolved_latest_tag {resolved_tag}",
+        )
+
     yanked = value["yanked_releases"]
     require(isinstance(yanked, list), f"{label} yanked_releases must be a list")
+    yanked_rules = []
+    yanked_tags: set[str] = set()
     for index, row in enumerate(yanked):
-        validate_yanked_release(row, index)
+        rule = validate_yanked_release(row, index, safety_floor_published_at=published_at)
+        tag = rule["tag"]
+        require(
+            tag not in yanked_tags,
+            f"{label}.yanked_releases[{index}] tag {tag} duplicates an earlier yanked tag",
+        )
+        yanked_tags.add(tag)
+        yanked_rules.append(rule)
+
+    for rule in yanked_rules:
+        replacement_tag = rule["replacement_tag"]
+        if rule["tag"] == resolved_tag:
+            require(
+                replacement_tag is not None,
+                f"{label}.yanked_releases replacement_command for {rule['tag']} is required because it is resolved_latest_tag",
+            )
+        if replacement_tag is not None:
+            validate_replacement_tag(
+                replacement_tag,
+                field=f"{label}.yanked_releases replacement_command",
+                source_tag=rule["tag"],
+                minimum_rule=minimum_rule,
+                yanked_tags=yanked_tags,
+            )
+
+    if minimum_rule is not None:
+        validate_replacement_tag(
+            minimum_rule["replacement_tag"],
+            field=f"{label}.minimum_safe_tag replacement_command",
+            source_tag=minimum_rule["tag"],
+            minimum_rule=minimum_rule,
+            yanked_tags=yanked_tags,
+        )
 
 
-def validate_minimum_safe_tag(value: object) -> None:
+def validate_minimum_safe_tag(value: object) -> dict[str, str]:
     label = "freshness status safety_floor.minimum_safe_tag"
     require(isinstance(value, dict), f"{label} must be an object or null")
     require_exact_fields(value, MINIMUM_SAFE_FIELDS, label)
-    require_stable_tag(value, "tag", label)
+    tag = require_stable_tag(value, "tag", label)
     require_nonempty_str(value, "reason", label)
     require_policy_ref(value, label)
     command = require_nonempty_str(value, "replacement_command", label)
-    require_pinned_install_command(command, f"{label} replacement_command")
+    replacement_tag = require_pinned_install_command(command, f"{label} replacement_command")
+    return {"tag": tag, "replacement_tag": replacement_tag}
 
 
-def validate_yanked_release(value: object, index: int) -> None:
+def validate_yanked_release(value: object, index: int, *, safety_floor_published_at: str) -> dict[str, str | None]:
     label = f"freshness status safety_floor.yanked_releases[{index}]"
     require(isinstance(value, dict), f"{label} must be an object")
     require_exact_fields(value, YANKED_RELEASE_FIELDS, label)
-    require_stable_tag(value, "tag", label)
+    tag = require_stable_tag(value, "tag", label)
     require_nonempty_str(value, "reason", label)
-    require_rfc3339(value, "published_at", label)
+    published_at = require_rfc3339(value, "published_at", label)
+    require_not_after(
+        label,
+        "published_at",
+        published_at,
+        "safety_floor.published_at",
+        safety_floor_published_at,
+        tag=tag,
+    )
     require_policy_ref(value, label)
     replacement = require_optional_nonempty_str(value, "replacement_command", label)
     no_replacement = require_optional_nonempty_str(value, "no_replacement_reason", label)
@@ -365,8 +429,30 @@ def validate_yanked_release(value: object, index: int) -> None:
         replacement is None or no_replacement is None,
         f"{label} cannot set both replacement_command and no_replacement_reason",
     )
+    replacement_tag = None
     if replacement is not None:
-        require_pinned_install_command(replacement, f"{label} replacement_command")
+        replacement_tag = require_pinned_install_command(replacement, f"{label} replacement_command")
+    return {"tag": tag, "replacement_tag": replacement_tag}
+
+
+def validate_replacement_tag(
+    replacement_tag: str,
+    *,
+    field: str,
+    source_tag: str,
+    minimum_rule: dict[str, str] | None,
+    yanked_tags: set[str],
+) -> None:
+    require(
+        replacement_tag not in yanked_tags,
+        f"{field} for {source_tag} points at yanked tag {replacement_tag}",
+    )
+    if minimum_rule is not None:
+        minimum_tag = minimum_rule["tag"]
+        require(
+            stable_version(replacement_tag) >= stable_version(minimum_tag),
+            f"{field} for {source_tag} points at {replacement_tag} below minimum_safe_tag {minimum_tag}",
+        )
 
 
 def require_policy_ref(obj: dict[str, Any], label: str) -> None:
@@ -452,6 +538,21 @@ def require_rfc3339(obj: dict[str, Any], key: str, label: str) -> str:
     return value
 
 
+def require_not_after(
+    label: str,
+    field: str,
+    value: str,
+    reference_label: str,
+    reference_value: str,
+    tag: str | None,
+) -> None:
+    tag_detail = f" for {tag}" if tag is not None else ""
+    require(
+        parse_rfc3339_utc(value) <= parse_rfc3339_utc(reference_value),
+        f"{label} {field}{tag_detail} {value} must be <= {reference_label} {reference_value}",
+    )
+
+
 def require_stable_tag(obj: dict[str, Any], key: str, label: str) -> str:
     value = require_nonempty_str(obj, key, label)
     require(STABLE_TAG_RE.fullmatch(value) is not None, f"{label} {key} must be a stable vMAJOR.MINOR.PATCH tag")
@@ -483,7 +584,18 @@ def require_pinned_install_command(command: str, label: str) -> str:
         STABLE_TAG_RE.fullmatch(tag) is not None,
         f"{label} must use a stable vMAJOR.MINOR.PATCH tag",
     )
-    return command
+    return tag
+
+
+def parse_rfc3339_utc(value: str) -> datetime:
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def stable_version(tag: str) -> tuple[int, int, int]:
+    match = STABLE_TAG_RE.fullmatch(tag)
+    require(match is not None, f"stable version parser received malformed tag: {tag}")
+    major, minor, patch = tag.removeprefix("v").split(".")
+    return (int(major), int(minor), int(patch))
 
 
 def require_relative_path(obj: dict[str, Any], key: str, label: str) -> str:

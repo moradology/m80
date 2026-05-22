@@ -58,6 +58,213 @@ fn malformed_safety_floor_tags_fail_closed() {
 }
 
 #[test]
+fn yanked_release_unknown_tag_syntax_fails_closed() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_with_rows(
+            "2026-05-21T12:00:00Z",
+            "null",
+            &[yanked_release_json(
+                "v1.2.0-rc.1",
+                "2026-05-21T12:00:00Z",
+                Some("v1.2.3"),
+                None,
+            )],
+        ),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("prerelease yanked release should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::MalformedSafetyTag {
+            field: "safety_floor.yanked_releases.tag",
+            tag: "v1.2.0-rc.1".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn minimum_safe_tag_newer_than_latest_fails_closed() {
+    let err = read_freshness_status_artifact_json(&status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        Some("v9.0.0"),
+        &[],
+    ))
+    .expect_err("minimum floor newer than latest should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::SafetyFloorContradiction {
+            field: "safety_floor.minimum_safe_tag.tag",
+            tag: "v9.0.0".to_owned(),
+            reason: "minimum_safe_tag is newer than latest stable v1.2.3".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn duplicate_yanked_release_tag_fails_closed() {
+    let err = read_freshness_status_artifact_json(&status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        None,
+        &["v1.2.2", "v1.2.2"],
+    ))
+    .expect_err("duplicate yanked tag should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::SafetyFloorContradiction {
+            field: "safety_floor.yanked_releases.tag",
+            tag: "v1.2.2".to_owned(),
+            reason: "duplicate yanked tag".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn yanked_latest_without_replacement_command_fails_closed() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_with_rows(
+            "2026-05-21T12:00:00Z",
+            "null",
+            &[yanked_release_json(
+                "v1.2.3",
+                "2026-05-21T12:00:00Z",
+                None,
+                Some("withdrawn with no automatic replacement"),
+            )],
+        ),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("latest yanked without replacement command should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::SafetyFloorContradiction {
+            field: "safety_floor.yanked_releases.replacement_command",
+            tag: "v1.2.3".to_owned(),
+            reason: "latest stable is yanked without a replacement command".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn replacement_command_cannot_target_yanked_release() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_with_rows(
+            "2026-05-21T12:00:00Z",
+            "null",
+            &[
+                yanked_release_json("v1.2.1", "2026-05-21T12:00:00Z", Some("v1.2.2"), None),
+                yanked_release_json("v1.2.2", "2026-05-21T12:00:00Z", Some("v1.2.3"), None),
+            ],
+        ),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("replacement pointing at yanked tag should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::SafetyFloorContradiction {
+            field: "safety_floor.replacement_command",
+            tag: "v1.2.2".to_owned(),
+            reason: "replacement command targets a yanked release".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn replacement_command_cannot_target_below_minimum_safe_tag() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_with_rows(
+            "2026-05-21T12:00:00Z",
+            &minimum_safe_tag_json("v1.2.2", "v1.2.1"),
+            &[],
+        ),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("replacement below minimum floor should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::SafetyFloorContradiction {
+            field: "safety_floor.replacement_command",
+            tag: "v1.2.1".to_owned(),
+            reason: "replacement command is below minimum_safe_tag v1.2.2".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn safety_floor_timestamp_after_latest_published_at_fails_closed() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_json("2026-05-21T12:00:01Z", None, &[]),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("safety floor newer than status should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::StaleSafetyTimestamp {
+            field: "safety_floor.published_at",
+            tag: None,
+            value: timestamp("2026-05-21T12:00:01Z").as_i64(),
+            reference_field: "published_at",
+            reference_value: timestamp("2026-05-21T12:00:00Z").as_i64(),
+        }
+    );
+}
+
+#[test]
+fn yanked_release_timestamp_after_safety_floor_fails_closed() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_with_rows(
+            "2026-05-21T12:00:00Z",
+            "null",
+            &[yanked_release_json(
+                "v1.2.2",
+                "2026-05-21T12:00:01Z",
+                Some("v1.2.3"),
+                None,
+            )],
+        ),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("yanked release newer than safety floor should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::StaleSafetyTimestamp {
+            field: "safety_floor.yanked_releases.published_at",
+            tag: Some("v1.2.2".to_owned()),
+            value: timestamp("2026-05-21T12:00:01Z").as_i64(),
+            reference_field: "safety_floor.published_at",
+            reference_value: timestamp("2026-05-21T12:00:00Z").as_i64(),
+        }
+    );
+}
+
+#[test]
 fn safety_floor_missing_reason_fails_closed() {
     let mut raw = status_artifact_with_safety(
         Some("v1.2.3"),
@@ -277,7 +484,11 @@ fn status_artifact_with_safety(
     status_artifact_with_safety_at(
         tag,
         published_at,
-        safety_floor_json("2026-05-21T12:00:00Z", minimum_safe_tag, yanked_tags),
+        safety_floor_json(
+            published_at.unwrap_or("2026-05-21T12:00:00Z"),
+            minimum_safe_tag,
+            yanked_tags,
+        ),
     )
 }
 
@@ -319,25 +530,49 @@ fn safety_floor_json(
     yanked_tags: &[&str],
 ) -> String {
     let minimum = minimum_safe_tag
-        .map(|tag| {
-            format!(
-                r#"{{"tag":"{tag}","reason":"security floor","advisory_url":null,"issue_id":"m80-o3uh9.21.9","replacement_command":"{}"}}"#,
-                pinned_install_command("v1.2.3")
-            )
-        })
+        .map(|tag| minimum_safe_tag_json(tag, "v1.2.3"))
         .unwrap_or_else(|| "null".to_owned());
     let yanked = yanked_tags
         .iter()
-        .map(|tag| {
-            format!(
-                r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"{published_at}","replacement_command":"{}","no_replacement_reason":null}}"#,
-                pinned_install_command("v1.2.3")
-            )
-        })
+        .map(|tag| yanked_release_json(tag, published_at, Some("v1.2.3"), None))
+        .collect::<Vec<_>>()
+        .join(",");
+    safety_floor_with_rows(published_at, &minimum, &[yanked])
+}
+
+fn safety_floor_with_rows(published_at: &str, minimum: &str, yanked_rows: &[String]) -> String {
+    let yanked = yanked_rows
+        .iter()
+        .filter(|row| !row.is_empty())
+        .cloned()
         .collect::<Vec<_>>()
         .join(",");
     format!(
         r#"{{"schema_version":1,"published_at":"{published_at}","minimum_safe_tag":{minimum},"yanked_releases":[{yanked}]}}"#
+    )
+}
+
+fn minimum_safe_tag_json(tag: &str, replacement_tag: &str) -> String {
+    format!(
+        r#"{{"tag":"{tag}","reason":"security floor","advisory_url":null,"issue_id":"m80-o3uh9.21.9","replacement_command":"{}"}}"#,
+        pinned_install_command(replacement_tag)
+    )
+}
+
+fn yanked_release_json(
+    tag: &str,
+    published_at: &str,
+    replacement_tag: Option<&str>,
+    no_replacement_reason: Option<&str>,
+) -> String {
+    let replacement = replacement_tag
+        .map(|tag| format!(r#""{}""#, pinned_install_command(tag)))
+        .unwrap_or_else(|| "null".to_owned());
+    let no_replacement = no_replacement_reason
+        .map(|reason| format!(r#""{reason}""#))
+        .unwrap_or_else(|| "null".to_owned());
+    format!(
+        r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"{published_at}","replacement_command":{replacement},"no_replacement_reason":{no_replacement}}}"#
     )
 }
 

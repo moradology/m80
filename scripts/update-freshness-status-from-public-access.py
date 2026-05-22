@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import tempfile
 from typing import Any
 
 import freshness_status
@@ -77,13 +78,27 @@ def main() -> int:
         expected_stable_tag=args.expected_stable_tag,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
-    out_path.chmod(0o644)
-    freshness_status.validate_freshness_status(
-        out_path,
-        artifact_root=artifact_root,
-        docs_root=docs_root,
-    )
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=out_path.parent,
+        prefix=f".{out_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as candidate:
+        candidate_path = Path(candidate.name)
+        json.dump(status, candidate, indent=2, sort_keys=True)
+        candidate.write("\n")
+    try:
+        freshness_status.validate_freshness_status(
+            candidate_path,
+            artifact_root=artifact_root,
+            docs_root=docs_root,
+        )
+        candidate_path.chmod(0o644)
+        candidate_path.replace(out_path)
+    finally:
+        candidate_path.unlink(missing_ok=True)
     print(f"updated freshness status from public-access receipt: {out_path}")
     return 0
 

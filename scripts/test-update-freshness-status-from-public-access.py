@@ -81,6 +81,27 @@ class UpdateFreshnessStatusFromPublicAccessTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing --workflow-run-id", result.stderr)
 
+    def test_validator_error_does_not_publish_green_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "docs" / "behaviors" / "release"
+            artifact_root.mkdir(parents=True)
+            receipt_path = artifact_root / "release-readiness-public-access.json"
+            status_path = artifact_root / "freshness-status-docs.json"
+            status_path.write_text('{"status":"previous"}\n')
+            receipt_path.write_text(json.dumps(valid_receipt(), indent=2, sort_keys=True) + "\n")
+
+            result = run_update(
+                receipt_path,
+                status_path,
+                "--expected-stable-tag",
+                "v9.0.0",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("public_green requires resolved_latest_tag == expected_highest_stable_tag", result.stderr)
+            self.assertEqual(status_path.read_text(), '{"status":"previous"}\n')
+
 
 def run_update(receipt_path: Path, status_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(

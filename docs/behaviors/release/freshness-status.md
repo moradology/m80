@@ -85,3 +85,13 @@ must provide either a pinned replacement command or a documented
 `no_replacement_reason`, but not both. Mutable latest commands are rejected in
 safety metadata because this object is the machine-readable path for keeping
 installed users away from known-bad releases.
+
+The verifier also rejects contradictory safety policy before a status can be
+published as green. `minimum_safe_tag.tag` must not be newer than
+`resolved_latest_tag`. Yanked tags must be unique. If the resolved latest tag is
+yanked, it must carry a pinned replacement command, not only
+`no_replacement_reason`. Replacement commands must not point at a yanked release
+or any release older than `minimum_safe_tag`. `safety_floor.published_at` must
+not be later than the status `generated_at`, and each yanked row's
+`published_at` must not be later than `safety_floor.published_at`. Diagnostics
+name the rejected safety field and the offending tag or timestamp.

@@ -274,6 +274,139 @@ class FreshnessStatusTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("requires replacement_command or no_replacement_reason", result.stderr)
 
+    def test_safety_floor_minimum_newer_than_latest_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=minimum_safe_tag("v9.0.0", "v1.2.3"),
+                yanked_releases=[],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("minimum_safe_tag tag v9.0.0", result.stderr)
+            self.assertIn("resolved_latest_tag v1.2.3", result.stderr)
+
+    def test_safety_floor_duplicate_yanked_tag_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    yanked_release("v1.2.2", replacement_tag="v1.2.3"),
+                    yanked_release("v1.2.2", replacement_tag="v1.2.3"),
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("yanked_releases[1] tag v1.2.2 duplicates", result.stderr)
+
+    def test_safety_floor_unknown_yanked_tag_syntax_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[yanked_release("v1.2.2-rc.1", replacement_tag="v1.2.3")],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("yanked_releases[0] tag must be a stable", result.stderr)
+
+    def test_safety_floor_yanked_latest_without_replacement_command_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    yanked_release(
+                        "v1.2.3",
+                        replacement_tag=None,
+                        no_replacement_reason="withdrawn with no automatic replacement",
+                    )
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement_command for v1.2.3", result.stderr)
+            self.assertIn("resolved_latest_tag", result.stderr)
+
+    def test_safety_floor_replacement_command_cannot_target_yanked_tag(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    yanked_release("v1.2.1", replacement_tag="v1.2.2"),
+                    yanked_release("v1.2.2", replacement_tag="v1.2.3"),
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement_command for v1.2.1", result.stderr)
+            self.assertIn("yanked tag v1.2.2", result.stderr)
+
+    def test_safety_floor_replacement_command_cannot_target_below_floor(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=minimum_safe_tag("v1.2.2", "v1.2.1"),
+                yanked_releases=[],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement_command for v1.2.2", result.stderr)
+            self.assertIn("below minimum_safe_tag v1.2.2", result.stderr)
+
+    def test_safety_floor_published_at_after_status_generated_at_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"]["published_at"] = "2026-05-21T21:00:01Z"
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("safety_floor published_at 2026-05-21T21:00:01Z", result.stderr)
+            self.assertIn("generated_at 2026-05-21T21:00:00Z", result.stderr)
+
+    def test_yanked_release_published_at_after_safety_floor_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    yanked_release(
+                        "v1.2.2",
+                        replacement_tag="v1.2.3",
+                        published_at="2026-05-21T21:00:01Z",
+                    )
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("yanked_releases[0] published_at for v1.2.2 2026-05-21T21:00:01Z", result.stderr)
+            self.assertIn("safety_floor.published_at 2026-05-21T21:00:00Z", result.stderr)
+
 
 class Fixture:
     def __init__(self, tmp: tempfile.TemporaryDirectory[str], root: Path, docs_root: Path, status: Path) -> None:
@@ -392,6 +525,34 @@ def safety_floor(*, minimum_safe_tag: dict | None, yanked_releases: list[dict]) 
         "published_at": "2026-05-21T21:00:00Z",
         "minimum_safe_tag": minimum_safe_tag,
         "yanked_releases": yanked_releases,
+    }
+
+
+def minimum_safe_tag(tag: str, replacement_tag: str) -> dict:
+    return {
+        "tag": tag,
+        "reason": "security floor",
+        "advisory_url": None,
+        "issue_id": "m80-o3uh9.21.9",
+        "replacement_command": pinned_install_command(replacement_tag),
+    }
+
+
+def yanked_release(
+    tag: str,
+    *,
+    replacement_tag: str | None,
+    no_replacement_reason: str | None = None,
+    published_at: str = "2026-05-21T21:00:00Z",
+) -> dict:
+    return {
+        "tag": tag,
+        "reason": "bad release",
+        "advisory_url": "https://github.com/moradology/m80/issues/1",
+        "issue_id": None,
+        "published_at": published_at,
+        "replacement_command": pinned_install_command(replacement_tag) if replacement_tag is not None else None,
+        "no_replacement_reason": no_replacement_reason,
     }
 
 

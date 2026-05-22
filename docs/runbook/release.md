@@ -135,7 +135,35 @@ The freshness status contract is defined in
 `scripts/verify-freshness-status.py`. A green status is only `public_green` when
 it references unauthenticated public proof for both latest and pinned install
 URLs; fixture-only proof remains scaffolded and must not be rendered as a
-public success.
+public success. Safety-floor contradictions also block green publication before
+the checked status file is replaced.
+
+If safety-floor validation fails, do not publish or render the candidate green
+status. Repair the policy source first:
+
+- Lower `minimum_safe_tag.tag` to a stable release no newer than the resolved
+  latest tag, or publish and prove the newer release first.
+- Remove duplicate `yanked_releases` rows.
+- If the resolved latest tag is yanked, provide a pinned replacement command
+  for a safe release.
+- Point every replacement command at a non-yanked release at or above
+  `minimum_safe_tag`.
+- Move `safety_floor.published_at` no later than the status `generated_at`, and
+  move every yanked row's `published_at` no later than `safety_floor.published_at`.
+- Keep at least one evidence pointer, `advisory_url` or `issue_id`, on every
+  policy row.
+
+Then regenerate and verify before rendering:
+
+```sh
+scripts/update-freshness-status-from-public-access.py
+python3 scripts/verify-freshness-status.py \
+  docs/behaviors/release/freshness-status-docs.json \
+  --artifact-root docs/behaviors/release \
+  --docs-root .
+python3 scripts/render-freshness-status.py
+python3 scripts/render-freshness-status.py --check
+```
 
 Freshness drift repair starts with the uploaded
 `m80-latest-freshness-drift.json` artifact. Its schema is documented in

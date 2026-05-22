@@ -123,6 +123,18 @@ pub(crate) enum FreshnessMetadataError {
         field: &'static str,
         command: String,
     },
+    SafetyFloorContradiction {
+        field: &'static str,
+        tag: String,
+        reason: String,
+    },
+    StaleSafetyTimestamp {
+        field: &'static str,
+        tag: Option<String>,
+        value: i64,
+        reference_field: &'static str,
+        reference_value: i64,
+    },
 }
 
 impl fmt::Display for FreshnessMetadataError {
@@ -187,6 +199,29 @@ impl fmt::Display for FreshnessMetadataError {
                 f,
                 "freshness status {field} must be a pinned install.sh command, got {command}"
             ),
+            Self::SafetyFloorContradiction { field, tag, reason } => write!(
+                f,
+                "freshness status {field} for {tag} contradicts release safety floor: {reason}"
+            ),
+            Self::StaleSafetyTimestamp {
+                field,
+                tag,
+                value,
+                reference_field,
+                reference_value,
+            } => {
+                if let Some(tag) = tag {
+                    write!(
+                        f,
+                        "freshness status {field} timestamp for {tag} is {value}; must be <= {reference_field} timestamp {reference_value}"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "freshness status {field} timestamp {value} must be <= {reference_field} timestamp {reference_value}"
+                    )
+                }
+            }
         }
     }
 }
@@ -322,11 +357,13 @@ impl FreshnessStatusArtifact {
             row.validate()?;
         }
 
+        let safety_floor = self.safety_floor.into_floor(&latest_tag, published_at)?;
+
         Ok(LatestFreshnessMetadata {
             repository: expected_repository,
             latest_tag,
             published_at,
-            safety_floor: self.safety_floor.into_floor()?,
+            safety_floor,
         })
     }
 }
