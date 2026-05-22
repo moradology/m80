@@ -545,9 +545,10 @@ def freshness_failure_message(
     curl_exit: int | None,
     detail: str,
 ) -> str:
+    failure_class = classify_public_url_failure(check, failure)
     fields = [
         "freshness public URL fetch failed",
-        f"failure_class={classify_public_url_failure(check, failure)}",
+        f"failure_class={failure_class}",
         f"failure={failure}",
         f"url={check.url}",
         f"release_tag={check.release_tag}",
@@ -555,6 +556,9 @@ def freshness_failure_message(
         f"role={check.role}",
         f"sources={','.join(check.sources)}",
     ]
+    repair_command = freshness_repair_command(failure_class)
+    if repair_command:
+        fields.append(f"repair_command={repair_command}")
     if curl_exit is not None:
         fields.append(f"curl_exit={curl_exit}")
     fields.append(detail)
@@ -595,7 +599,29 @@ def classify_freshness_exception(message: str) -> str:
 def freshness_failure_policy_message(failure_class: str, message: str) -> str:
     if "failure_class=" in message:
         return message
-    return f"failure_class={failure_class}; {message}"
+    fields = [f"failure_class={failure_class}"]
+    repair_command = freshness_repair_command(failure_class)
+    if repair_command:
+        fields.append(f"repair_command={repair_command}")
+    fields.append(message)
+    return "; ".join(fields)
+
+
+def freshness_repair_command(failure_class: str) -> str | None:
+    if not failure_class:
+        return None
+    try:
+        policy = read_json(
+            Path(__file__).resolve().parents[1] / "docs" / "behaviors" / "release" / "freshness-failure-policy.json",
+            "freshness failure policy",
+        )
+    except (SystemExit, ValueError):
+        return None
+    for row in policy.get("failure_classes", []):
+        if isinstance(row, dict) and row.get("id") == failure_class:
+            command = row.get("repair_command")
+            return command if isinstance(command, str) and command else None
+    return None
 
 
 def freshness_proof_json(

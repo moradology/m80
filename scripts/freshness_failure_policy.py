@@ -52,6 +52,9 @@ SAFE_SUMMARY_FIELDS = {
 ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 COMMAND_ALLOWLIST = ("br ", "gh ", "python3 ", "scripts/", "m80 ")
 FORBIDDEN_COMMAND_FRAGMENTS = ["\n", "\r", ";", "&&", "||", "|", "`", "$(", ">"]
+MUTATING_COMMAND_RE = re.compile(r"(?i)(?:^|[\s/])(?:install|publish|upload|release-artifacts)(?:\s|$)")
+MUTABLE_TARGET_RE = re.compile(r"(?i)(?:/releases/latest/|\b(?:main|master|latest)\b|--(?:branch|ref|source)=main)")
+PINNED_RELEASE_RE = re.compile(r"(?:\bv[0-9]+\.[0-9]+\.[0-9]+\b|<version>|\{release_tag\}|\{tag\})")
 
 
 def parse_args() -> argparse.Namespace:
@@ -227,6 +230,11 @@ def validate_command(value: object, label: str, errors: list[str]) -> None:
     for fragment in FORBIDDEN_COMMAND_FRAGMENTS:
         if fragment in value:
             errors.append(f"{label}: repair_command contains {fragment!r}")
+    if MUTATING_COMMAND_RE.search(value):
+        if MUTABLE_TARGET_RE.search(value):
+            errors.append(f"{label}: mutating repair_command must not contain mutable latest/main target")
+        if PINNED_RELEASE_RE.search(value) is None:
+            errors.append(f"{label}: mutating repair_command must include a concrete or templated release tag")
 
 
 def validate_summary_fields(value: object, label: str, errors: list[str]) -> None:

@@ -145,9 +145,23 @@ Freshness failure handling is configured in
 `real-kvm-substrate-unavailable`, and `verifier-schema-drift` to a primary
 operator action: retry-only, open/update one repair bead, block the next
 release/latest promotion, page a maintainer, or require manual operator
-confirmation. Add a new class by teaching the verifier to emit it and adding a
-single JSON policy row in the same diff; CI rejects verifier-emitted classes
-that are absent from the policy.
+confirmation. The verifier appends the class's cataloged `repair_command` to
+failure diagnostics. Add a new class by teaching the verifier to emit it and
+adding a single JSON policy row in the same diff; CI rejects verifier-emitted
+classes that are absent from the policy.
+
+Current catalog commands:
+
+| Failure class | First command |
+| --- | --- |
+| `network-transient` | `python3 scripts/release_freshness.py --docs-root . --json` |
+| `stale-latest` | `br show m80-o3uh9.21.8` |
+| `missing-public-asset` | `br show m80-o3uh9.21.7` |
+| `docs-drift` | `python3 scripts/render-freshness-status.py --check` |
+| `checksum-mismatch` | `python3 scripts/verify-release-integrity.py --help` |
+| `provenance-mismatch` | `python3 scripts/verify-release-integrity.py --help` |
+| `real-kvm-substrate-unavailable` | `br show m80-o3uh9.18` |
+| `verifier-schema-drift` | `python3 scripts/verify-freshness-failure-policy.py` |
 
 The shell installer bounds every release-asset download before the bundled
 `m80 install` binary can take over. Each fetch uses a 10 second connect timeout,

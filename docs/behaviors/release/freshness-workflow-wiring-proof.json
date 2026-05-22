@@ -1,6 +1,6 @@
 {
   "bead_id": "m80-o3uh9.21.1.2",
-  "checked_at": "2026-05-22T05:16:07Z",
+  "checked_at": "2026-05-22T05:34:17Z",
   "command": "CI release script test block plus python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
   "evidence": {
     "artifact_upload": {
@@ -35,7 +35,7 @@
   "resolved_tag": "not_applicable_workflow_wiring",
   "schema_version": 1,
   "stderr": "",
-  "stdout": "release script tests OK: test-release-freshness 10, test-freshness-drift-evidence 16, test-workflow-policy 47, lint-github-workflows OK, run-actionlint OK",
+  "stdout": "release script tests OK: test-release-freshness 12, test-freshness-drift-evidence 16, test-workflow-policy 47, lint-github-workflows OK, run-actionlint OK",
   "substrate": "local hostless workflow policy verification",
   "verification": [
     {
@@ -50,7 +50,7 @@
     {
       "command": "python3 scripts/test-release-freshness.py",
       "exit_status": 0,
-      "summary": "Ran 10 tests"
+      "summary": "Ran 12 tests"
     },
     {
       "command": "python3 scripts/test-workflow-policy.py",

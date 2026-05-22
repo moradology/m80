@@ -132,6 +132,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             self.assertIn("release_tag=v1.2.3", result.stderr)
             self.assertIn("asset=m80-release-assets.json", result.stderr)
             self.assertIn("url=https://github.com/moradology/m80/releases/download/v1.2.3/m80-release-assets.json", result.stderr)
+            self.assertIn(f"repair_command={repair_command_for(failure_class)}", result.stderr)
 
     def test_metadata_fetch_failure_is_network_transient(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,6 +166,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("failure_class=network-transient", result.stderr)
         self.assertIn("failure=metadata_fetch_failure", result.stderr)
         self.assertIn("fetch_role=initial", result.stderr)
+        self.assertIn("repair_command=python3 scripts/release_freshness.py --docs-root . --json", result.stderr)
 
     def test_docs_linked_latest_failure_names_docs_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -242,6 +244,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("failure=http_failure", result.stderr)
         self.assertIn("release_tag=v9.9.9", result.stderr)
         self.assertIn("docs:docs/behaviors/release/docs-only.md:", result.stderr)
+        self.assertIn("repair_command=python3 scripts/render-freshness-status.py --check", result.stderr)
 
     def test_missing_public_asset_names_role_url_and_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -275,6 +278,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn(f"role=checksum asset={CHECKSUM_NAME}", result.stderr)
         self.assertIn(f"url={release_asset_url('v1.2.3', CHECKSUM_NAME)}", result.stderr)
         self.assertIn("release_tag=v1.2.3", result.stderr)
+        self.assertIn("repair_command=br show m80-o3uh9.21.7", result.stderr)
 
     def test_missing_attestation_and_provenance_assets_are_named(self) -> None:
         cases = [
@@ -311,6 +315,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             self.assertIn("failure_class=missing-public-asset", result.stderr)
             self.assertIn(f"role={role} asset={missing}", result.stderr)
             self.assertIn("release_tag=v1.2.3", result.stderr)
+            self.assertIn("repair_command=br show m80-o3uh9.21.7", result.stderr)
 
     def test_asset_index_digest_mismatch_fails_before_url_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -346,6 +351,75 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn(f"role=bundle asset={BUNDLE_NAME}", result.stderr)
         self.assertIn("expected_sha256=" + ("0" * 64), result.stderr)
         self.assertIn("got_sha256=" + asset_digest(BUNDLE_NAME), result.stderr)
+        self.assertIn("repair_command=python3 scripts/verify-release-integrity.py --help", result.stderr)
+
+    def test_latest_tag_drift_names_repair_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            latest = write_json(root / "latest.json", base_release_metadata(tag="v1.2.3"))
+            guard = write_json(root / "guard.json", base_release_metadata(tag="v1.2.4"))
+            curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--latest-metadata",
+                    str(latest),
+                    "--guard-metadata",
+                    str(guard),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=stale-latest", result.stderr)
+        self.assertIn("failure=latest_tag_switch", result.stderr)
+        self.assertIn("started with v1.2.3, guard observed v1.2.4", result.stderr)
+        self.assertIn("repair_command=br show m80-o3uh9.21.8", result.stderr)
+
+    def test_provenance_mismatch_names_repair_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            metadata = base_release_metadata()
+            for asset in metadata["assets"]:
+                if asset["name"] == BUNDLE_NAME:
+                    asset["browser_download_url"] = release_asset_url("v1.2.4", BUNDLE_NAME)
+                    break
+            curl = write_fake_curl(root / "curl", log=root / "curl.log", metadata=metadata)
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("freshness public asset URL mismatch", result.stderr)
+        self.assertIn("expected_url=" + release_asset_url("v1.2.3", BUNDLE_NAME), result.stderr)
+        self.assertIn("got_url=" + release_asset_url("v1.2.4", BUNDLE_NAME), result.stderr)
+        self.assertIn("repair_command=python3 scripts/verify-release-integrity.py --help", result.stderr)
 
     def test_malformed_asset_index_diagnostics_name_index_role(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -378,6 +452,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("role=asset-index asset=m80-release-assets.json", result.stderr)
         self.assertIn(f"url={release_asset_url('v1.2.3', 'm80-release-assets.json')}", result.stderr)
         self.assertIn("release_tag=v1.2.3", result.stderr)
+        self.assertIn("repair_command=python3 scripts/verify-freshness-failure-policy.py", result.stderr)
 
     def test_asset_index_required_role_omission_names_asset_url_and_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -416,6 +491,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         )
         self.assertIn("release_tag=v1.2.3", result.stderr)
         self.assertIn("field=attestation_name", result.stderr)
+        self.assertIn("repair_command=python3 scripts/verify-freshness-failure-policy.py", result.stderr)
 
     def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
         self.assertIn(flag, args)
@@ -536,6 +612,16 @@ def asset_digest(name: str) -> str:
 def write_json(path: Path, value: dict) -> Path:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
     return path
+
+
+def repair_command_for(failure_class: str) -> str:
+    policy = json.loads(
+        (REPO_ROOT / "docs" / "behaviors" / "release" / "freshness-failure-policy.json").read_text()
+    )
+    for row in policy["failure_classes"]:
+        if row["id"] == failure_class:
+            return row["repair_command"]
+    raise AssertionError(f"missing freshness failure policy row: {failure_class}")
 
 
 if __name__ == "__main__":

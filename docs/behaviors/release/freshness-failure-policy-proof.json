@@ -4,6 +4,7 @@
     "config_lists_required_failure_classes": true,
     "each_class_records_disposition": true,
     "runbook_explains_class_addition_and_operator_action": true,
+    "runbook_repair_catalog_matches_policy_commands": true,
     "tests_reject_duplicate_classes": true,
     "tests_reject_invalid_disposition": true,
     "tests_reject_missing_disposition": true,
@@ -11,18 +12,18 @@
     "tests_reject_verifier_emitted_class_absent_from_config": true
   },
   "bead_id": "m80-o3uh9.21.2.1",
-  "checked_at": "2026-05-21T23:20:03Z",
+  "checked_at": "2026-05-22T05:40:57Z",
   "command": "CI release script test cluster from .github/workflows/ci.yml, plus m80-cli release doc-contract tests, workflow lint, actionlint, cargo fmt --all -- --check, br lint, br dep cycles, and git diff --check",
   "exit_status": 0,
   "schema_version": 1,
   "stderr": "",
-  "stdout": "release script tests OK: test-release-url-contract 14, test-stable-release-channel 9, test-stable-latest-bootstrap 13, test-release-freshness 10, test-freshness-status 12, test-freshness-status-render 9, test-freshness-failure-policy 9, verify-freshness-failure-policy OK, test-workflow-policy 46, test-actionlint-runner 7, test-actionlint-fixtures 9, test-release-proof-ledger 11, test-quickstart-proof 17, test-release-tracker-policy 41, verify-release-tracker-policy OK, test-release-readiness-config 10, verify-release-readiness-config OK, test-install-handoff 7, test-release-bundle 211. cargo test -p m80-cli --test release passed 54 tests.",
+  "stdout": "release script tests OK: test-release-url-contract 14, test-stable-release-channel 9, test-stable-latest-bootstrap 13, test-release-freshness 12, test-freshness-status 12, test-freshness-status-render 9, test-freshness-failure-policy 16, verify-freshness-failure-policy OK, test-workflow-policy 47, test-actionlint-runner 7, test-actionlint-fixtures 9, test-release-proof-ledger 11, test-quickstart-proof 17, test-release-tracker-policy 41, verify-release-tracker-policy OK, test-release-readiness-config 10, verify-release-readiness-config OK, test-install-handoff 7, test-release-bundle 212. cargo test -p m80-cli --test release passed 54 tests.",
   "substrate": "local hostless CI-equivalent release-script tests",
   "verification": [
     {
       "command": "python3 scripts/test-freshness-failure-policy.py",
       "exit_status": 0,
-      "summary": "Ran 9 tests"
+      "summary": "Ran 16 tests"
     },
     {
       "command": "python3 scripts/verify-freshness-failure-policy.py",
@@ -32,7 +33,7 @@
     {
       "command": "python3 scripts/test-release-freshness.py",
       "exit_status": 0,
-      "summary": "Ran 10 tests including metadata_fetch_failure and docs-only drift classification"
+      "summary": "Ran 12 tests including metadata_fetch_failure, docs-only drift, stale-latest, and provenance repair command classification"
     },
     {
       "command": "python3 scripts/test-freshness-status-render.py && python3 scripts/render-freshness-status.py --check",
