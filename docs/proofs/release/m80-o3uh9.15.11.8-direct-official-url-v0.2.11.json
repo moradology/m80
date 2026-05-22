@@ -1,0 +1,112 @@
+{
+  "bead": "m80-o3uh9.15.11.8",
+  "bundle_url_class": "official_concrete_tag_moradology_m80_public_release_bundle",
+  "command": {
+    "display": "sudo -n env HOME=/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/home TMPDIR=/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/tmp M80_RELEASE_ATTESTATION_GH=/tank/tmp/m80-public-install-proof.g0DJpN/gh_2.92.0_linux_amd64/bin/gh M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 install --bundle-url https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz --install-root /tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-root",
+    "observed_exit_status": 0
+  },
+  "direct_official_url": {
+    "bundle_asset": "m80-linux-x86_64.tar.gz",
+    "bundle_sha256": "c76b9f996dab02db59deaa34bb37972d6f6bd763d49046f3937f8a0d889fc596",
+    "bundle_url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz",
+    "class": "official concrete-tag moradology/m80 public release bundle URL",
+    "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39"
+  },
+  "exit_status": 0,
+  "failure_artifact": {
+    "active_pointer_after": "absent",
+    "after_install_root_absent": true,
+    "before_install_root_absent": true,
+    "command": "sudo -n env HOME=/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/home TMPDIR=/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/tmp M80_RELEASE_ATTESTATION_GH=/tank/tmp/m80-public-install-proof.g0DJpN/gh_2.92.0_linux_amd64/bin/gh M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 install --bundle-url https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux_x86_64.tar.gz --install-root /tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/install-root",
+    "exit_status": 6,
+    "failure_class": "public release material plan rejected missing direct bundle row before install-root creation",
+    "state_log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/failure-state.txt",
+    "state_log_sha256": "f95f6c85400a1a41c5e634881292406d6ef1d215457d9fe11ee3beb0d06f432a",
+    "stderr": "error: config: invalid value for `release-material`: release material plan failed: release_tag=v0.2.11 bundle=m80-linux_x86_64.tar.gz reason=release asset index has no direct bundle row for m80-linux_x86_64.tar.gz; available bundles: m80-linux-x86_64.tar.gz; retry_command=m80 install --bundle-url 'https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux_x86_64.tar.gz' --install-root '/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/install-root'",
+    "stderr_log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/failure.stderr",
+    "stderr_log_sha256": "b5e199d1ff029fb788b8a155e5173cac6c3c32e652d67b913f7b331ad82922b5",
+    "stdout_log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/failure.stdout"
+  },
+  "generated_at": "2026-05-22T21:59:00Z",
+  "install_status": {
+    "active_release_tag": "v0.2.11",
+    "active_status": "live",
+    "diagnostics": [],
+    "install_status_json_log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-status.json",
+    "install_status_json_sha256": "cf89d358e9318c60208124e7cfa8ec38dc0d15156b4c166c21cfa3ee555a4b2c",
+    "mismatches": [
+      {
+        "code": "install_root_override",
+        "message": "inspecting explicit install root /tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-root; default status uses /opt/m80"
+      }
+    ],
+    "next_action": "m80 run -- echo hello",
+    "status": "healthy_active_release"
+  },
+  "kind": "m80_verified_close_proof",
+  "logs": [
+    "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/success.stdout",
+    "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/success.stderr",
+    "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-status.json",
+    "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/failure-state.txt",
+    "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/failure-case/failure.stderr"
+  ],
+  "proof_cache_manifest": {
+    "attestation_issuer": "https://token.actions.githubusercontent.com",
+    "attestation_signer": "moradology/m80/.github/workflows/release-artifacts.yml",
+    "cache_dir": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-root/versions/v0.2.11/artifacts/release-proof-cache",
+    "keyset_id": "github-actions-oidc:m80-release-v1",
+    "manifest_digest": "32dc94ff7f2a4e469cbda86c31ce650dee2e6d6c99a819d4e3ebecf07d0cf5ba",
+    "manifest_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/install-root/versions/v0.2.11/artifacts/release-proof-cache/manifest.json",
+    "manifest_sha256": "41902de945eedfe7f509f5d1645d382d92422072ce0beb171af3330d06b36fe5",
+    "status": "available",
+    "trust_policy_sha256": "7db08a17f4356ee7ffc502d48adf303ece128946e2124f74b1737913d2da6f99"
+  },
+  "release_material": {
+    "asset_index_sha256": "922312f123770b0ed5f1135179d129e268f65b1904b5ca77725bf22f0ebeb4e9",
+    "attestation_issuer": "https://token.actions.githubusercontent.com",
+    "attestation_signer": "moradology/m80/.github/workflows/release-artifacts.yml",
+    "install_sh_sha256": "69c92d3c5cc88efd9cc08e315308cee133aa762abaea137ed71926d142025bf4",
+    "predicate_sha256": "e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+    "public_sha256s_sha256": "47f4a65404124b537180367baf31eb8490a94325cc95de80c0f90cf2e08f10bc",
+    "release_tag": "v0.2.11"
+  },
+  "release_tag": "v0.2.11",
+  "resolved_tag": "v0.2.11",
+  "schema_version": 1,
+  "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
+  "stderr": {
+    "log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/success.stderr",
+    "sha256": "c81333690ed6667d2e16f61b429e43563ff943cac54ad3fa3d779caf364b9fab",
+    "verified_release_material_excerpt": "m80 install: verified release material release_tag=v0.2.11 bundle_asset=m80-linux-x86_64.tar.gz bundle_sha256=c76b9f996dab02db59deaa34bb37972d6f6bd763d49046f3937f8a0d889fc596 material_classes=bundle,bundle-checksum,bundle-metadata,bundle-metadata-checksum,asset-index,asset-index-checksum,install-script,install-script-checksum,bootstrap-selector,bootstrap-selector-checksum,release-build,release-build-checksum,release-integrity-predicate,release-attestation-bundle,release-attestation-metadata,public-sha256s identity=bundle=m80-linux-x86_64.tar.gz target=linux-x86_64 image_kind=minimal m80_version=v0.2.11"
+  },
+  "stdout": {
+    "log_path": "/tank/tmp/m80-direct-url-proof-v0211.20260522T215900Z/success.stdout",
+    "release_material_lines": [
+      "release_material_release_tag=v0.2.11",
+      "bundle_asset=m80-linux-x86_64.tar.gz",
+      "bundle_url=https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz",
+      "bundle_sha256=c76b9f996dab02db59deaa34bb37972d6f6bd763d49046f3937f8a0d889fc596",
+      "install_sh_sha256=69c92d3c5cc88efd9cc08e315308cee133aa762abaea137ed71926d142025bf4",
+      "public_sha256s_sha256=47f4a65404124b537180367baf31eb8490a94325cc95de80c0f90cf2e08f10bc",
+      "asset_index_sha256=922312f123770b0ed5f1135179d129e268f65b1904b5ca77725bf22f0ebeb4e9",
+      "predicate_sha256=e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+      "attestation_signer=moradology/m80/.github/workflows/release-artifacts.yml",
+      "attestation_issuer=https://token.actions.githubusercontent.com",
+      "source_commit=3c72f2500e0e3c878cf93ffcf0790d410747ea39",
+      "proof_cache_written=true"
+    ],
+    "sha256": "c07171121823b093b8063286a7a578c1d69817bf3c7b094ea9f5ae2f3f244bfa"
+  },
+  "substrate": {
+    "auth_state": "unauthenticated-public-read",
+    "fixture_source": false,
+    "github_write_apis_available": false,
+    "kind": "public-github",
+    "latest_source_mode": "url",
+    "network_target": "public-github-release",
+    "public_owner": "moradology",
+    "public_repo": "m80",
+    "summary": "public GitHub release asset download and attestation verification for moradology/m80 v0.2.11"
+  }
+}

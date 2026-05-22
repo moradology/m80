@@ -538,6 +538,8 @@ installer checksum, metadata sidecar, public sidecars, signed predicate,
 attestation metadata, cryptographic attestation bundle, and tag identity. The
 tag workflow publishes the attestation bundle and normalized metadata; a
 release that lacks those files is not valid for signed installer verification.
+Direct official bundle URLs use the same trust path; the current public proof is
+`docs/proofs/release/m80-o3uh9.15.11.8-direct-official-url-v0.2.11.json`.
 Run the command from a trusted m80 checkout or installed verifier distribution;
 do not load the trust policy from the release dist being verified:
 
