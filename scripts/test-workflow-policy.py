@@ -144,6 +144,16 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("freshness workflow must upload proof/log artifacts with if: always()", result.stderr)
 
+    def test_freshness_workflow_requires_drift_artifact_upload(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(upload_drift_artifact=False),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must upload proof/log artifacts with if: always()", result.stderr)
+
     def test_freshness_workflow_rejects_mutation_commands_and_privileged_runner(self) -> None:
         with workflow_dir(
             "latest-freshness.yml",
@@ -984,12 +994,18 @@ def latest_freshness_workflow(
         "--proof-out /tmp/m80-latest-freshness/m80-latest-freshness-proof.json"
     ),
     upload_artifact: bool = True,
+    upload_drift_artifact: bool = True,
     upload_stderr_artifact: bool = True,
 ) -> str:
     events_block = textwrap.indent(textwrap.dedent(events).strip(), "  ")
     stderr_artifact = (
         "\n                      /tmp/m80-latest-freshness/m80-latest-freshness.stderr"
         if upload_stderr_artifact
+        else ""
+    )
+    drift_artifact = (
+        "\n                      /tmp/m80-latest-freshness/m80-latest-freshness-drift.json"
+        if upload_drift_artifact
         else ""
     )
     upload_step = (
@@ -1002,7 +1018,7 @@ def latest_freshness_workflow(
                   with:
                     path: |
                       /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
-                      /tmp/m80-latest-freshness/m80-latest-freshness.stdout{stderr_artifact}
+                      /tmp/m80-latest-freshness/m80-latest-freshness.stdout{drift_artifact}{stderr_artifact}
                     if-no-files-found: error
                 """
             ).strip(),

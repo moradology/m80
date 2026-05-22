@@ -1,12 +1,13 @@
 {
   "bead_id": "m80-o3uh9.21.1.2",
-  "checked_at": "2026-05-21T05:15:36Z",
-  "command": "python3 scripts/test-workflow-policy.py && python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+  "checked_at": "2026-05-22T05:16:07Z",
+  "command": "CI release script test block plus python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
   "evidence": {
     "artifact_upload": {
       "if": "always()",
       "paths": [
         "/tmp/m80-latest-freshness/m80-latest-freshness-proof.json",
+        "/tmp/m80-latest-freshness/m80-latest-freshness-drift.json",
         "/tmp/m80-latest-freshness/m80-latest-freshness.stdout",
         "/tmp/m80-latest-freshness/m80-latest-freshness.stderr"
       ]
@@ -34,22 +35,27 @@
   "resolved_tag": "not_applicable_workflow_wiring",
   "schema_version": 1,
   "stderr": "",
-  "stdout": "test-workflow-policy: Ran 46 tests OK; lint-github-workflows: workflow policy ok; run-actionlint: OK",
+  "stdout": "release script tests OK: test-release-freshness 10, test-freshness-drift-evidence 16, test-workflow-policy 47, lint-github-workflows OK, run-actionlint OK",
   "substrate": "local hostless workflow policy verification",
   "verification": [
     {
-      "command": "python3 -m py_compile scripts/release_freshness.py scripts/test-release-freshness.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/run-actionlint.py",
+      "command": "python3 -m py_compile scripts/release_freshness.py scripts/freshness_drift_evidence.py scripts/test-release-freshness.py scripts/test-freshness-drift-evidence.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/run-actionlint.py",
       "exit_status": 0
+    },
+    {
+      "command": "python3 scripts/test-freshness-drift-evidence.py",
+      "exit_status": 0,
+      "summary": "freshness drift evidence schema and fixture matrix"
     },
     {
       "command": "python3 scripts/test-release-freshness.py",
       "exit_status": 0,
-      "summary": "Ran 3 tests"
+      "summary": "Ran 10 tests"
     },
     {
       "command": "python3 scripts/test-workflow-policy.py",
       "exit_status": 0,
-      "summary": "Ran 46 tests"
+      "summary": "Ran 47 tests"
     },
     {
       "command": "python3 scripts/lint-github-workflows.py",

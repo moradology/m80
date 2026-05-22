@@ -15,6 +15,7 @@ concurrency:
 env:
   FRESHNESS_DIR: /tmp/m80-latest-freshness
   FRESHNESS_PROOF: /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
+  FRESHNESS_DRIFT: /tmp/m80-latest-freshness/m80-latest-freshness-drift.json
   FRESHNESS_STDOUT: /tmp/m80-latest-freshness/m80-latest-freshness.stdout
   FRESHNESS_STDERR: /tmp/m80-latest-freshness/m80-latest-freshness.stderr
 
@@ -31,6 +32,34 @@ jobs:
           mkdir -p "$FRESHNESS_DIR"
           : > "$FRESHNESS_STDOUT"
           : > "$FRESHNESS_STDERR"
+          python3 - "$FRESHNESS_DRIFT" <<'PY'
+          import json
+          import os
+          import sys
+
+          drift = {
+              "schema_version": 1,
+              "status": "failure",
+              "failure_class": "verifier-schema-drift",
+              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "source": {
+                  "kind": "file",
+                  "value": ".github/workflows/latest-freshness.yml",
+                  "snippet_id": None,
+              },
+              "resolved_latest_tag": None,
+              "expected_stable_tag": None,
+              "expected": {"asset": None, "digest": None, "value": None},
+              "observed": {"status": "not_started", "digest": None, "value": None},
+              "verifier_version": "freshness-drift-evidence.v1",
+              "safe_stderr_excerpt": "freshness verifier did not run",
+              "repair_command": "python3 scripts/verify-freshness-failure-policy.py",
+          }
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              json.dump(drift, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
           python3 - "$FRESHNESS_PROOF" <<'PY'
           import json
           import os
@@ -98,6 +127,14 @@ jobs:
               fh.write("\n")
           PY
           fi
+          python3 scripts/freshness_drift_evidence.py \
+            --stderr-file "$FRESHNESS_STDERR" \
+            --stdout-file "$FRESHNESS_STDOUT" \
+            --exit-status "$status" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --output "$FRESHNESS_DRIFT"
+          python3 scripts/freshness_drift_evidence.py --validate "$FRESHNESS_DRIFT"
           cat "$FRESHNESS_STDOUT"
           cat "$FRESHNESS_STDERR" >&2
           exit "$status"
@@ -109,6 +146,7 @@ jobs:
           name: m80-latest-freshness-${{ github.run_id }}
           path: |
             /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
+            /tmp/m80-latest-freshness/m80-latest-freshness-drift.json
             /tmp/m80-latest-freshness/m80-latest-freshness.stdout
             /tmp/m80-latest-freshness/m80-latest-freshness.stderr
           if-no-files-found: error

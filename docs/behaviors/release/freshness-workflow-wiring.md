@@ -23,6 +23,7 @@ the artifact upload still has a machine-readable handle.
 The evidence upload uses `if: always()` and includes:
 
 - `m80-latest-freshness-proof.json`;
+- `m80-latest-freshness-drift.json`;
 - `m80-latest-freshness.stdout`;
 - `m80-latest-freshness.stderr`.
 

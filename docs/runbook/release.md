@@ -115,8 +115,8 @@ missing public assets are repairable without rerunning a privileged smoke.
 `.github/workflows/latest-freshness.yml` runs this verifier on a scheduled and
 manual read-only hostless lane. Its `latest-freshness-public` concurrency group
 uses `cancel-in-progress: false` so an overlapping run does not discard the
-older run's evidence, and it uploads proof, stdout, and stderr artifacts with
-`if: always()`.
+older run's evidence, and it uploads proof, drift, stdout, and stderr artifacts
+with `if: always()`.
 
 The freshness status contract is defined in
 `docs/behaviors/release/freshness-status.md` and validated by
@@ -124,6 +124,14 @@ The freshness status contract is defined in
 references unauthenticated public proof for both latest and pinned install URLs;
 fixture-only proof remains scaffolded and must not be rendered as a public
 success.
+
+Freshness drift repair starts with the uploaded
+`m80-latest-freshness-drift.json` artifact. Its schema is documented in
+`docs/behaviors/release/freshness-drift-evidence.md` and validated with
+`python3 scripts/freshness_drift_evidence.py --validate <artifact>`. Use it
+before rerunning the scheduled check; it carries the failure class, source
+URL/docs snippet, tag context, expected/observed values, workflow run id, and a
+safe stderr excerpt for the repair bead.
 
 The verifier also checks that the GitHub latest release metadata contains every
 installer-consumed public asset with the expected name, URL, size when reported,

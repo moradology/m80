@@ -534,6 +534,7 @@ def has_always_artifact_upload(lines: list[str]) -> bool:
         step = "\n".join(lines[step_start:block_end])
         required_artifacts = [
             "m80-latest-freshness-proof.json",
+            "m80-latest-freshness-drift.json",
             "m80-latest-freshness.stdout",
             "m80-latest-freshness.stderr",
         ]
