@@ -117,7 +117,7 @@ def validate_stable_release_metadata(
         not missing,
         "stable release missing required public asset(s): "
         + "; ".join(missing_public_asset_detail(tag, name) for name in missing)
-        + f"; {stable_fallback_hint()}",
+        + f"; {stable_fallback_hint(tag)}",
     )
     for name in REQUIRED_PUBLIC_ASSETS:
         expected_url = release_asset_url(tag, name)
@@ -179,7 +179,9 @@ def require_stable_tag(tag: str) -> None:
     )
 
 
-def stable_fallback_hint() -> str:
+def stable_fallback_hint(tag: str | None = None) -> str:
+    if tag is not None:
+        return f"retry pinned command: curl -fsSL {release_asset_url(tag, 'install.sh')} | sudo sh"
     return "select a non-draft, non-prerelease vMAJOR.MINOR.PATCH release and use its pinned install.sh URL"
 
 

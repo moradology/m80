@@ -21,13 +21,20 @@ The handoff JSON has three operator-facing contract fields:
   for the install. Each URL uses `releases/download/<resolved-tag>/...`.
 
 The bootstrapper fails before emitting handoff JSON when the latest metadata
-changes between the initial read and guard read, or when a required pinned
-asset such as `install.sh` is missing from the release metadata. Downstream
-install logic never receives mutable latest inputs from this bootstrap step.
+changes between the initial read and guard read, when URL metadata fetches
+return HTTP/DNS/timeout failures, or when a required pinned asset such as
+`install.sh`, the default bundle, the asset index, or attestation material is
+missing from the release metadata. Missing-asset diagnostics name the resolved
+tag, role, expected asset URL, and exact pinned install retry command.
+Downstream install logic never receives mutable latest inputs from this
+bootstrap step, and these bootstrap failures do not create the requested
+install root.
 
 Regression coverage lives in `scripts/test-stable-latest-bootstrap.py`:
 
 - `test_successful_handoff_args_are_pinned_and_latest_free`
 - `test_rejects_latest_tag_switch_before_emitting_handoff_json`
-- `test_rejects_missing_pinned_install_sh_before_handoff_json`
+- `test_rejects_missing_required_public_assets_before_handoff_json`
+- `test_rejects_http_failure_before_handoff_json`
+- `test_rejects_timeout_failure_before_handoff_json`
 - `test_url_mode_fetches_latest_twice_and_emits_no_mutable_latest_url`

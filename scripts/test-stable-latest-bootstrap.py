@@ -172,24 +172,49 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertIn("releases/download/v1.2.3/install.sh", result.stderr)
         self.assertNotIn("versioned_install_args", result.stderr)
 
-    def test_rejects_missing_pinned_install_sh_before_handoff_json(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            latest = write_json(root / "latest.json", base_release_metadata(omit_assets={"install.sh"}))
+    def test_rejects_missing_required_public_assets_before_handoff_json(self) -> None:
+        cases = [
+            ("install.sh", "installer"),
+            (BUNDLE_NAME, "bundle"),
+            ("m80-release-assets.json", "asset-index"),
+            (INTEGRITY_ATTESTATION_BUNDLE_NAME, "attestation"),
+        ]
+        for missing_asset, role in cases:
+            with self.subTest(missing_asset=missing_asset), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                install_root = root / "install-root"
+                latest = write_json(root / "latest.json", base_release_metadata(omit_assets={missing_asset}))
 
-            result = subprocess.run(
-                ["python3", str(SCRIPT), "--latest-metadata", str(latest), "--json"],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(SCRIPT),
+                        "--latest-metadata",
+                        str(latest),
+                        "--install-root",
+                        str(install_root),
+                        "--json",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "")
-        self.assertIn("stable release missing required public asset(s): install.sh", result.stderr)
-        self.assertNotIn("versioned_install_args", result.stderr)
-        self.assertNotIn("install_url=", result.stderr)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("stable release missing required public asset(s):", result.stderr)
+                self.assertIn(f"{missing_asset} role={role}", result.stderr)
+                self.assertIn(f"url={release_asset_url('v1.2.3', missing_asset)}", result.stderr)
+                self.assertIn("release_tag=v1.2.3", result.stderr)
+                self.assertIn(
+                    "retry pinned command: curl -fsSL "
+                    "https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
+                    result.stderr,
+                )
+                self.assertNotIn("versioned_install_args", result.stderr)
+                self.assertNotIn("install_url=", result.stderr)
+                self.assertFalse(install_root.exists(), "bootstrap failure must not create install-root contents")
 
     def test_rejects_missing_latest_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,36 +233,42 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertIn("latest release metadata missing", result.stderr)
 
     def test_rejects_http_failure_before_handoff_json(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            curl = write_fake_curl(root / "curl", exit_code=22, stderr="HTTP 404\n")
+        for label, stderr in [("404", "HTTP 404\n"), ("500", "HTTP 500\n")]:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                install_root = root / "install-root"
+                curl = write_fake_curl(root / "curl", exit_code=22, stderr=stderr)
 
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--latest-url",
-                    "https://api.github.com/repos/moradology/m80/releases/latest",
-                    "--curl",
-                    str(curl),
-                    "--json",
-                ],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--latest-url",
+                        "https://api.github.com/repos/moradology/m80/releases/latest",
+                        "--install-root",
+                        str(install_root),
+                        "--curl",
+                        str(curl),
+                        "--json",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "")
-        self.assertIn("failed to fetch latest release metadata", result.stderr)
-        self.assertIn("fetch_role=initial", result.stderr)
-        self.assertIn("curl exited 22", result.stderr)
-        self.assertIn("failure=http_failure", result.stderr)
-        self.assertIn("curl_exit=22", result.stderr)
-        self.assertIn("https://api.github.com/repos/moradology/m80/releases/latest", result.stderr)
-        self.assertNotIn("install_url=", result.stderr)
-        self.assertNotIn("/releases/latest/download", result.stderr)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("failed to fetch latest release metadata", result.stderr)
+                self.assertIn("fetch_role=initial", result.stderr)
+                self.assertIn("curl exited 22", result.stderr)
+                self.assertIn("failure=http_failure", result.stderr)
+                self.assertIn("curl_exit=22", result.stderr)
+                self.assertIn(stderr.strip(), result.stderr)
+                self.assertIn("https://api.github.com/repos/moradology/m80/releases/latest", result.stderr)
+                self.assertNotIn("install_url=", result.stderr)
+                self.assertNotIn("/releases/latest/download", result.stderr)
+                self.assertFalse(install_root.exists(), "bootstrap HTTP failure must not create install-root contents")
 
     def test_rejects_missing_downloader_before_network_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -604,7 +635,9 @@ class StableLatestBootstrapTest(unittest.TestCase):
             "versioned_install_inputs",
             "bootstrap_proof",
             "test_successful_handoff_args_are_pinned_and_latest_free",
-            "test_rejects_missing_pinned_install_sh_before_handoff_json",
+            "test_rejects_missing_required_public_assets_before_handoff_json",
+            "test_rejects_http_failure_before_handoff_json",
+            "test_rejects_timeout_failure_before_handoff_json",
             "test_rejects_latest_tag_switch_before_emitting_handoff_json",
         ]:
             self.assertIn(required, doc)

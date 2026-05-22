@@ -66,10 +66,12 @@ Regression coverage:
   asset-index tag drift, and `m80_version` drift;
 - `scripts/test-stable-latest-bootstrap.py` covers latest resolution success,
   versioned handoff args with no mutable latest string, tag-switch failure
-  before handoff output, missing pinned `install.sh`, missing metadata, bounded
-  URL-mode curl args, HTTP/DNS-or-connect/timeout/malformed-metadata fetch
-  failures, missing local downloader/checksum/sudo preflight failures, root
-  preflight acceptance, and no-network local fixture mode;
+  before handoff output, missing pinned installer/bundle/asset-index/
+  attestation assets with exact pinned retry commands, missing metadata,
+  bounded URL-mode curl args, HTTP 404/500, DNS-or-connect, timeout,
+  malformed-metadata fetch failures, missing local downloader/checksum/sudo
+  preflight failures, root preflight acceptance, install-root no-mutation on
+  bootstrap failure, and no-network local fixture mode;
 - `scripts/test-release-bundle.py::test_rejects_prerelease_release_tag`;
 - `crates/m80-cli/src/cmds/install/tests.rs` prerelease rejection tests for
   `--release-tag` and `--bootstrap-tag`.
