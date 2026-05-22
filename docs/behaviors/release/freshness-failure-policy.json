@@ -122,6 +122,26 @@
       ]
     },
     {
+      "id": "public-release-unavailable",
+      "description": "GitHub latest metadata resolves to no eligible stable public release: the latest object is draft, prerelease, malformed as a stable tag, or disagrees with the guard read.",
+      "disposition": "block-next-release-latest",
+      "owner": "release-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "br show m80-o3uh9.21.8",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "latest_resolved_tag",
+        "release_tag",
+        "owner_action",
+        "repair_command"
+      ]
+    },
+    {
       "id": "real-kvm-substrate-unavailable",
       "description": "The privileged freshness lane cannot prove the public latest quickstart on a documented real-KVM host because the substrate or runner is unavailable.",
       "disposition": "manual-operator-confirmation",

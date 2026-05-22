@@ -26,6 +26,7 @@ Current verifier-emitted classes:
 | `docs-drift` | `open-update-bead` | Update the docs command inventory or generated freshness status. |
 | `checksum-mismatch` | `block-next-release-latest` | Rebuild or reject the release integrity material. |
 | `provenance-mismatch` | `block-next-release-latest` | Repair attestation, trust-policy, asset-index, or URL identity drift. |
+| `public-release-unavailable` | `block-next-release-latest` | Restore an eligible public stable latest release before trusting the channel. |
 | `real-kvm-substrate-unavailable` | `manual-operator-confirmation` | Fix the privileged KVM runner or record explicit operator confirmation. |
 | `verifier-schema-drift` | `page-maintainer` | Page the release maintainer because the verifier can no longer trust its inputs. |
 

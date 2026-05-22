@@ -1,0 +1,64 @@
+{
+  "bead": "m80-o3uh9.21.1.7",
+  "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.7-live-proof.json > /tank/tmp/m80-o3uh9.21.1.7-live-proof.stdout && python3 scripts/release_freshness.py --validate-proof /tank/tmp/m80-o3uh9.21.1.7-live-proof.json",
+  "command_groups": [
+    {
+      "commands": [
+        "python3 -m py_compile scripts/release_freshness.py scripts/freshness_proof.py scripts/test-release-freshness.py scripts/freshness_drift_evidence.py scripts/freshness_failure_policy.py",
+        "python3 scripts/test-release-freshness.py",
+        "python3 scripts/test-freshness-failure-policy.py",
+        "python3 scripts/verify-freshness-failure-policy.py",
+        "python3 scripts/test-freshness-drift-evidence.py",
+        "python3 scripts/test-freshness-status-render.py",
+        "python3 scripts/render-freshness-status.py --check",
+        "python3 scripts/verify-freshness-status.py docs/behaviors/release/freshness-status-docs.json --artifact-root docs/behaviors/release --docs-root .",
+        "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+        "python3 scripts/test-release-tracker-policy.py",
+        "br dep cycles --json",
+        "git diff --check"
+      ],
+      "exit_status": 0
+    }
+  ],
+  "coverage": {
+    "compact_human_message": "scripts/test-release-freshness.py::test_failure_proof_details_stay_in_sync_with_compact_diagnostics",
+    "machine_proof_fields": "scripts/freshness_proof.py failure.details",
+    "policy_catalog": "docs/behaviors/release/freshness-failure-policy.json",
+    "classes": [
+      "network-transient",
+      "stale-latest",
+      "missing-public-asset",
+      "docs-drift",
+      "checksum-mismatch",
+      "provenance-mismatch",
+      "public-release-unavailable",
+      "real-kvm-substrate-unavailable",
+      "verifier-schema-drift"
+    ]
+  },
+  "generated_at": "2026-05-22T22:38:17Z",
+  "exit_status": 0,
+  "kind": "m80_verified_close_proof",
+  "logs": [
+    "/tank/tmp/m80-o3uh9.21.1.7-live-proof.json",
+    "/tank/tmp/m80-o3uh9.21.1.7-live-proof.stdout"
+  ],
+  "proof_artifact": {
+    "path": "/tank/tmp/m80-o3uh9.21.1.7-live-proof.json",
+    "sha256": "963ccb783e6876fdad01b7f96cb91495c0890772126d3c1d89b021afccaebcaa"
+  },
+  "resolved_tag": "v0.2.11",
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "freshness proof valid: path=/tank/tmp/m80-o3uh9.21.1.7-live-proof.json status=success; local diagnostic matrix: 34 release freshness tests OK, 16 freshness failure policy tests OK, freshness failure policy ok, 16 drift evidence tests OK, 9 freshness status render tests OK, freshness status markers checked, freshness status docs validated, release tracker policy ok, 45 release tracker policy tests OK, br dep cycles count=0, git diff --check OK",
+  "substrate": {
+    "auth_state": "unauthenticated-public-read",
+    "fixture_source": false,
+    "github_write_apis_available": false,
+    "guard_source_mode": "url",
+    "latest_source_mode": "url",
+    "network_target": "public-github-release",
+    "public_owner": "moradology",
+    "public_repo": "m80"
+  }
+}

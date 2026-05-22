@@ -53,6 +53,7 @@ FRESHNESS_FAILURE_CLASSES = frozenset(
         "docs-drift",
         "checksum-mismatch",
         "provenance-mismatch",
+        "public-release-unavailable",
         "real-kvm-substrate-unavailable",
         "verifier-schema-drift",
     }
@@ -1057,6 +1058,12 @@ def classify_freshness_exception(message: str) -> str:
         return "provenance-mismatch"
     if "URL mismatch" in message or "size mismatch" in message:
         return "provenance-mismatch"
+    if (
+        "stable release ineligible" in message
+        or "stable release tag must be" in message
+        or "release metadata tag mismatch" in message
+    ):
+        return "public-release-unavailable"
     return "verifier-schema-drift"
 
 

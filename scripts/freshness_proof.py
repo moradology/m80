@@ -19,6 +19,7 @@ PROOF_STATUSES = frozenset({"success", "failure", "not_started"})
 SECTION_STATUSES = frozenset({"success", "failure", "not_run", "unavailable"})
 SHA256_URI_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RFC3339_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+FAILURE_FIELD_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)=([^;\s]+)")
 REQUIRED_TOP_LEVEL_FIELDS = (
     "schema_version",
     "status",
@@ -162,6 +163,7 @@ def failure_proof(
         "class": failure_class or "verifier-schema-drift",
         "message": safe_excerpt(failure_message),
         "repair_command": repair_command,
+        "details": failure_details(failure_message),
     }
     return base_proof(
         status="failure",
@@ -245,6 +247,71 @@ def base_proof(
         "checked_urls": checked_urls,
         "public_assets": public_assets,
     }
+
+
+def failure_details(message: str) -> dict:
+    fields = parse_failure_fields(message)
+    source = failure_source(fields)
+    return {
+        "fields": fields,
+        "source": source,
+        "release_tag": fields.get("release_tag"),
+        "expected": {
+            "asset": fields.get("asset"),
+            "digest": fields.get("expected_sha256") or fields.get("sha256"),
+            "value": failure_expected_value(fields),
+        },
+        "observed": {
+            "status": fields.get("failure") or fields.get("curl_exit"),
+            "digest": fields.get("got_sha256"),
+            "value": failure_observed_value(fields),
+        },
+    }
+
+
+def parse_failure_fields(message: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for match in FAILURE_FIELD_RE.finditer(message):
+        fields[match.group(1)] = match.group(2).rstrip(",")
+    return fields
+
+
+def failure_source(fields: dict[str, str]) -> dict[str, str | None]:
+    docs_source = failure_docs_source(fields.get("sources"))
+    if docs_source is not None:
+        return docs_source
+    url = fields.get("url") or fields.get("expected_url") or fields.get("got_url")
+    if url:
+        return {"kind": "url", "value": url, "snippet_id": None}
+    return {"kind": "file", "value": "scripts/release_freshness.py", "snippet_id": None}
+
+
+def failure_docs_source(sources: str | None) -> dict[str, str | None] | None:
+    if not sources:
+        return None
+    for source in sources.split(","):
+        if not source.startswith("docs:"):
+            continue
+        parts = source.split(":", 2)
+        if len(parts) != 3 or not parts[1] or not parts[2]:
+            continue
+        _, path, line = parts
+        return {"kind": "file", "value": path, "snippet_id": f"{path}:{line}"}
+    return None
+
+
+def failure_expected_value(fields: dict[str, str]) -> str | None:
+    for key in ["expected_url", "expected_size", "expected", "url", "release_tag"]:
+        if key in fields:
+            return fields[key]
+    return None
+
+
+def failure_observed_value(fields: dict[str, str]) -> str | None:
+    for key in ["got_url", "got_size", "got", "got_sha256", "curl_exit", "failure"]:
+        if key in fields:
+            return fields[key]
+    return None
 
 
 def add_fixture_command_summary(proof: dict, fixture_install_result: dict | None) -> None:

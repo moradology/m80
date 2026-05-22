@@ -14,8 +14,14 @@ import tempfile
 import textwrap
 import unittest
 
-from freshness_proof import validate_freshness_proof
-from release_freshness import execute_hostless_install_fixture, forbidden_gh_write_invocations, run_hostless_install_fixture, verify_tag_agreement
+from freshness_proof import failure_proof, fetch_policy, validate_freshness_proof
+from release_freshness import (
+    FRESHNESS_FAILURE_CLASSES,
+    execute_hostless_install_fixture,
+    forbidden_gh_write_invocations,
+    run_hostless_install_fixture,
+    verify_tag_agreement,
+)
 from release_url_contract import latest_install_command, pinned_install_command, public_release_root, release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
@@ -334,6 +340,127 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertNotEqual(stale.returncode, 0)
         self.assertIn("checked_command_inventory_digest does not match proof", stale.stderr)
 
+    def test_failure_proof_details_stay_in_sync_with_compact_diagnostics(self) -> None:
+        cases = [
+            {
+                "class": "network-transient",
+                "message": "failure_class=network-transient; failure=timeout; "
+                f"url={release_asset_url('v1.2.3', 'install.sh')}; "
+                "release_tag=v1.2.3; asset=install.sh; curl_exit=28",
+                "source": release_asset_url("v1.2.3", "install.sh"),
+                "observed_status": "timeout",
+            },
+            {
+                "class": "stale-latest",
+                "message": "failure_class=stale-latest; failure=latest_tag_switch; "
+                "release_tag=v1.2.3; expected=v1.2.3 got=v1.2.4",
+                "expected_value": "v1.2.3",
+                "observed_value": "v1.2.4",
+            },
+            {
+                "class": "missing-public-asset",
+                "message": "failure_class=missing-public-asset; freshness public asset missing: "
+                f"role=checksum asset={CHECKSUM_NAME} url={release_asset_url('v1.2.3', CHECKSUM_NAME)} "
+                "release_tag=v1.2.3",
+                "source": release_asset_url("v1.2.3", CHECKSUM_NAME),
+            },
+            {
+                "class": "docs-drift",
+                "message": "failure_class=docs-drift; failure=http_failure; "
+                f"url={release_asset_url('v9.9.9', 'install.sh')}; release_tag=v9.9.9; "
+                "asset=install.sh; sources=docs:README.md:72",
+                "snippet_id": "README.md:72",
+                "release_tag": "v9.9.9",
+            },
+            {
+                "class": "checksum-mismatch",
+                "message": "failure_class=checksum-mismatch; freshness public asset digest mismatch: "
+                f"role=bundle asset={BUNDLE_NAME} url={release_asset_url('v1.2.3', BUNDLE_NAME)} "
+                "release_tag=v1.2.3 expected_sha256="
+                + "0" * 64
+                + " got_sha256="
+                + "1" * 64,
+                "expected_digest": "0" * 64,
+                "observed_digest": "1" * 64,
+            },
+            {
+                "class": "provenance-mismatch",
+                "message": "failure_class=provenance-mismatch; freshness public asset URL mismatch: "
+                f"role=bundle asset={BUNDLE_NAME} expected_url={release_asset_url('v1.2.3', BUNDLE_NAME)} "
+                f"got_url={release_asset_url('v1.2.4', BUNDLE_NAME)} release_tag=v1.2.3",
+                "expected_value": release_asset_url("v1.2.3", BUNDLE_NAME),
+                "observed_value": release_asset_url("v1.2.4", BUNDLE_NAME),
+            },
+            {
+                "class": "public-release-unavailable",
+                "message": "failure_class=public-release-unavailable; stable release ineligible: "
+                "prerelease v1.2.3; release_tag=v1.2.3; expected=stable got=prerelease",
+                "expected_value": "stable",
+                "observed_value": "prerelease",
+            },
+            {
+                "class": "real-kvm-substrate-unavailable",
+                "message": "failure_class=real-kvm-substrate-unavailable; owner_action=fix-runner; "
+                "release_tag=v1.2.3; expected=/dev/kvm got=missing",
+                "expected_value": "/dev/kvm",
+                "observed_value": "missing",
+            },
+            {
+                "class": "verifier-schema-drift",
+                "message": "failure_class=verifier-schema-drift; freshness asset-index malformed: "
+                f"role=asset-index asset=m80-release-assets.json url={release_asset_url('v1.2.3', 'm80-release-assets.json')} "
+                "release_tag=v1.2.3 field=schema_version expected=1 got=999",
+                "expected_value": "1",
+                "observed_value": "999",
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(failure_class=case["class"]):
+                proof = failure_proof(
+                    repository="moradology/m80",
+                    generated_at="2026-05-22T00:00:00Z",
+                    failure_class=case["class"],
+                    failure_message=case["message"],
+                    repair_command=repair_command_for(case["class"]),
+                    fetch_policy=fetch_policy(
+                        connect_timeout_seconds=10,
+                        max_time_seconds=120,
+                        retry_count=2,
+                        retry_delay_seconds=1,
+                    ),
+                    checked_urls=[],
+                    public_assets=[],
+                    public_command_inventory={"status": "unavailable", "digest": None, "count": 0, "entries": []},
+                    failure_classes=list(FRESHNESS_FAILURE_CLASSES),
+                    latest_source_mode="url",
+                    guard_source_mode="url",
+                    resolved_latest_tag="v1.2.3",
+                )
+
+                self.assertEqual(validate_freshness_proof(proof), [])
+                failure = proof["failure"]
+                self.assertEqual(failure["class"], case["class"])
+                self.assertEqual(failure["repair_command"], repair_command_for(case["class"]))
+                details = failure["details"]
+                self.assertEqual(details["fields"]["failure_class"], case["class"])
+                self.assertEqual(details["release_tag"], case.get("release_tag", "v1.2.3"))
+                if "source" in case:
+                    self.assertEqual(details["source"]["value"], case["source"])
+                if "snippet_id" in case:
+                    self.assertEqual(details["source"]["kind"], "file")
+                    self.assertEqual(details["source"]["snippet_id"], case["snippet_id"])
+                if "observed_status" in case:
+                    self.assertEqual(details["observed"]["status"], case["observed_status"])
+                if "expected_value" in case:
+                    self.assertEqual(details["expected"]["value"], case["expected_value"])
+                if "observed_value" in case:
+                    self.assertEqual(details["observed"]["value"], case["observed_value"])
+                if "expected_digest" in case:
+                    self.assertEqual(details["expected"]["digest"], case["expected_digest"])
+                if "observed_digest" in case:
+                    self.assertEqual(details["observed"]["digest"], case["observed_digest"])
+
     def test_metadata_fetch_failure_is_network_transient(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -621,8 +748,9 @@ class ReleaseFreshnessTest(unittest.TestCase):
                 )
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("failure_class=verifier-schema-drift", result.stderr)
+            self.assertIn("failure_class=public-release-unavailable", result.stderr)
             self.assertIn(expected, result.stderr)
+            self.assertIn("repair_command=br show m80-o3uh9.21.8", result.stderr)
 
     def test_tag_agreement_rejects_pinned_install_url_tag_drift(self) -> None:
         with self.assertRaisesRegex(ValueError, "pair=stable_bootstrap_vs_pinned_install_url") as raised:

@@ -223,7 +223,7 @@ Freshness failure handling is configured in
 `docs/behaviors/release/freshness-failure-policy.json` and validated with
 `python3 scripts/verify-freshness-failure-policy.py`. The taxonomy maps
 `network-transient`, `stale-latest`, `missing-public-asset`, `docs-drift`,
-`checksum-mismatch`, `provenance-mismatch`,
+`checksum-mismatch`, `provenance-mismatch`, `public-release-unavailable`,
 `real-kvm-substrate-unavailable`, and `verifier-schema-drift` to a primary
 operator action: retry-only, open/update one repair bead, block the next
 release/latest promotion, page a maintainer, or require manual operator
@@ -242,6 +242,7 @@ Current catalog commands:
 | `docs-drift` | `python3 scripts/render-freshness-status.py --check` |
 | `checksum-mismatch` | `python3 scripts/verify-release-integrity.py --help` |
 | `provenance-mismatch` | `python3 scripts/verify-release-integrity.py --help` |
+| `public-release-unavailable` | `br show m80-o3uh9.21.8` |
 | `real-kvm-substrate-unavailable` | `br show m80-o3uh9.18` |
 | `verifier-schema-drift` | `python3 scripts/verify-freshness-failure-policy.py` |
 
