@@ -96,6 +96,9 @@ preflight reports one of those failures, see the
 [`host prerequisite policy`](docs/behaviors/release/host-prerequisite-policy.md)
 and
 [`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md).
+The operator/test-only `m80 quickstart --no-run` path does not generate the
+host-binaries manifest; run `m80 preflight` next to get the host prerequisite
+diagnostic before launching.
 
 Production operators should also read
 [`docs/ops/host-setup.md`](docs/ops/host-setup.md).

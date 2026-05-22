@@ -60,7 +60,10 @@ binaries, pull OCI images, or install packages implicitly.
   the CLI default outbound egress so it matches the public quickstart target and
   proves the default host prerequisite path. `--json` requires `--no-run` so
   guest probe stdout cannot pollute the machine-readable summary. `--no-run`
-  does not prove host substrate readiness or real-KVM launch.
+  stays hostless: it records the final `host-binaries.manifest.json` path but
+  does not generate that manifest, prove host substrate readiness, or claim
+  real-KVM launch. Its human and JSON summaries name `m80 preflight` as the next
+  diagnostic command before `m80 run`.
 - `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
   the release-bundle installer input contract. `--dry-run` prints the install
   plan without touching host state. `--release-tag` and the hidden
