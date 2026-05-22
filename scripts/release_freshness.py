@@ -886,30 +886,28 @@ def attestation_statement(bundle: dict, *, attestation_asset: FreshnessAsset, li
         )
     workflow = statement.get("predicate", {}).get("buildDefinition", {}).get("externalParameters", {}).get("workflow", {})
     if not isinstance(workflow, dict):
-        got = workflow
-    elif workflow.get("repository") != f"https://github.com/{public_release_root().repository}":
-        got = workflow.get("repository")
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=workflow expected=object got={workflow!r}"
+        )
+    expected_repository = f"https://github.com/{public_release_root().repository}"
+    if workflow.get("repository") != expected_repository:
         raise ValueError(
             "freshness attestation mismatch: "
             f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
             f"release_tag={attestation_asset.release_tag} field=workflow.repository "
-            f"expected=https://github.com/{public_release_root().repository} got={got!r}"
+            f"expected={expected_repository} got={workflow.get('repository')!r}"
         )
-    elif workflow.get("ref") != f"refs/tags/{attestation_asset.release_tag}":
-        got = workflow.get("ref")
+    expected_ref = f"refs/tags/{attestation_asset.release_tag}"
+    if workflow.get("ref") != expected_ref:
         raise ValueError(
             "freshness attestation mismatch: "
             f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
-            f"release_tag={attestation_asset.release_tag} field=workflow.ref "
-            f"expected=refs/tags/{attestation_asset.release_tag} got={got!r}"
+            f"release_tag={attestation_asset.release_tag} field=workflow.ref expected={expected_ref} "
+            f"got={workflow.get('ref')!r}"
         )
-    else:
-        return statement
-    raise ValueError(
-        "freshness attestation malformed: "
-        f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
-        f"release_tag={attestation_asset.release_tag} field=workflow expected=object got={got!r}"
-    )
+    return statement
 
 
 def statement_subjects(statement: dict, *, attestation_asset: FreshnessAsset) -> list[dict]:
