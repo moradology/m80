@@ -70,12 +70,26 @@ classifier.
 
 Safety-floor input is part of the freshness status schema. Empty policy is
 explicit (`minimum_safe_tag: null`, `yanked_releases: []`) so consumers can
-distinguish "publisher said no floor" from "old/malformed metadata." When
-present, `minimum_safe_tag.tag` and every `yanked_releases[].tag` must be stable
-`vMAJOR.MINOR.PATCH` tags with a reason and advisory URL or issue id. A yanked
-active or latest tag reports `yanked`; an active or latest tag below the minimum
-safe tag reports `unsafe`. The safety policy's replacement commands must be
-pinned install commands, never mutable latest commands.
+distinguish "publisher said no floor" from "old/malformed metadata." The floor
+is advisory release metadata unless a separate release policy or CI gate names
+the status artifact as release-blocking. There is no hidden `release_blocking`
+field in this schema and `m80 update --check` does not infer one. It reports
+and repairs from the metadata; it does not stop `m80 run` and it never updates
+an old install by itself. Release promotion dispositions are tracked separately,
+starting with
+[`freshness-failure-policy.md`](freshness-failure-policy.md).
+
+When present, `minimum_safe_tag.tag` and every `yanked_releases[].tag` must be
+stable `vMAJOR.MINOR.PATCH` tags with a reason and advisory URL or issue id. A
+yanked active or latest tag reports `yanked`; an active or latest tag below the
+minimum safe tag reports `unsafe`. The safety policy's replacement commands
+must be pinned install commands generated from safety metadata, never mutable
+latest commands:
+
+```text
+safety_floor_replacement_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh
+next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh
+```
 
 Human output prints `safety_state` and `safety_floor_status` separately from the
 overall update state so automation does not have to infer policy from prose.

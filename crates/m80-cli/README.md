@@ -107,8 +107,11 @@ binaries, pull OCI images, or install packages implicitly.
   `install_unhealthy`, `yanked`, and `unsafe` states and emits a pinned install
   command when a newer safe release target is known or when safety metadata
   marks the active/target release `yanked` or `unsafe` and provides a pinned
-  `replacement_command`. Use `--latest-status-url <url>` to choose the metadata
-  URL. Use `--latest-status <path>` to read a local artifact without network.
+  `replacement_command`. The safety floor is advisory unless an explicit
+  release policy or CI gate names the status artifact as release-blocking input;
+  `--check` never updates the install by itself. Use `--latest-status-url
+  <url>` to choose the metadata URL. Use `--latest-status <path>` to read a
+  local artifact without network.
   Use both together to try the URL first and use the path as a read-only fallback cache.
   Human and JSON output name the metadata source, cache state,
   freshness max age, safety state, safety-policy reason, offline reason, and

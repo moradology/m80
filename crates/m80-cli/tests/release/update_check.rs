@@ -39,6 +39,11 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`reinstall_command`",
         "`retry_command`",
         "unsafe or yanked state uses the safety policy's pinned `replacement_command`",
+        "advisory release metadata unless a separate release policy or CI gate names\nthe status artifact as release-blocking",
+        "There is no hidden `release_blocking`\nfield in this schema",
+        "it does not stop `m80 run` and it never updates",
+        "[`freshness-failure-policy.md`](freshness-failure-policy.md)",
+        "safety_floor_replacement_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh",
         "never flips `<install-root>/active`",
         "never rewrites profiles",
         "never downloads a bundle",
@@ -66,6 +71,8 @@ fn update_check_doc_names_read_only_states_and_outputs() {
     for required in [
         "`m80 update --check [--install-root <path>] [--profile <name>]`",
         "without writing the install root",
+        "The safety floor is advisory unless an explicit\n  release policy or CI gate names the status artifact as release-blocking input",
+        "`--check` never updates the install by itself",
         "`stale_latest_metadata`",
         "`prerelease_active`",
         "`ineligible_active`",
@@ -92,6 +99,11 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "docs/behaviors/release/update-check.md",
         "`m80-latest-freshness-proof.json` from the public latest GitHub release asset\nset",
         "fetches only that status asset by default",
+        "Safety-floor data is advisory unless a separate release policy\nor CI gate names this status artifact as release-blocking input",
+        "`safety_floor` object has no blocking boolean",
+        "[`freshness-failure-policy.md`](../behaviors/release/freshness-failure-policy.md)",
+        "previous public status remains the last trusted status",
+        "update the explicit policy\nor CI gate in the same change",
     ] {
         assert!(runbook.contains(required), "runbook missing {required:?}");
     }

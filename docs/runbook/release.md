@@ -136,8 +136,27 @@ The freshness status contract is defined in
 `scripts/verify-freshness-status.py`. A green status is only `public_green` when
 it references unauthenticated public proof for both latest and pinned install
 URLs; fixture-only proof remains scaffolded and must not be rendered as a
-public success. Safety-floor contradictions also block green publication before
-the checked status file is replaced.
+public success. Safety-floor data is advisory unless a separate release policy
+or CI gate names this status artifact as release-blocking input. The
+`safety_floor` object has no blocking boolean; do not make release blocking
+depend on the mere presence of `minimum_safe_tag` or `yanked_releases`.
+Safety-floor contradictions always block green publication before the checked
+status file is replaced.
+
+The current in-repo release dispositions live in
+[`freshness-failure-policy.md`](../behaviors/release/freshness-failure-policy.md).
+If a safety-floor condition is meant to block release/latest promotion as a
+policy matter, add or update that named policy/gate instead of relying on
+implicit status schema semantics.
+
+The release operator or security maintainer owns the JSON object passed as
+`--safety-floor <path>`. The publisher embeds that object unchanged except for
+normal JSON rendering, then validates it against the resolved latest tag before
+replacing `freshness-status-docs.json`. A failed safety-floor publication means
+the previous public status remains the last trusted status; do not render the
+candidate as green and do not hand-edit README or runbook markers around the
+failure. If the policy is meant to block a release, update the explicit policy
+or CI gate in the same change and name the artifact it consumes.
 
 If safety-floor validation fails, do not publish or render the candidate green
 status. Repair the policy source first:

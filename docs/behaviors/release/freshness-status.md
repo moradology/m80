@@ -73,6 +73,19 @@ edit it by hand. An empty policy is still explicit:
 }
 ```
 
+This object is advisory release metadata by default. It tells installed clients
+and operators how to classify and repair old, yanked, or below-floor installs.
+It becomes release-blocking only when an explicit release policy or CI gate
+names this status artifact as blocking input. The `safety_floor` object itself
+does not carry a release-blocking boolean, and clients must not infer blocking
+semantics from the presence of a floor or yanked row. The current in-repo
+release dispositions live in
+[`freshness-failure-policy.md`](freshness-failure-policy.md); any future
+release-blocking safety policy must be represented there or in another named
+gate. The freshness verifier always blocks malformed or contradictory
+safety-floor data before green publication because bad repair metadata is worse
+than no metadata.
+
 `minimum_safe_tag`, when present, is an object with `tag`, `reason`,
 `advisory_url`, `issue_id`, and `replacement_command`. The tag must be a stable
 `vMAJOR.MINOR.PATCH` release, at least one of `advisory_url` or `issue_id` must
