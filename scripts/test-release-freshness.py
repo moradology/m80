@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -80,6 +81,24 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertEqual(payload["tag_agreement"]["bundle_metadata_package_version"], "1.2.3")
         self.assertEqual(payload["integrity_result"]["status"], "success")
         self.assertEqual(payload["integrity_result"]["public_asset_count"], len(REQUIRED_PUBLIC_ASSETS))
+        provenance = payload["integrity_result"]["provenance"]
+        self.assertEqual(provenance["status"], "success")
+        self.assertEqual(provenance["release_tag"], "v1.2.3")
+        self.assertEqual(provenance["predicate"]["name"], "m80-release-integrity.json")
+        self.assertEqual(provenance["predicate"]["sha256"], asset_digest("m80-release-integrity.json"))
+        subjects = {row["name"]: row for row in provenance["subjects"]}
+        self.assertEqual(subjects[BUNDLE_NAME]["sha256"], asset_digest(BUNDLE_NAME))
+        self.assertEqual(subjects[METADATA_NAME]["sha256"], asset_digest(METADATA_NAME))
+        self.assertEqual(
+            provenance["attestation_subjects"],
+            [
+                {
+                    "name": "m80-release-integrity.json",
+                    "sha256": asset_digest("m80-release-integrity.json"),
+                    "url": release_asset_url("v1.2.3", INTEGRITY_ATTESTATION_BUNDLE_NAME),
+                }
+            ],
+        )
         self.assertEqual(payload["fixture_install_result"]["status"], "not_run")
         self.assertEqual(payload["failure_taxonomy"]["status"], "success")
         self.assertIn("docs-drift", payload["failure_taxonomy"]["known_classes"])
@@ -936,6 +955,92 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("asset=install.sh", result.stderr)
         self.assertIn("checksum_asset=SHA256SUMS", result.stderr)
 
+    def test_provenance_rejects_wrong_bundle_digest(self) -> None:
+        predicate = base_integrity_predicate()
+        for subject in predicate["subjects"]:
+            if subject["name"] == BUNDLE_NAME:
+                subject["sha256"] = "0" * 64
+        result = self.run_provenance_case(integrity_predicate=predicate)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("freshness provenance mismatch", result.stderr)
+        self.assertIn(f"role=bundle asset={BUNDLE_NAME}", result.stderr)
+        self.assertIn("field=subjects.sha256", result.stderr)
+        self.assertIn("expected=" + asset_digest(BUNDLE_NAME), result.stderr)
+        self.assertIn("got='0000000000000000000000000000000000000000000000000000000000000000'", result.stderr)
+
+    def test_provenance_rejects_wrong_metadata_digest(self) -> None:
+        result = self.run_provenance_case(integrity_predicate=base_integrity_predicate(metadata_sha="1" * 64))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("role=provenance asset=m80-release-integrity.json", result.stderr)
+        self.assertIn("field=bundle_metadata_sha256", result.stderr)
+        self.assertIn("expected='" + asset_digest(METADATA_NAME) + "'", result.stderr)
+
+    def test_provenance_rejects_wrong_release_tag(self) -> None:
+        result = self.run_provenance_case(integrity_predicate=base_integrity_predicate(tag="v9.9.9"))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("field=release_tag", result.stderr)
+        self.assertIn("expected='v1.2.3'", result.stderr)
+        self.assertIn("got='v9.9.9'", result.stderr)
+
+    def test_provenance_rejects_missing_subject(self) -> None:
+        predicate = base_integrity_predicate()
+        predicate["subjects"] = [row for row in predicate["subjects"] if row["name"] != BUNDLE_NAME]
+        result = self.run_provenance_case(integrity_predicate=predicate)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn(f"role=bundle asset={BUNDLE_NAME}", result.stderr)
+        self.assertIn("field=subjects expected=present got=missing", result.stderr)
+
+    def test_provenance_rejects_malformed_json(self) -> None:
+        result = self.run_provenance_case(integrity_predicate="{")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("freshness provenance malformed", result.stderr)
+        self.assertIn("field=root", result.stderr)
+
+    def test_provenance_rejects_malformed_attestation_jsonl(self) -> None:
+        result = self.run_provenance_case(attestation_bundle="{")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=provenance-mismatch", result.stderr)
+        self.assertIn("freshness attestation malformed", result.stderr)
+        self.assertIn("field=jsonl", result.stderr)
+
+    def run_provenance_case(self, *, integrity_predicate=None, attestation_bundle=None) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                integrity_predicate=integrity_predicate,
+                attestation_bundle=attestation_bundle,
+            )
+
+            return subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
     def test_hostless_install_fixture_records_paths_and_no_host_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1112,10 +1217,26 @@ def write_fake_curl(
     fail_code: int = 28,
     fail_stderr: str = "failed\n",
     checksum_overrides: dict[str, str] | None = None,
+    integrity_predicate=None,
+    attestation_bundle=None,
 ) -> Path:
     metadata_json = json.dumps(metadata if metadata is not None else base_release_metadata())
     bundle_metadata_json = json.dumps(bundle_metadata if bundle_metadata is not None else base_bundle_metadata())
     checksums_json = json.dumps(checksum_bodies(checksum_overrides or {}))
+    if integrity_predicate is None:
+        integrity_predicate = base_integrity_predicate()
+    if attestation_bundle is None:
+        attestation_bundle = base_attestation_bundle()
+    integrity_predicate_text = (
+        integrity_predicate
+        if isinstance(integrity_predicate, str)
+        else json.dumps(integrity_predicate)
+    )
+    attestation_bundle_text = (
+        attestation_bundle
+        if isinstance(attestation_bundle, str)
+        else json.dumps(attestation_bundle)
+    )
     install_script = install_script or "#!/bin/sh\\necho fixture install.sh\\n"
     script = f"""#!/usr/bin/env python3
 import shlex
@@ -1150,6 +1271,12 @@ if "api.github.com" in url:
 checksums = {checksums_json}
 if asset_name == {METADATA_NAME!r}:
     sys.stdout.write({bundle_metadata_json!r})
+    raise SystemExit(0)
+if asset_name == "m80-release-integrity.json":
+    sys.stdout.write({integrity_predicate_text!r})
+    raise SystemExit(0)
+if asset_name == {INTEGRITY_ATTESTATION_BUNDLE_NAME!r}:
+    sys.stdout.write({attestation_bundle_text!r})
     raise SystemExit(0)
 if asset_name in checksums:
     sys.stdout.write(checksums[asset_name])
@@ -1283,6 +1410,75 @@ def base_asset_index(
             }
         ],
     }
+
+
+def base_integrity_predicate(
+    *,
+    tag: str = "v1.2.3",
+    bundle_sha: str | None = None,
+    metadata_sha: str | None = None,
+) -> dict:
+    return {
+        "schema_version": 1,
+        "mechanism": "github-artifact-attestation",
+        "repository": "moradology/m80",
+        "release_tag": tag,
+        "commit_sha": "1" * 40,
+        "target": "linux-x86_64",
+        "bundle_metadata_name": METADATA_NAME,
+        "bundle_metadata_sha256": metadata_sha or asset_digest(METADATA_NAME),
+        "m80_package_version": tag.removeprefix("v"),
+        "rust_toolchain": "1.82",
+        "subjects": [
+            {
+                "kind": "release-bundle",
+                "name": BUNDLE_NAME,
+                "sha256": bundle_sha or asset_digest(BUNDLE_NAME),
+                "size_bytes": len(BUNDLE_NAME) * 10,
+            },
+            {
+                "kind": "bundle-metadata",
+                "name": METADATA_NAME,
+                "sha256": metadata_sha or asset_digest(METADATA_NAME),
+                "size_bytes": len(METADATA_NAME) * 10,
+            },
+        ],
+    }
+
+
+def base_attestation_bundle(*, tag: str = "v1.2.3") -> str:
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [
+            {
+                "name": "m80-release-integrity.json",
+                "digest": {"sha256": asset_digest("m80-release-integrity.json")},
+            }
+        ],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "buildDefinition": {
+                "externalParameters": {
+                    "workflow": {
+                        "ref": f"refs/tags/{tag}",
+                        "repository": "https://github.com/moradology/m80",
+                        "path": ".github/workflows/release-artifacts.yml",
+                    }
+                }
+            }
+        },
+    }
+    payload = base64.b64encode(json.dumps(statement).encode()).decode()
+    return json.dumps(
+        {
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "dsseEnvelope": {
+                "payload": payload,
+                "payloadType": "application/vnd.in-toto+json",
+                "signatures": [{"sig": "fixture"}],
+            },
+        }
+    )
 
 
 def asset_digest(name: str) -> str:

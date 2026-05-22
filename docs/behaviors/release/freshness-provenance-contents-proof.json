@@ -1,0 +1,68 @@
+{
+  "bead": "m80-o3uh9.21.1.9",
+  "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.json > /tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.stdout && python3 scripts/release_freshness.py --validate-proof /tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.json",
+  "exit_status": 0,
+  "generated_at": "2026-05-22T22:24:31Z",
+  "kind": "m80_verified_close_proof",
+  "logs": [
+    "/tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.json",
+    "/tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.stdout"
+  ],
+  "proof_artifact": {
+    "path": "/tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.json",
+    "sha256": "dce856f47671430990bb7f9483eccf54671fc9d59d2e7b56701b286c18c89c09"
+  },
+  "provenance": {
+    "attestation_bundle": {
+      "name": "m80-release-integrity.attestation.jsonl",
+      "sha256": "30c926ac496b7864688be0e3588c9e0cf43a6be2be0ea4edfa6e7cb7041e8d06",
+      "statement_count": 1,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.attestation.jsonl"
+    },
+    "attestation_subjects": [
+      {
+        "name": "m80-release-integrity.json",
+        "sha256": "e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+        "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.attestation.jsonl"
+      }
+    ],
+    "predicate": {
+      "name": "m80-release-integrity.json",
+      "sha256": "e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.json"
+    },
+    "release_tag": "v0.2.11",
+    "status": "success",
+    "subjects": [
+      {
+        "kind": "release-bundle",
+        "name": "m80-linux-x86_64.tar.gz",
+        "sha256": "c76b9f996dab02db59deaa34bb37972d6f6bd763d49046f3937f8a0d889fc596",
+        "size_bytes": 16963432,
+        "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz"
+      },
+      {
+        "kind": "bundle-metadata",
+        "name": "m80-linux-x86_64.bundle.json",
+        "sha256": "2b1ffa30f6a88596e147bdc8478b3f74733a3383c4b4682dc84bd3cd6c33c70d",
+        "size_bytes": 2072,
+        "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.bundle.json"
+      }
+    ]
+  },
+  "release_tag": "v0.2.11",
+  "resolved_tag": "v0.2.11",
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "freshness proof valid: path=/tank/tmp/m80-o3uh9.21.1.9-live-provenance-proof.json status=success; scripts/test-release-freshness.py: 33 tests OK",
+  "substrate": {
+    "auth_state": "unauthenticated-public-read",
+    "fixture_source": false,
+    "github_write_apis_available": false,
+    "guard_source_mode": "url",
+    "latest_source_mode": "url",
+    "network_target": "public-github-release",
+    "public_owner": "moradology",
+    "public_repo": "m80"
+  }
+}

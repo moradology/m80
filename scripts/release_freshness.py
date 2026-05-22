@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -156,6 +158,7 @@ def main() -> int:
     checks: list[FreshnessUrl] = []
     public_assets: dict[str, FreshnessAsset] = {}
     checksum_sources: dict[str, list[str]] = {}
+    provenance_result: dict | None = None
     try:
         command_inventory = public_command_inventory(args.docs_root)
         command_inventory_summary = command_inventory_proof(command_inventory)
@@ -181,6 +184,12 @@ def main() -> int:
         for check in checks:
             fetch_public_url(check, curl_bin=args.curl)
         checksum_sources = verify_checksum_contents(public_assets, curl_bin=args.curl)
+        provenance_result = verify_provenance_contents(
+            public_assets,
+            repository=repository,
+            release_tag=resolution.resolved_tag,
+            curl_bin=args.curl,
+        )
         bundle_metadata = fetch_bundle_metadata(public_assets[METADATA_NAME], curl_bin=args.curl)
         tag_agreement = verify_tag_agreement(
             latest_tag=release_tag_from_metadata_for_assets(latest.release),
@@ -209,6 +218,7 @@ def main() -> int:
             checksum_sources,
             tag_agreement=tag_agreement,
             fixture_install_result=fixture_install_result,
+            provenance_result=provenance_result,
             command_inventory_summary=command_inventory_summary,
             generated_at=generated_at,
         )
@@ -674,6 +684,282 @@ def fetch_bundle_metadata(asset: FreshnessAsset, *, curl_bin: str) -> dict:
     return value
 
 
+def verify_provenance_contents(
+    public_assets: dict[str, FreshnessAsset],
+    *,
+    repository: str,
+    release_tag: str,
+    curl_bin: str,
+) -> dict:
+    predicate_asset = public_assets["m80-release-integrity.json"]
+    attestation_asset = public_assets[INTEGRITY_ATTESTATION_BUNDLE_NAME]
+    predicate = fetch_json_public_asset(predicate_asset, curl_bin=curl_bin)
+    subjects = integrity_subjects(predicate, predicate_asset=predicate_asset)
+
+    require_provenance_field(predicate, "schema_version", SCHEMA_VERSION, predicate_asset)
+    require_provenance_field(predicate, "repository", repository, predicate_asset)
+    require_provenance_field(predicate, "release_tag", release_tag, predicate_asset)
+    require_provenance_field(predicate, "bundle_metadata_name", METADATA_NAME, predicate_asset)
+    require_provenance_field(predicate, "bundle_metadata_sha256", public_assets[METADATA_NAME].sha256, predicate_asset)
+    for name in [BUNDLE_NAME, METADATA_NAME]:
+        require_subject_digest(subjects, name, public_assets[name])
+
+    attestation = parse_attestation_bundle(
+        fetch_public_asset_text(attestation_asset, curl_bin=curl_bin, source="attestation-content"),
+        attestation_asset=attestation_asset,
+    )
+    require_attestation_subject(attestation["subjects"], predicate_asset)
+    return {
+        "status": "success",
+        "release_tag": release_tag,
+        "predicate": {
+            "name": predicate_asset.name,
+            "url": predicate_asset.url,
+            "sha256": predicate_asset.sha256,
+        },
+        "attestation_bundle": {
+            "name": attestation_asset.name,
+            "url": attestation_asset.url,
+            "sha256": attestation_asset.sha256,
+            "statement_count": len(attestation["statements"]),
+        },
+        "subjects": [
+            subject_summary(subjects[name], url=public_assets[name].url)
+            for name in [BUNDLE_NAME, METADATA_NAME]
+        ],
+        "attestation_subjects": attestation["subjects"],
+    }
+
+
+def fetch_json_public_asset(asset: FreshnessAsset, *, curl_bin: str) -> dict:
+    text = fetch_public_asset_text(asset, curl_bin=curl_bin, source=f"{asset.role}-content")
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "freshness provenance malformed: "
+            f"role={asset.role} asset={asset.name} url={asset.url} release_tag={asset.release_tag} "
+            f"field=root expected=json-object got=json-error:{exc.msg}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise ValueError(
+            "freshness provenance malformed: "
+            f"role={asset.role} asset={asset.name} url={asset.url} release_tag={asset.release_tag} "
+            f"field=root expected=json-object got={type(value).__name__}"
+        )
+    return value
+
+
+def integrity_subjects(predicate: dict, *, predicate_asset: FreshnessAsset) -> dict[str, dict]:
+    subjects = predicate.get("subjects")
+    if not isinstance(subjects, list):
+        raise ValueError(
+            "freshness provenance malformed: "
+            f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+            f"release_tag={predicate_asset.release_tag} field=subjects expected=list got={type(subjects).__name__}"
+        )
+    result = {}
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            raise ValueError(
+                "freshness provenance malformed: "
+                f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+                f"release_tag={predicate_asset.release_tag} field=subjects[] expected=object"
+            )
+        name = subject.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(
+                "freshness provenance malformed: "
+                f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+                f"release_tag={predicate_asset.release_tag} field=subjects[].name expected=asset-name got={name!r}"
+            )
+        if name in result:
+            raise ValueError(
+                "freshness provenance malformed: "
+                f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+                f"release_tag={predicate_asset.release_tag} field=subjects duplicate={name}"
+            )
+        result[name] = subject
+    return result
+
+
+def require_provenance_field(predicate: dict, field: str, expected, predicate_asset: FreshnessAsset) -> None:
+    got = predicate.get(field)
+    if got != expected:
+        raise ValueError(
+            "freshness provenance mismatch: "
+            f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+            f"release_tag={predicate_asset.release_tag} field={field} expected={expected!r} got={got!r}"
+        )
+
+
+def require_subject_digest(subjects: dict[str, dict], name: str, asset: FreshnessAsset) -> None:
+    subject = subjects.get(name)
+    if subject is None:
+        raise ValueError(
+            "freshness provenance mismatch: "
+            f"role={asset.role} asset={name} url={asset.url} release_tag={asset.release_tag} "
+            f"field=subjects expected=present got=missing"
+        )
+    got = subject.get("sha256")
+    if got != asset.sha256:
+        raise ValueError(
+            "freshness provenance mismatch: "
+            f"role={asset.role} asset={name} url={asset.url} release_tag={asset.release_tag} "
+            f"field=subjects.sha256 expected={asset.sha256} got={got!r}"
+        )
+
+
+def subject_summary(subject: dict, *, url: str) -> dict:
+    return {
+        "name": subject["name"],
+        "kind": subject.get("kind"),
+        "sha256": subject["sha256"],
+        "size_bytes": subject.get("size_bytes"),
+        "url": url,
+    }
+
+
+def parse_attestation_bundle(text: str, *, attestation_asset: FreshnessAsset) -> dict:
+    statements = []
+    subjects = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            bundle = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "freshness attestation malformed: "
+                f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+                f"release_tag={attestation_asset.release_tag} field=jsonl line={line_number} "
+                f"expected=json-object got=json-error:{exc.msg}"
+            ) from exc
+        if not isinstance(bundle, dict):
+            raise ValueError(
+                "freshness attestation malformed: "
+                f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+                f"release_tag={attestation_asset.release_tag} field=jsonl line={line_number} expected=object"
+            )
+        statement = attestation_statement(bundle, attestation_asset=attestation_asset, line_number=line_number)
+        statements.append(statement)
+        subjects.extend(statement_subjects(statement, attestation_asset=attestation_asset))
+    if not statements:
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=jsonl expected=nonempty"
+        )
+    return {"statements": statements, "subjects": subjects}
+
+
+def attestation_statement(bundle: dict, *, attestation_asset: FreshnessAsset, line_number: int) -> dict:
+    envelope = bundle.get("dsseEnvelope")
+    if not isinstance(envelope, dict):
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=dsseEnvelope line={line_number} expected=object"
+        )
+    payload = envelope.get("payload")
+    if not isinstance(payload, str):
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=dsseEnvelope.payload line={line_number} expected=base64"
+        )
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+        statement = json.loads(decoded)
+    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=dsseEnvelope.payload line={line_number} "
+            "expected=in-toto-json"
+        ) from exc
+    if not isinstance(statement, dict):
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=statement line={line_number} expected=object"
+        )
+    workflow = statement.get("predicate", {}).get("buildDefinition", {}).get("externalParameters", {}).get("workflow", {})
+    if not isinstance(workflow, dict):
+        got = workflow
+    elif workflow.get("repository") != f"https://github.com/{public_release_root().repository}":
+        got = workflow.get("repository")
+        raise ValueError(
+            "freshness attestation mismatch: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=workflow.repository "
+            f"expected=https://github.com/{public_release_root().repository} got={got!r}"
+        )
+    elif workflow.get("ref") != f"refs/tags/{attestation_asset.release_tag}":
+        got = workflow.get("ref")
+        raise ValueError(
+            "freshness attestation mismatch: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=workflow.ref "
+            f"expected=refs/tags/{attestation_asset.release_tag} got={got!r}"
+        )
+    else:
+        return statement
+    raise ValueError(
+        "freshness attestation malformed: "
+        f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+        f"release_tag={attestation_asset.release_tag} field=workflow expected=object got={got!r}"
+    )
+
+
+def statement_subjects(statement: dict, *, attestation_asset: FreshnessAsset) -> list[dict]:
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list):
+        raise ValueError(
+            "freshness attestation malformed: "
+            f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+            f"release_tag={attestation_asset.release_tag} field=subject expected=list"
+        )
+    result = []
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            raise ValueError(
+                "freshness attestation malformed: "
+                f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+                f"release_tag={attestation_asset.release_tag} field=subject[] expected=object"
+            )
+        name = subject.get("name")
+        digest = subject.get("digest")
+        sha256 = digest.get("sha256") if isinstance(digest, dict) else None
+        if not isinstance(name, str) or SHA256_RE.fullmatch(str(sha256 or "")) is None:
+            raise ValueError(
+                "freshness attestation malformed: "
+                f"role={attestation_asset.role} asset={attestation_asset.name} url={attestation_asset.url} "
+                f"release_tag={attestation_asset.release_tag} field=subject[] expected=name+sha256"
+            )
+        result.append({"name": name, "sha256": sha256, "url": attestation_asset.url})
+    return result
+
+
+def require_attestation_subject(subjects: list[dict], predicate_asset: FreshnessAsset) -> None:
+    for subject in subjects:
+        if subject.get("name") == predicate_asset.name:
+            got = subject.get("sha256")
+            if got == predicate_asset.sha256:
+                return
+            raise ValueError(
+                "freshness attestation mismatch: "
+                f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+                f"release_tag={predicate_asset.release_tag} field=subject.sha256 "
+                f"expected={predicate_asset.sha256} got={got!r}"
+            )
+    raise ValueError(
+        "freshness attestation mismatch: "
+        f"role={predicate_asset.role} asset={predicate_asset.name} url={predicate_asset.url} "
+        f"release_tag={predicate_asset.release_tag} field=subject expected=present got=missing"
+    )
+
+
 def public_url_curl_args(curl_bin: str, url: str) -> list[str]:
     args = public_url_text_curl_args(curl_bin, url)
     return [
@@ -769,6 +1055,8 @@ def classify_freshness_exception(message: str) -> str:
         return "docs-drift"
     if "digest mismatch" in message or "checksum" in message:
         return "checksum-mismatch"
+    if "freshness provenance" in message or "freshness attestation" in message:
+        return "provenance-mismatch"
     if "URL mismatch" in message or "size mismatch" in message:
         return "provenance-mismatch"
     return "verifier-schema-drift"
@@ -1355,6 +1643,7 @@ def freshness_proof_json(
     *,
     tag_agreement,
     fixture_install_result,
+    provenance_result,
     command_inventory_summary,
     generated_at,
 ) -> dict:
@@ -1371,6 +1660,7 @@ def freshness_proof_json(
         guard_source_mode=resolution.guard_source_mode,
         tag_agreement=tag_agreement,
         fixture_install_result=fixture_install_result,
+        provenance_result=provenance_result,
     )
     errors = validate_freshness_proof(proof)
     if errors:
