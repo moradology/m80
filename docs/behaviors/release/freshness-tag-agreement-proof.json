@@ -1,4 +1,8 @@
 {
+  "command": "python3 scripts/release_freshness.py --docs-root . --json --proof-out docs/behaviors/release/freshness-tag-agreement-proof.json",
+  "exit_status": 0,
+  "stderr": "",
+  "stdout": "freshness proof written to docs/behaviors/release/freshness-tag-agreement-proof.json and JSON emitted; see artifact fields for checked URLs and tag agreement",
   "checked_urls": [
     {
       "asset_name": "m80-release-assets.json",
