@@ -3,6 +3,58 @@
 m80 runs one command inside a Firecracker microVM and returns stdout, stderr,
 and the exit code like a normal process.
 
+## Architecture
+
+A caller hands `m80 run` a command. The CLI drives the `m80-firecracker`
+orchestrator, which materializes a jail (cgroup-v2, namespaces, capabilities,
+seccomp — wrapping the operator-provided official jailer + Firecracker), boots
+a one-shot microVM from a read-only rootfs plus a per-VM overlay, and talks to
+`m80-guestd` (PID 1 inside the guest) over a vsock wire. The guest execs the
+process; stdout/stderr/exit flow back transparently. Egress and `/workspace`
+are policy-gated host-side. On stop, m80 extracts any writeback and tears the
+VM down without leaks.
+
+```mermaid
+flowchart TB
+    caller["caller / adapter<br/>(LLM tool-call mapper · CI runner · pool orchestrator)"]
+
+    subgraph host["host process — privilege acquired at startup, verified by m80-preflight"]
+        direction TB
+        cli["m80-cli · m80 run"]
+        orch["m80-firecracker<br/>lifecycle state machine · run-root layout"]
+        subgraph jailchain["jail materialization"]
+            direction LR
+            jailer["m80-jailer<br/>cgroup-v2 · ns · caps · seccomp"]
+            harden["m80-jailer-harden<br/>ambient caps · no_new_privs · sigmask"]
+            ofc["official jailer + firecracker<br/>(operator-provided)"]
+            jailer -.->|execs| harden -.->|execs| ofc
+        end
+        net["m80-net-outbound / m80-net-helper<br/>NAT · iptables · DNS"]
+        store["m80-storage / m80-image-store<br/>read-only rootfs + per-VM overlay (virtio-blk)"]
+        cli --> orch
+        orch --> jailchain
+        orch --> net
+        orch --> store
+    end
+
+    subgraph vm["Firecracker microVM — one per run"]
+        direction TB
+        guestd["m80-guestd · PID 1<br/>exec · PTY · file verbs"]
+        proc["wrapped process<br/>stdout · stderr · exit code"]
+        guestd --> proc
+    end
+
+    caller -->|request| cli
+    ofc ==>|"boot kernel + rootfs"| vm
+    orch <==>|"vsock wire — m80-vsock + m80-proto<br/>exec / read_file / write_file / stat / ..."| guestd
+    net -.->|"egress: none | outbound NAT"| vm
+    store -.->|"/workspace mount + writeback"| vm
+```
+
+Solid arrows are the request path; dashed arrows are policy-gated host→guest
+plumbing; the doubled arrow is the boot/exec data path. The crate layering
+behind these boxes is in [Workspace](#workspace) below.
+
 ## Quickstart
 
 On a Linux/KVM machine with `sudo`, `curl`, `python3`, `sha256sum`, `tar`, and
@@ -146,6 +198,29 @@ m80 supports three lifecycle modes; the adapter or caller chooses by request.
 The CLI facade is `m80 run`; direct snapshot restore and persistent-VM control
 are library/warm-owner surfaces, not `m80 run` compatibility flags:
 
+```mermaid
+flowchart LR
+    art["artifacts<br/>kernel · rootfs · m80-guestd"]
+
+    subgraph cold["cold run · ~1.1 s P50"]
+        direction LR
+        c1[boot kernel] --> c2[exec] --> c3[stop · writeback · delete]
+    end
+    subgraph warm["warm restore · ~270 ms P50"]
+        direction LR
+        w1[load snapshot] --> w2[exec] --> w3[stop]
+    end
+    subgraph pers["persistent VM"]
+        direction LR
+        p1[boot once] --> p2["exec → exec → exec<br/>shared workspace state"] --> p3[stop]
+    end
+
+    art --> cold
+    art --> pers
+    cold -. "capture snapshot" .-> snap[(snapshot)]
+    snap --> warm
+```
+
 - **Cold run** — clean state, highest latency, simplest isolation. ~1.1 s P50
   on minimal stripped images (kernel boot dominates; perf attack tracked in
   `docs/perf/cold-launch.md`).
@@ -218,12 +293,68 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 22 black-box crates:
+m80 is a Rust workspace split into 23 black-box crates. They stack in layers —
+binaries on top, the `m80-proto` wire format at the bottom — and
+`m80-firecracker` is the one crate that composes the whole foundation:
 
-**Foundation (10)** — privilege acquired at process startup and verified by
+```mermaid
+flowchart TB
+    subgraph bins["binaries"]
+        cli[m80-cli]
+        ib[m80-image-build]
+        nh[m80-net-helper]
+        gd[m80-guestd]
+        jh[m80-jailer-harden]
+    end
+    subgraph orch["orchestration"]
+        fc[m80-firecracker]
+    end
+    subgraph feat["feature"]
+        no[m80-net-outbound]
+        sn[m80-snapshot]
+        st[m80-snapshot-template]
+        ob[m80-observability]
+    end
+    subgraph found["foundation"]
+        ja[m80-jailer]
+        cg[m80-cgroup]
+        sg[m80-storage]
+        pf[m80-preflight]
+        is[m80-image-store]
+        im[m80-image-manifest]
+        fcc[m80-firecracker-client]
+        nm[m80-net-mode]
+        vs[m80-vsock]
+    end
+    proto[/"m80-proto · host↔guest wire format"/]
+
+    cli --> fc
+    fc -->|composes| feat
+    fc -->|composes| found
+    cg --> ja
+    ja --> is
+    pf --> cg
+    no --> nm
+    nh --> no
+    st --> sn
+    sn --> fcc
+    vs --> proto
+    ob --> proto
+    ib --> im
+    gd --> proto
+    ja -. "execs at runtime" .-> jh
+```
+
+Solid arrows are cargo dependencies; the dashed arrow is a runtime exec
+(`m80-jailer-harden` ships as a separate binary the jailer chain runs, not a
+linked crate). `m80-firecracker`'s "composes" edges stand in for a dependency
+on every foundation + feature crate. Test-only crates (`m80-test-helpers`,
+`m80-attack-runner`, `m80-guestd-malicious`) are omitted.
+
+**Foundation (11)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:
 - `m80-proto`, `m80-vsock` — host↔guest wire protocol + transport
-- `m80-image-manifest`, `m80-firecracker-client` — manifest schema, FC REST API
+- `m80-image-manifest`, `m80-image-store`, `m80-firecracker-client` — manifest schema, content-addressed artifact store, FC REST API
 - `m80-jailer`, `m80-jailer-harden` — jail materialization + inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) wrapping FC's official jailer
 - `m80-cgroup`, `m80-storage` — cgroup-v2 limits, overlay+pivot rootfs
 - `m80-preflight`, `m80-net-mode` — host capability checks, network mode types
