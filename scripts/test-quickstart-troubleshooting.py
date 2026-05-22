@@ -169,6 +169,12 @@ class QuickstartTroubleshootingTests(unittest.TestCase):
             report["manual_or_real_kvm_lanes"][0]["proof_artifact"],
             "docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
         )
+        self.assertEqual(report["command"], report["manual_or_real_kvm_lanes"][0]["command"])
+        self.assertEqual(report["exit_status"], 0)
+        self.assertEqual(report["resolved_tag"], "v0.2.11")
+        self.assertEqual(report["substrate"]["kind"], "linux-kvm-host")
+        self.assertEqual(report["stdout"], "hello\n")
+        self.assertIn("stderr", report)
 
     def test_coverage_check_rejects_stale_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
