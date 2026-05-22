@@ -147,8 +147,8 @@ operator action: retry-only, open/update one repair bead, block the next
 release/latest promotion, page a maintainer, or require manual operator
 confirmation. The verifier appends the class's cataloged `repair_command` to
 failure diagnostics. Add a new class by teaching the verifier to emit it and
-adding a single JSON policy row in the same diff; CI rejects verifier-emitted
-classes that are absent from the policy.
+adding a single JSON policy row in the same diff; CI rejects verifier-emitted classes
+that are absent from the policy.
 
 Current catalog commands:
 
