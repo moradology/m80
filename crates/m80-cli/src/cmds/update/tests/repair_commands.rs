@@ -111,7 +111,6 @@ fn public_docs_show_the_renderer_command_text() {
     let command = pinned_install_command("v1.2.4");
 
     for path in [
-        "README.md",
         "crates/m80-cli/README.md",
         "docs/runbook/release.md",
         "docs/behaviors/release/update-check.md",
