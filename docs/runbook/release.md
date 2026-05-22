@@ -16,7 +16,7 @@ M80_RELEASE_TAG=vX.Y.Z \
 ```
 
 The injected tag must be the exact `v<workspace package version>` tag. For the
-workspace package version `0.2.7`, the expected release tag is `v0.2.7`.
+workspace package version `0.2.8`, the expected release tag is `v0.2.8`.
 The injected source commit must be the exact commit used by the release build
 manifest and signed release integrity material.
 The injected Rust target triple must be one of the target triples recorded in

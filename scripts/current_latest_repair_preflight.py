@@ -39,7 +39,7 @@ class Diagnostic:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--release-tag", required=True, help="candidate stable tag, e.g. v0.2.7")
+    parser.add_argument("--release-tag", required=True, help="candidate stable tag, e.g. v0.2.8")
     parser.add_argument("--source-commit", help="candidate source commit; defaults to git rev-parse HEAD")
     parser.add_argument("--repo-root", default=Path.cwd(), type=Path)
     parser.add_argument("--workspace-version", help="test override for workspace package version")

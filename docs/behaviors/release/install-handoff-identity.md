@@ -31,8 +31,11 @@ identity matches the already verified release material:
 
 Any mismatch, malformed JSON, missing identity field, dev/local build identity,
 or failed identity command stops before `m80 install --bundle-url ...` runs.
-The installer prints the verified handoff binary version, source commit,
-protocol, and manifest schema before the final delegation.
+The final delegation uses the official release bundle URL, not the local
+downloaded bundle path, so the Rust installer still takes the official-release
+verification path and writes the installed release proof cache. The installer
+prints the verified handoff binary version, source commit, protocol, and
+manifest schema before the final delegation.
 
 Regression coverage lives in `scripts/test-release-bundle.py`:
 

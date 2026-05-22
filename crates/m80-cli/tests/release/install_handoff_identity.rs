@@ -14,6 +14,8 @@ fn install_handoff_identity_doc_names_contract_and_regressions() {
         "`target_triple` is recorded in the build manifest target triples",
         "`protocol_version` equals both bundle metadata protocol fields",
         "stops before `m80 install --bundle-url ...` runs",
+        "official release bundle URL",
+        "writes the installed release proof cache",
         "test_rendered_install_script_rejects_extracted_m80_source_commit_mismatch_before_install",
         "test_rendered_install_script_rejects_extracted_m80_release_tag_mismatch_before_install",
         "test_rendered_install_script_rejects_extracted_m80_target_mismatch_before_install",
@@ -39,7 +41,7 @@ fn installer_template_verifies_extracted_binary_before_delegation() {
         .find("verify_extracted_m80_identity \"$extract_dir/bin/m80\"")
         .expect("install.sh must verify extracted m80 identity");
     let delegation = install_sh
-        .find("\"$extract_dir/bin/m80\" install --bundle-url \"file://$bundle_path\" \"$@\"")
+        .find("\"$extract_dir/bin/m80\" install --bundle-url \"$selected_bundle_url\" \"$@\"")
         .expect("install.sh must delegate to extracted m80 install");
 
     assert!(

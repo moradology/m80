@@ -1098,4 +1098,4 @@ tar -xzf "$bundle_path" -C "$extract_dir" bin/m80
 chmod 0755 "$extract_dir/bin/m80"
 verify_extracted_m80_identity "$extract_dir/bin/m80"
 
-"$extract_dir/bin/m80" install --bundle-url "file://$bundle_path" "$@"
+"$extract_dir/bin/m80" install --bundle-url "$selected_bundle_url" "$@"
