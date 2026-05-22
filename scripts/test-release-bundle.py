@@ -1310,6 +1310,10 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Publish validated draft without latest promotion", workflow)
         self.assertIn("Mark validated release as latest", workflow)
         self.assertIn("python3 scripts/stable_release_channel.py", workflow)
+        self.assertIn("Write no-auth public-access release readiness receipt", workflow)
+        self.assertIn("scripts/release_public_access_receipt.py", workflow)
+        self.assertIn("GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN", workflow)
+        self.assertIn("release-readiness-public-access.json", workflow)
         self.assertLess(
             workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"'),
             workflow.index("Validate uploaded draft before latest promotion"),
@@ -1325,6 +1329,10 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertLess(
             workflow.index("Re-download and validate published release assets"),
             workflow.index("Upload publish decision receipt"),
+        )
+        self.assertLess(
+            workflow.index("Write no-auth public-access release readiness receipt"),
+            workflow.index("Mark validated release as latest"),
         )
         self.assertLess(
             workflow.index("Upload remote release asset inventory"),
@@ -1370,6 +1378,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("/tmp/m80-release-upload/m80-release-publication-plan.json", workflow)
         self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)
         self.assertIn("/tmp/m80-release-redownload/m80-release-remote-assets.json", workflow)
+        self.assertIn("m80-release-public-access-${{ github.run_id }}", workflow)
+        self.assertIn("/tmp/m80-release-redownload/release-readiness-public-access.json", workflow)
         self.assertIn("/tmp/m80-release-prepublish/**", workflow)
         for name in [
             BUNDLE_NAME,

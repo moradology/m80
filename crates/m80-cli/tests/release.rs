@@ -36,6 +36,9 @@ mod install_state_resolver;
 #[path = "release/publication_plan.rs"]
 mod publication_plan;
 
+#[path = "release/public_access_receipt.rs"]
+mod public_access_receipt;
+
 #[path = "release/release_tag_ordering.rs"]
 mod release_tag_ordering;
 

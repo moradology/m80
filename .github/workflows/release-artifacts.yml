@@ -539,6 +539,23 @@ jobs:
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
+      - name: Write no-auth public-access release readiness receipt
+        env:
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/m80-noauth-gh
+          mkdir -p /tmp/m80-noauth-gh
+          verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN \
+            scripts/release_public_access_receipt.py \
+              --repository "$GITHUB_REPOSITORY" \
+              --release-tag "$GITHUB_REF_NAME" \
+              --commit-sha "$RELEASE_COMMIT" \
+              --out /tmp/m80-release-redownload/release-readiness-public-access.json \
+              --verification-time "$verification_time" \
+              --write
+
       - name: Upload publish decision receipt
         uses: actions/upload-artifact@v4
         with:
@@ -558,6 +575,13 @@ jobs:
         with:
           name: m80-release-remote-assets-${{ github.run_id }}
           path: /tmp/m80-release-redownload/m80-release-remote-assets.json
+          if-no-files-found: error
+
+      - name: Upload public-access release readiness receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-public-access-${{ github.run_id }}
+          path: /tmp/m80-release-redownload/release-readiness-public-access.json
           if-no-files-found: error
 
       - name: Mark validated release as latest

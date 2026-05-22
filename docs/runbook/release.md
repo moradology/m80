@@ -575,6 +575,17 @@ redownloads fail before any later latest-promotion gate can trust the remote
 state. The behavior contract lives in
 `docs/behaviors/release/remote-asset-inventory.md`.
 
+Before latest promotion, the publish job also writes
+`release-readiness-public-access.json` with
+`scripts/release_public_access_receipt.py` from an empty `GH_CONFIG_DIR` and
+with `GH_TOKEN`/`GITHUB_TOKEN` unset. This is the reusable no-auth proof that
+`/releases/latest/download/install.sh` and the pinned installer URL resolve to
+the same stable tag, that every public installer asset is reachable from the
+public GitHub release, and that the downloaded bytes match the release
+integrity/build metadata. It is required before latest promotion; fixture receipts cannot satisfy this real
+public-access lane. The behavior contract lives in
+`docs/behaviors/release/public-access-receipt.md`.
+
 ## Quickstart Proof Artifact
 
 The release workflow writes `m80-quickstart-proof-hostless.json` into the
