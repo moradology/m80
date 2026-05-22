@@ -26,5 +26,6 @@ The receipt is valid only when:
   and substrate fields required by verified-close policy.
 
 Fixture receipts are useful for verifier tests, but they do not satisfy the
-real lane. Latest promotion requires a non-fixture receipt generated from the
-public `moradology/m80` GitHub release.
+real lane. A latest promotion is not complete until a non-fixture receipt has
+been generated from the public `moradology/m80` GitHub release after GitHub
+latest resolves to the promoted tag.

@@ -27,8 +27,8 @@ fn public_access_receipt_doc_workflow_and_tests_pin_no_auth_latest_gate() {
     assert!(
         runbook.contains("release-readiness-public-access.json")
             && runbook.contains("fixture receipts cannot satisfy")
-            && runbook.contains("before latest promotion"),
-        "release runbook must require the no-auth public-access receipt before latest promotion"
+            && runbook.contains("after latest promotion"),
+        "release runbook must require the no-auth public-access receipt after latest promotion"
     );
     assert!(
         workflow.contains("Write no-auth public-access release readiness receipt")
@@ -42,10 +42,10 @@ fn public_access_receipt_doc_workflow_and_tests_pin_no_auth_latest_gate() {
         workflow
             .find("Write no-auth public-access release readiness receipt")
             .expect("public-access receipt step missing")
-            < workflow
+            > workflow
                 .find("Mark validated release as latest")
                 .expect("latest promotion step missing"),
-        "public-access receipt must be generated before latest promotion"
+        "public-access receipt must be generated after latest promotion"
     );
     assert!(
         ci.contains("scripts/release_public_access_receipt.py")

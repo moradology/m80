@@ -16,7 +16,7 @@ M80_RELEASE_TAG=vX.Y.Z \
 ```
 
 The injected tag must be the exact `v<workspace package version>` tag. For the
-workspace package version `0.2.8`, the expected release tag is `v0.2.8`.
+workspace package version `0.2.9`, the expected release tag is `v0.2.9`.
 The injected source commit must be the exact commit used by the release build
 manifest and signed release integrity material.
 The injected Rust target triple must be one of the target triples recorded in
@@ -575,14 +575,15 @@ redownloads fail before any later latest-promotion gate can trust the remote
 state. The behavior contract lives in
 `docs/behaviors/release/remote-asset-inventory.md`.
 
-Before latest promotion, the publish job also writes
+After latest promotion, the publish job also writes
 `release-readiness-public-access.json` with
 `scripts/release_public_access_receipt.py` from an empty `GH_CONFIG_DIR` and
 with `GH_TOKEN`/`GITHUB_TOKEN` unset. This is the reusable no-auth proof that
 `/releases/latest/download/install.sh` and the pinned installer URL resolve to
 the same stable tag, that every public installer asset is reachable from the
 public GitHub release, and that the downloaded bytes match the release
-integrity/build metadata. It is required before latest promotion; fixture receipts cannot satisfy this real
+integrity/build metadata. It is required after latest promotion because the
+receipt verifies `/releases/latest/download/install.sh`; fixture receipts cannot satisfy this real
 public-access lane. The behavior contract lives in
 `docs/behaviors/release/public-access-receipt.md`.
 

@@ -539,6 +539,24 @@ jobs:
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
+      - name: Mark validated release as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publication_action="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          PY
+          )"
+          if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
+            echo "no latest promotion needed for action: $publication_action"
+            exit 0
+          fi
+          gh release edit "$GITHUB_REF_NAME" --latest --verify-tag
+
       - name: Write no-auth public-access release readiness receipt
         env:
           RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
@@ -583,24 +601,6 @@ jobs:
           name: m80-release-public-access-${{ github.run_id }}
           path: /tmp/m80-release-redownload/release-readiness-public-access.json
           if-no-files-found: error
-
-      - name: Mark validated release as latest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          publication_action="$(
-            python3 - <<'PY'
-          import json
-          from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
-          PY
-          )"
-          if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
-            echo "no latest promotion needed for action: $publication_action"
-            exit 0
-          fi
-          gh release edit "$GITHUB_REF_NAME" --latest --verify-tag
 
       - name: Upload failed publish diagnostics
         if: failure()
