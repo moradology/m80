@@ -3575,40 +3575,114 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"release integrity public SHA256SUMS hash mismatch for {INSTALL_NAME}", result.stderr)
 
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_unsupported_schema(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            lines[0] = "schema_version\t999"
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity unsupported bootstrap selector schema_version",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_missing_tuple_rows(self) -> None:
+        result = verify_signed_bootstrap_selector_mutation(lambda lines: lines[:3])
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector missing tuple rows",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_duplicate_tuple(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            lines.append(lines[3])
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector duplicate tuple: linux/x86_64/minimal",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_extra_tuple(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            row = lines[3].split("\t")
+            row[3] = "debug"
+            lines.append("\t".join(row))
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector extra tuple(s): linux/x86_64/debug",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_stale_tag(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            lines[1] = "release_tag\tv9.9.9"
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector release_tag mismatch",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_stale_digest(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            row = lines[3].split("\t")
+            row[6] = "0" * 64
+            lines[3] = "\t".join(row)
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector bundle_sha256 mismatch for linux/x86_64/minimal",
+        )
+
     def test_release_integrity_material_rejects_signed_bootstrap_selector_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            package_fixture(root)
-            lines = bootstrap_selector_lines(root / "out")
+        def mutate(lines: list[str]) -> None:
             row = lines[3].split("\t")
             row[7] = "999"
             lines[3] = "\t".join(row)
-            rewrite_bootstrap_selector(root / "out", lines)
-            material = write_integrity_material(root / "out")
 
-            result = run_verify_integrity(material, check=False)
+        result = verify_signed_bootstrap_selector_mutation(mutate)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release integrity bootstrap selector size_bytes mismatch", result.stderr)
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector size_bytes mismatch",
+        )
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_row_shape_mismatch(self) -> None:
+        def mutate(lines: list[str]) -> None:
+            lines[3] = "\t".join(lines[3].split("\t")[:-1])
+
+        result = verify_signed_bootstrap_selector_mutation(mutate)
+
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector row shape invalid",
+        )
 
     def test_release_integrity_material_rejects_signed_bootstrap_selector_shell_metacharacters(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            package_fixture(root)
-            lines = bootstrap_selector_lines(root / "out")
+        def mutate(lines: list[str]) -> None:
             row = lines[3].split("\t")
             row[5] = "https://example.invalid/$(id)"
             lines[3] = "\t".join(row)
-            rewrite_bootstrap_selector(root / "out", lines)
-            material = write_integrity_material(root / "out")
 
-            result = run_verify_integrity(material, check=False)
+        result = verify_signed_bootstrap_selector_mutation(mutate)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn(
-                "release integrity bootstrap selector bundle_url contains non-shell-safe characters",
-                result.stderr,
-            )
+        self.assert_signed_selector_semantic_failure(
+            result,
+            "release integrity bootstrap selector bundle_url contains non-shell-safe characters",
+        )
+
+    def assert_signed_selector_semantic_failure(self, result: subprocess.CompletedProcess[str], expected: str) -> None:
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(expected, result.stderr)
+        self.assertNotIn(f"release integrity sha256 mismatch for {BOOTSTRAP_SELECTOR_NAME}", result.stderr)
 
     def test_release_integrity_material_rejects_unsupported_verifier_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4210,6 +4284,19 @@ def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:
     selector.write_text("\n".join(lines) + "\n")
     write_sha256_sidecar(out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256", selector, BOOTSTRAP_SELECTOR_NAME)
     write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
+
+
+def verify_signed_bootstrap_selector_mutation(mutate) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        package_fixture(root)
+        lines = bootstrap_selector_lines(root / "out")
+        mutated = mutate(lines)
+        if mutated is not None:
+            lines = mutated
+        rewrite_bootstrap_selector(root / "out", lines)
+        material = write_integrity_material(root / "out")
+        return run_verify_integrity(material, check=False)
 
 
 def rewrite_bootstrap_selector_asset_field(out_dir: Path, field: str, value: str | None) -> None:

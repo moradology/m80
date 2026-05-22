@@ -214,6 +214,13 @@ dist directory. It fails closed when:
 - the bootstrap selector names a different release tag or drifts from the
   asset index tuple map.
 
+The signed-material bootstrap selector negative matrix covers unsupported
+selector schema, missing tuple rows, duplicate tuple, extra tuple, stale
+release tag, stale bundle digest, stale size, row-shape mismatch, and
+non-shell-safe selector token characters. Each case rewrites the selector
+sidecar and then regenerates `m80-release-integrity.json`, so failures must
+come from semantic selector verification rather than a stale subject digest.
+
 Installer and bootstrapper verification must run this contract before
 extracting a bundle, running `install.sh`, or writing active install state. A
 checksum-only verifier may run earlier, but it is not a replacement for this
@@ -367,7 +374,14 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_tampered_bundle_hash`;
 - `test_release_integrity_material_rejects_tampered_install_hash`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_unsupported_schema`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_missing_tuple_rows`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_duplicate_tuple`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_extra_tuple`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_stale_tag`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_stale_digest`;
 - `test_release_integrity_material_rejects_signed_bootstrap_selector_drift`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_row_shape_mismatch`;
 - `test_release_integrity_material_rejects_signed_bootstrap_selector_shell_metacharacters`;
 - `test_release_integrity_material_rejects_unsupported_verifier_version`;
 - `test_release_integrity_material_rejects_missing_attestation_metadata`;
