@@ -7,16 +7,18 @@ use m80_image_manifest::{
     HostLaunchMaterialName, InstallProvenance, InstallProvenanceArtifact, InstallProvenanceRewrite,
     InstallProvenanceTransform,
 };
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::super::cmd_update;
+use super::http_fixture::HttpFixture;
+use super::proof_cache_fixture::write_proof_cache;
 use crate::args::UpdateArgs;
 
 #[test]
 fn update_check_does_not_write_files_on_healthy_latest_status_path() {
     let fixture = HealthyInstallFixture::new();
     fixture.write_installed_release("v1.2.3");
+    fixture.write_no_write_sentinels("v1.2.3");
     let latest_status = fixture.temp.path().join("latest-status.json");
     fs::write(
         &latest_status,
@@ -25,22 +27,84 @@ fn update_check_does_not_write_files_on_healthy_latest_status_path() {
     .expect("write latest status fixture");
     let before = snapshot_tree(fixture.temp.path());
 
+    let status = cmd_update(fixture.update_args(Some(latest_status), None), false)
+        .expect("update check should run");
+
+    assert_eq!(status, 0);
+    assert_eq!(snapshot_tree(fixture.temp.path()), before);
+}
+
+#[test]
+fn update_check_fetches_only_latest_status_and_never_bundle_urls() {
+    let fixture = HealthyInstallFixture::new();
+    fixture.write_installed_release("v1.2.3");
+    fixture.write_no_write_sentinels("v1.2.3");
+    let server = HttpFixture::new();
+    let status_body = status_artifact_with_bundle_urls(
+        "v1.2.4",
+        &server.url("/latest-bundle.tar.gz"),
+        &server.url("/release-bundle.tar.gz"),
+    );
+    server.add_ok("/latest-status.json", status_body.into_bytes());
+    let before = snapshot_tree(fixture.temp.path());
+
     let status = cmd_update(
-        UpdateArgs {
-            check: true,
-            install_root: fixture.install_root(),
-            profile: None,
-            latest_status: Some(latest_status),
-            latest_status_url: None,
-            config_path: Some(fixture.config_path()),
-            profile_dir: Some(fixture.profile_dir()),
-        },
+        fixture.update_args(None, Some(server.url("/latest-status.json"))),
         false,
     )
     .expect("update check should run");
 
     assert_eq!(status, 0);
     assert_eq!(snapshot_tree(fixture.temp.path()), before);
+    assert_eq!(server.requests(), vec!["/latest-status.json"]);
+}
+
+#[test]
+fn update_output_exposes_remote_latest_status_source() {
+    let source = "http://127.0.0.1/latest-status.json".to_owned();
+    let metadata = crate::release_freshness::read_freshness_status_artifact_json(
+        &status_artifact_with_bundle_urls(
+            "v1.2.4",
+            "http://127.0.0.1/latest-bundle.tar.gz",
+            "http://127.0.0.1/release-bundle.tar.gz",
+        ),
+    )
+    .expect("parse status artifact");
+    let output = super::super::check_output(
+        &super::active_report("v1.2.3"),
+        super::super::LatestStatusInput::Available {
+            source: source.clone(),
+            metadata,
+        },
+        crate::release_freshness::UnixSeconds::new(super::timestamp("2026-05-21T12:30:00Z")),
+    );
+
+    assert_eq!(output.latest_status_source, source);
+    assert_eq!(output.latest_status_error, None);
+    let human = super::super::render_human(&output);
+    assert!(human.contains(&format!("latest_status_source={source}\n")));
+    assert!(human.contains("latest_status_error=<unavailable>\n"));
+    let json: serde_json::Value =
+        serde_json::from_str(&crate::json::to_pretty(&output)).expect("update JSON parses");
+    assert_eq!(json["data"]["latest_status_source"], source);
+    assert!(json["data"]["latest_status_error"].is_null());
+}
+
+fn status_artifact_with_bundle_urls(tag: &str, latest_url: &str, release_url: &str) -> String {
+    format!(
+        r#"{{
+          "schema_version":1,
+          "freshness_network_bounded":true,
+          "repository":"moradology/m80",
+          "resolved_tag":"{tag}",
+          "published_at":"2026-05-21T12:00:00Z",
+          "fetch_policy":{{"connect_timeout_seconds":10,"max_time_seconds":120,"retry_count":2,"retry_delay_seconds":1}},
+          "checked_urls":[{{"role":"latest-bundle","url":"{latest_url}","release_tag":"latest","asset_name":"m80-linux-x86_64.tar.gz","sources":["release-url-contract:latest-bundle"],"size_bytes":123,"sha256":"{}"}}],
+          "public_assets":[{{"name":"m80-linux-x86_64.tar.gz","role":"bundle","url":"{release_url}","release_tag":"{tag}","size_bytes":123,"sha256":"{}"}}]
+        }}"#,
+        "1".repeat(64),
+        "2".repeat(64),
+    )
 }
 
 struct HealthyInstallFixture {
@@ -89,6 +153,26 @@ impl HealthyInstallFixture {
         self.temp.path().join("config.toml")
     }
 
+    fn bundle_cache_path(&self) -> PathBuf {
+        self.temp.path().join("bundle-cache")
+    }
+
+    fn update_args(
+        &self,
+        latest_status: Option<PathBuf>,
+        latest_status_url: Option<String>,
+    ) -> UpdateArgs {
+        UpdateArgs {
+            check: true,
+            install_root: self.install_root(),
+            profile: None,
+            latest_status,
+            latest_status_url,
+            config_path: Some(self.config_path()),
+            profile_dir: Some(self.profile_dir()),
+        }
+    }
+
     fn write_installed_release(&self, tag: &str) {
         self.write_installed_profile(tag);
         self.write_install_metadata(tag);
@@ -97,6 +181,24 @@ impl HealthyInstallFixture {
         let version_dir = self.install_root().join("versions").join(tag);
         symlink(version_dir, self.install_root().join("active"))
             .expect("point active at fixture release");
+    }
+
+    fn write_no_write_sentinels(&self, tag: &str) {
+        fs::write(self.install_root().join("operator-sentinel"), "keep\n")
+            .expect("write install-root sentinel");
+        fs::write(self.profile_dir().join("operator-sentinel"), "keep\n")
+            .expect("write profile-dir sentinel");
+        fs::write(
+            self.install_root()
+                .join("versions")
+                .join(tag)
+                .join("artifacts/release-proof-cache/operator-sentinel"),
+            "keep\n",
+        )
+        .expect("write proof-cache sentinel");
+        fs::create_dir_all(self.bundle_cache_path()).expect("create bundle-cache sentinel dir");
+        fs::write(self.bundle_cache_path().join("operator-sentinel"), "keep\n")
+            .expect("write bundle-cache sentinel");
     }
 
     fn write_installed_profile(&self, tag: &str) {
@@ -259,7 +361,11 @@ fn snapshot_tree_inner(root: &Path, dir: &Path, entries: &mut Vec<String>) {
                 fs::read_link(&path).expect("read symlink target").display()
             ));
         } else if metadata.is_dir() {
-            entries.push(format!("D\t{}", relative.display()));
+            entries.push(format!(
+                "D\t{}\t{}",
+                relative.display(),
+                metadata.permissions().mode() & 0o777
+            ));
             snapshot_tree_inner(root, &path, entries);
         } else {
             let bytes = fs::read(&path).expect("read snapshot file");
@@ -308,148 +414,6 @@ fn host_material(name: HostLaunchMaterialName, path: &str) -> HostLaunchMaterial
     }
 }
 
-fn write_proof_cache(cache_dir: &Path, tag: &str) {
-    fs::create_dir_all(cache_dir).expect("create proof-cache dir");
-    fs::set_permissions(cache_dir, fs::Permissions::from_mode(0o755))
-        .expect("set proof-cache dir mode");
-    let integrity = proof_file(cache_dir, "m80-release-integrity.json", b"integrity\n");
-    let attestation = proof_file(
-        cache_dir,
-        "m80-release-integrity.attestation.jsonl",
-        b"attestation\n",
-    );
-    let metadata = proof_file(cache_dir, "m80-release-attestation.json", b"metadata\n");
-    let asset_index = proof_file(cache_dir, "m80-release-assets.json", b"asset-index\n");
-    let public_sha256s = proof_file(cache_dir, "SHA256SUMS", b"sha256s\n");
-    let sidecar = proof_file(cache_dir, "m80-linux-x86_64.tar.gz.sha256", b"abc bundle\n");
-    let trust = proof_file(cache_dir, "m80-release-trust-policy.json", b"trust\n");
-    let payload = TestProofPayload {
-        release_tag: tag.to_owned(),
-        repository: "moradology/m80".to_owned(),
-        target: "linux-x86_64".to_owned(),
-        integrity_predicate: integrity,
-        attestation_bundle: attestation,
-        attestation_metadata: TestAttestationMetadataRef {
-            file: metadata,
-            signer_identity:
-                "https://github.com/moradology/m80/.github/workflows/release.yml@refs/tags/v1.2.3"
-                    .to_owned(),
-            issuer: "https://token.actions.githubusercontent.com".to_owned(),
-            keyset_id: "keyset".to_owned(),
-            predicate_sha256: "c".repeat(64),
-        },
-        asset_index,
-        public_sha256s,
-        checksum_sidecars: vec![TestChecksumSidecarRef {
-            path: sidecar.path,
-            sha256: sidecar.sha256,
-            subject: "bundle".to_owned(),
-        }],
-        trust_policy: TestTrustPolicyRef {
-            path: trust.path,
-            identity: "repository=moradology/m80".to_owned(),
-            sha256: trust.sha256,
-        },
-        verifier_versions: TestVerifierVersions {
-            m80_version: tag.to_owned(),
-            gh_version: "gh version 2.0.0".to_owned(),
-            release_integrity_schema_version: 1,
-            asset_index_schema_version: 1,
-        },
-    };
-    let manifest = TestProofManifest {
-        schema_version: 1,
-        manifest_digest: sha256_json(&payload),
-        payload,
-    };
-    fs::write(
-        cache_dir.join("manifest.json"),
-        serde_json::to_vec_pretty(&manifest).expect("encode proof-cache manifest"),
-    )
-    .expect("write proof-cache manifest");
-    fs::set_permissions(
-        cache_dir.join("manifest.json"),
-        fs::Permissions::from_mode(0o644),
-    )
-    .expect("set proof-cache manifest mode");
-}
-
-fn proof_file(cache_dir: &Path, name: &str, bytes: &[u8]) -> TestProofFile {
-    let path = cache_dir.join(name);
-    fs::write(&path, bytes).expect("write proof-cache file");
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
-        .expect("set proof-cache file mode");
-    TestProofFile {
-        path: name.to_owned(),
-        sha256: sha256_bytes(bytes),
-        size_bytes: bytes.len() as u64,
-    }
-}
-
-fn sha256_json(value: &impl Serialize) -> String {
-    sha256_bytes(&serde_json::to_vec(value).expect("encode proof-cache digest payload"))
-}
-
 fn sha256_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
-}
-
-#[derive(Serialize)]
-struct TestProofManifest {
-    schema_version: u32,
-    manifest_digest: String,
-    payload: TestProofPayload,
-}
-
-#[derive(Serialize)]
-struct TestProofPayload {
-    release_tag: String,
-    repository: String,
-    target: String,
-    integrity_predicate: TestProofFile,
-    attestation_bundle: TestProofFile,
-    attestation_metadata: TestAttestationMetadataRef,
-    asset_index: TestProofFile,
-    public_sha256s: TestProofFile,
-    checksum_sidecars: Vec<TestChecksumSidecarRef>,
-    trust_policy: TestTrustPolicyRef,
-    verifier_versions: TestVerifierVersions,
-}
-
-#[derive(Serialize)]
-struct TestProofFile {
-    path: String,
-    sha256: String,
-    size_bytes: u64,
-}
-
-#[derive(Serialize)]
-struct TestAttestationMetadataRef {
-    file: TestProofFile,
-    signer_identity: String,
-    issuer: String,
-    keyset_id: String,
-    predicate_sha256: String,
-}
-
-#[derive(Serialize)]
-struct TestChecksumSidecarRef {
-    path: String,
-    sha256: String,
-    subject: String,
-}
-
-#[derive(Serialize)]
-struct TestTrustPolicyRef {
-    path: String,
-    identity: String,
-    sha256: String,
-}
-
-#[derive(Serialize)]
-struct TestVerifierVersions {
-    m80_version: String,
-    gh_version: String,
-    release_integrity_schema_version: u32,
-    asset_index_schema_version: u32,
 }

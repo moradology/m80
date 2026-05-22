@@ -11,7 +11,9 @@ use crate::install_state::{
 };
 use crate::release_freshness::read_freshness_status_artifact_json;
 
+mod http_fixture;
 mod no_write;
+mod proof_cache_fixture;
 
 #[test]
 fn update_check_reports_current_release_with_cached_proof_age() {

@@ -1,6 +1,6 @@
 # Update Check
 
-Behavior bead: `m80-o3uh9.16.18.1`.
+Behavior beads: `m80-o3uh9.16.18.1`, `m80-o3uh9.16.9.4`.
 
 `m80 update --check` is the read-only update surface. It reads local install
 state, the installed proof-cache summary, and bounded latest freshness metadata,
@@ -21,6 +21,10 @@ The command never flips `<install-root>/active`, never rewrites profiles, never 
 and never refreshes the proof cache. If no freshness status
 artifact can be fetched, the result is `unknown_offline`; the command does not
 guess that the active release is current. Malformed freshness metadata fails closed.
+The only permitted remote read in check mode is the selected latest-status
+artifact (`--latest-status-url` or the default public freshness proof asset);
+bundle, selector, checksum, proof, and install assets are apply/install inputs,
+not check inputs.
 
 JSON output uses schema `1` and includes `active_tag`, `latest_stable_tag`,
 `safety_floor.status`, `proof_cache_status`, `proof_cache_age_seconds`,
