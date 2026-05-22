@@ -136,6 +136,13 @@ If install, preflight, or the first `m80 run -- echo hello` fails, capture
 install-state problems before you debug a launch: missing active pointer, stale
 profile target, explicit profile override, local-dev profile, missing/stale
 install metadata, and tampered proof cache.
+Use the stable
+[`quickstart troubleshooting matrix`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#network)
+IDs in support reports; common anchors include
+[`missing-local-tool`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#missing-local-tool),
+[`stale-profile`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#stale-profile),
+and
+[`process-smoke-failed`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#process-smoke-failed).
 Re-running install with a known older stable release is refused by default
 before staging or profile writes; the diagnostic names the active tag, requested
 tag, `downgrade_refused`, and a pinned reinstall command for the active release.

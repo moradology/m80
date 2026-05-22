@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "stable_id_policy": "Quickstart troubleshooting IDs are stable support labels. Rename only with a replacement row and a release-note migration.",
+  "rows": [
+    {
+      "id": "network",
+      "title": "Network, DNS, or HTTP failure",
+      "owner_action": "operator",
+      "action_kind": "retry",
+      "diagnostic_command": "curl -I https://github.com/moradology/m80/releases/latest",
+      "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "scripts/test-stable-latest-bootstrap.py::test_rejects_http_failure_before_handoff_json"
+        },
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_download_failures_are_diagnosable_before_extract"
+        }
+      ],
+      "verifier_codes": {
+        "asset_index": [
+          "download_failed",
+          "download_spawn_failed",
+          "local_read_failed",
+          "redirect_unsupported",
+          "unsupported_url"
+        ],
+        "error_envelope": [
+          "release_material_fetch"
+        ]
+      }
+    },
+    {
+      "id": "github-auth-rate-limit",
+      "title": "GitHub auth, verifier, or rate-limit failure",
+      "owner_action": "operator",
+      "action_kind": "install",
+      "diagnostic_command": "gh auth status",
+      "repair_command": "sudo apt-get install gh",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl"
+        },
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/release/release-integrity-material.md"
+        }
+      ],
+      "verifier_codes": {
+        "error_envelope": [
+          "release_material_attestation"
+        ]
+      }
+    },
+    {
+      "id": "missing-asset",
+      "title": "Required public release asset is missing",
+      "owner_action": "maintainer",
+      "action_kind": "report-release-bug",
+      "diagnostic_command": "m80 update --check",
+      "repair_command": "gh issue create --repo moradology/m80",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-public-access-receipt.py::test_missing_public_asset_fails"
+        },
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_release_upload_manifest_rejects_missing_public_file"
+        }
+      ],
+      "verifier_codes": {
+        "asset_index": [
+          "missing_default_bundle",
+          "missing_field"
+        ]
+      }
+    },
+    {
+      "id": "checksum-provenance-mismatch",
+      "title": "Checksum, provenance, or release-integrity mismatch",
+      "owner_action": "maintainer",
+      "action_kind": "report-release-bug",
+      "diagnostic_command": "m80 install-status",
+      "repair_command": "gh issue create --repo moradology/m80",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "scripts/test-install-handoff.py::test_rejects_tampered_install_before_sudo_handoff"
+        },
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_human_release_dist_verifier_rejects_tampered_install_sh"
+        }
+      ],
+      "verifier_codes": {
+        "asset_index": [
+          "asset_release_tag_mismatch",
+          "binary_tag_mismatch",
+          "checksum_invalid",
+          "checksum_mismatch",
+          "duplicate_default_bundle",
+          "index_tag_mismatch",
+          "invalid_field",
+          "invalid_json",
+          "stale_asset_index",
+          "target_tuple_mismatch",
+          "unsupported_schema",
+          "verified_index_invalid"
+        ],
+        "error_envelope": [
+          "install_no_write_rollback",
+          "release_material_digest",
+          "release_material_stale"
+        ],
+        "install_state": [
+          "install_metadata_invalid",
+          "install_metadata_missing",
+          "install_metadata_stale",
+          "proof_cache_invalid",
+          "proof_cache_missing",
+          "proof_cache_stale"
+        ]
+      }
+    },
+    {
+      "id": "unsupported-tuple",
+      "title": "Unsupported Linux or architecture tuple",
+      "owner_action": "operator",
+      "action_kind": "report-release-bug",
+      "diagnostic_command": "uname -s && uname -m",
+      "repair_command": "gh issue create --repo moradology/m80",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "crates/m80-cli/src/release_asset_index/tests.rs::wrong_architecture_diagnostic_names_requested_and_available_tuple"
+        },
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/release/asset-index.md"
+        }
+      ],
+      "verifier_codes": {
+        "asset_index": [
+          "dev_build_refused",
+          "missing_image_kind",
+          "unsupported_host_tuple"
+        ]
+      }
+    },
+    {
+      "id": "missing-local-tool",
+      "title": "Required local installer tool is missing",
+      "owner_action": "operator",
+      "action_kind": "install",
+      "diagnostic_command": "command -v curl python3 sha256sum tar mktemp chmod gh",
+      "repair_command": "sudo apt-get install curl python3 coreutils tar gh",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl"
+        },
+        {
+          "kind": "source",
+          "ref": "scripts/install.sh"
+        }
+      ],
+      "verifier_codes": {}
+    },
+    {
+      "id": "kvm-unavailable",
+      "title": "KVM device is missing or not writable",
+      "owner_action": "operator",
+      "action_kind": "install",
+      "diagnostic_command": "m80 preflight",
+      "repair_command": "sudo usermod -aG kvm $USER",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_missing_kvm"
+        },
+        {
+          "kind": "test",
+          "ref": "crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_bad_kvm_permissions"
+        }
+      ],
+      "verifier_codes": {
+        "host_prerequisite": [
+          "kvm_not_writable",
+          "kvm_unavailable"
+        ]
+      }
+    },
+    {
+      "id": "host-prerequisite",
+      "title": "Firecracker, jailer, seccomp, cgroup, kernel, or host TCB prerequisite failed",
+      "owner_action": "operator",
+      "action_kind": "install",
+      "diagnostic_command": "m80 preflight",
+      "repair_command": "m80 preflight",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "crates/m80-preflight/tests/host_prerequisite_result.rs::diagnostic_maps_missing_firecracker_to_policy_linked_repair"
+        },
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/release/host-prerequisite-policy.md"
+        }
+      ],
+      "verifier_codes": {
+        "host_prerequisite": [
+          "binary_hash_mismatch",
+          "bridge_netfilter_unavailable",
+          "bridge_nf_call_iptables_disabled",
+          "cgroup_v2_unavailable",
+          "cpu_vulnerability_detected",
+          "firecracker_binary_not_found",
+          "firecracker_cve_floor_violation",
+          "firecracker_seccomp_filter_empty",
+          "firecracker_seccomp_filter_not_found",
+          "firecracker_version_command_failed",
+          "firecracker_version_mismatch",
+          "firecracker_version_output_malformed",
+          "host_binary_duplicate",
+          "host_binary_manifest",
+          "host_binary_missing",
+          "host_binary_path_mismatch",
+          "host_binary_permission",
+          "host_binary_version_command_failed",
+          "host_binary_version_mismatch",
+          "host_kernel_unsupported",
+          "host_launch_material_duplicate",
+          "host_launch_material_hash_mismatch",
+          "host_launch_material_missing",
+          "host_launch_material_path_mismatch",
+          "host_launch_material_permission",
+          "host_launch_material_version_mismatch",
+          "invalid_cgroup_mode",
+          "invalid_expected_concurrent_vms",
+          "invalid_jail_identity",
+          "invalid_nf_conntrack_max",
+          "jailer_binary_not_found",
+          "jailer_harden_binary_not_found",
+          "jail_identity_unavailable",
+          "jailer_version_command_failed",
+          "jailer_version_mismatch",
+          "jailer_version_output_malformed",
+          "kernel_modules_missing",
+          "kvm_cpu_extension_missing",
+          "net_helper_binary_not_found",
+          "nf_conntrack_capacity_too_low",
+          "nf_conntrack_unavailable",
+          "non_absolute_path",
+          "path_io",
+          "system_io",
+          "tun_unavailable",
+          "unsupported_host_platform",
+          "vsock_unavailable"
+        ]
+      }
+    },
+    {
+      "id": "privilege-denied",
+      "title": "Privilege or capability requirement is not met",
+      "owner_action": "operator",
+      "action_kind": "install",
+      "diagnostic_command": "m80 preflight",
+      "repair_command": "sudo m80 preflight",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "crates/m80-preflight/src/substrate.rs::substrate_failures_carry_operator_remediation_hints"
+        },
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/preflight/privilege.md"
+        }
+      ],
+      "verifier_codes": {
+        "host_prerequisite": [
+          "capability_read",
+          "privilege_unavailable"
+        ]
+      }
+    },
+    {
+      "id": "stale-profile",
+      "title": "Installed profile, active pointer, or local install state is stale",
+      "owner_action": "operator",
+      "action_kind": "reinstall",
+      "diagnostic_command": "m80 install-status",
+      "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh",
+      "source_mappings": [
+        {
+          "kind": "test",
+          "ref": "crates/m80-cli/src/cmds/install_status/tests.rs::status_matrix_stale_profile_target"
+        },
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/release/install-state.md"
+        }
+      ],
+      "verifier_codes": {
+        "install_state": [
+          "active_pointer_not_version_dir",
+          "active_pointer_outside_install_root",
+          "active_pointer_traversal",
+          "active_pointer_unreadable",
+          "config_load_failed",
+          "dangling_active_pointer",
+          "default_profile_missing",
+          "explicit_profile_override",
+          "local_dev_profile",
+          "missing_active_pointer",
+          "profile_artifact_dir_malformed",
+          "profile_load_failed",
+          "profile_path_outside_install_root",
+          "profile_path_traversal",
+          "profile_targets_inactive_version"
+        ]
+      }
+    },
+    {
+      "id": "process-smoke-failed",
+      "title": "Installed process smoke failed after install",
+      "owner_action": "operator",
+      "action_kind": "rollback",
+      "diagnostic_command": "m80 logs <vm-id>",
+      "repair_command": "m80 preflight",
+      "source_mappings": [
+        {
+          "kind": "proof",
+          "ref": "docs/behaviors/release/public-install-proof-cache-v0.2.11.json"
+        },
+        {
+          "kind": "source",
+          "ref": "scripts/quickstart_snippets.py"
+        }
+      ],
+      "verifier_codes": {}
+    },
+    {
+      "id": "unknown-report",
+      "title": "Unknown first-run failure needs a redacted report",
+      "owner_action": "operator",
+      "action_kind": "report-release-bug",
+      "diagnostic_command": "m80 --json env > m80-env.json",
+      "repair_command": "m80 --json env > m80-env.json",
+      "source_mappings": [
+        {
+          "kind": "doc",
+          "ref": "docs/behaviors/cli/env-dump.md"
+        },
+        {
+          "kind": "doc",
+          "ref": "README.md"
+        }
+      ],
+      "verifier_codes": {
+        "error_envelope": [
+          "direct_url_classifier"
+        ]
+      }
+    }
+  ]
+}

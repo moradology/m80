@@ -148,6 +148,16 @@ diagnostics name the release tag, asset, URL, curl failure class, and whether
 release verification had started. Offline or private-network hosts are expected
 to fail clearly; this policy is not an offline install guarantee.
 
+First-run support reports should cite the stable
+[`quickstart troubleshooting matrix`](../behaviors/release/quickstart-troubleshooting-matrix.md#network)
+ID before prose diagnosis. The matrix covers
+[`missing-local-tool`](../behaviors/release/quickstart-troubleshooting-matrix.md#missing-local-tool),
+[`host-prerequisite`](../behaviors/release/quickstart-troubleshooting-matrix.md#host-prerequisite),
+[`stale-profile`](../behaviors/release/quickstart-troubleshooting-matrix.md#stale-profile),
+and
+[`process-smoke-failed`](../behaviors/release/quickstart-troubleshooting-matrix.md#process-smoke-failed)
+without duplicating repair advice in this runbook.
+
 `scripts/verify-install-handoff.py` verifies downloaded `install.sh` bytes and
 their signed release-integrity subject before automation runs local verified
 bytes with `sudo`. It prints the release tag, source commit,
