@@ -17,6 +17,7 @@ mod no_write;
 mod offline_cache;
 mod proof_cache_fixture;
 mod repair_commands;
+mod safety_matrix;
 
 #[test]
 fn update_check_reports_current_release_with_cached_proof_age() {
