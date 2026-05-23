@@ -581,6 +581,28 @@ fn parse_cleanup_force() {
     }
 }
 
+#[test]
+fn parse_install_cleanup_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "install-cleanup",
+        "--install-root",
+        "/tmp/m80",
+        "--release-tag",
+        "v1.2.3",
+        "--remove-active",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::InstallCleanup(args) => {
+            assert_eq!(args.install_root, std::path::PathBuf::from("/tmp/m80"));
+            assert_eq!(args.release_tag, "v1.2.3");
+            assert!(args.remove_active);
+        }
+        _ => panic!("expected InstallCleanup"),
+    }
+}
+
 // ---- config show ----
 
 #[test]

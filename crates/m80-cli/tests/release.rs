@@ -36,6 +36,9 @@ mod install_handoff_identity;
 #[path = "release/install_state_resolver.rs"]
 mod install_state_resolver;
 
+#[path = "release/install_cleanup.rs"]
+mod install_cleanup;
+
 #[path = "release/publication_plan.rs"]
 mod publication_plan;
 

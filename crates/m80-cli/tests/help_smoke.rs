@@ -103,6 +103,11 @@ fn help_cleanup() {
 }
 
 #[test]
+fn help_install_cleanup() {
+    m80().args(["install-cleanup", "--help"]).assert().success();
+}
+
+#[test]
 fn help_config() {
     m80().args(["config", "--help"]).assert().success();
 }

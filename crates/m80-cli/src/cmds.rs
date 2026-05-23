@@ -10,8 +10,8 @@ use m80_firecracker::{
 };
 
 use crate::args::{
-    EgressMode, ImageAction, InstallArgs, InstallStatusArgs, OverlayCloneModeArg, QuickstartArgs,
-    TemplateAction, UpdateArgs, WarmAction, WritebackMode,
+    EgressMode, ImageAction, InstallArgs, InstallCleanupArgs, InstallStatusArgs,
+    OverlayCloneModeArg, QuickstartArgs, TemplateAction, UpdateArgs, WarmAction, WritebackMode,
 };
 use crate::config;
 use crate::errors;
@@ -608,6 +608,10 @@ pub(crate) fn cmd_install_status(args: InstallStatusArgs, json: bool) -> anyhow:
     install_status::cmd_install_status(args, json)
 }
 
+pub(crate) fn cmd_install_cleanup(args: InstallCleanupArgs, json: bool) -> anyhow::Result<i32> {
+    install_cleanup::cmd_install_cleanup(args, json)
+}
+
 pub(crate) fn cmd_update(args: UpdateArgs, json: bool) -> anyhow::Result<i32> {
     update::cmd_update(args, json)
 }
@@ -615,6 +619,7 @@ pub(crate) fn cmd_update(args: UpdateArgs, json: bool) -> anyhow::Result<i32> {
 mod env;
 mod image;
 mod install;
+mod install_cleanup;
 mod install_status;
 mod preflight;
 mod proto_json;

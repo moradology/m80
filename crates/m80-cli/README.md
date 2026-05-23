@@ -108,6 +108,11 @@ binaries, pull OCI images, or install packages implicitly.
   There is no `m80 rollback` command in this tranche; older install targets are
   refused by default, and rollback is limited to the status-rendered manual
   active-pointer command for an already-installed previous version.
+- `m80 install-cleanup --release-tag <tag> [--install-root <path>]` - removes
+  one inactive installed version directory after rollback or upgrade. Cleanup
+  refuses path escapes, symlinked install roots, malformed version directories,
+  mixed ownership in required version entries, and the active version unless
+  `--remove-active` is supplied.
 - `m80 update --check [--install-root <path>] [--profile <name>]` - reads the
   active install state, installed proof-cache summary, and bounded latest
   freshness metadata without writing the install root. It reports finite

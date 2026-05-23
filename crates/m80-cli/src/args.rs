@@ -129,6 +129,10 @@ pub enum Cmd {
     #[command(name = "install-status")]
     InstallStatus(InstallStatusArgs),
 
+    /// Remove an installed version directory after rollback or upgrade.
+    #[command(name = "install-cleanup")]
+    InstallCleanup(InstallCleanupArgs),
+
     /// Check or update the installed release.
     ///
     /// `--check` is read-only and reports whether the active install is
@@ -543,6 +547,22 @@ pub struct InstallStatusArgs {
     /// Profile override to inspect instead of the effective default profile.
     #[arg(long, value_name = "NAME")]
     pub profile: Option<String>,
+}
+
+/// Arguments for `m80 install-cleanup`.
+#[derive(Debug, Args)]
+pub struct InstallCleanupArgs {
+    /// Install root to clean. Defaults to /opt/m80.
+    #[arg(long, value_name = "PATH", default_value = "/opt/m80")]
+    pub install_root: PathBuf,
+
+    /// Release tag/version directory to remove.
+    #[arg(long = "release-tag", value_name = "TAG")]
+    pub release_tag: String,
+
+    /// Permit removing the active version and unlink the active pointer first.
+    #[arg(long = "remove-active")]
+    pub remove_active: bool,
 }
 
 /// Arguments for `m80 update`.

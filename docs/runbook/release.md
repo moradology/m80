@@ -299,6 +299,31 @@ the previous config/profile bytes are restored before the command exits.
 The behavior contract is recorded in
 `docs/behaviors/release/install-config-preservation.md`.
 
+## Rollback And Install Cleanup
+
+Rollback is pointer-first. Switch the active pointer to a previously verified
+version, confirm status, then clean the now-inactive directory:
+
+```sh
+sudo ln -sfnT -- /opt/m80/versions/<previous-tag> /opt/m80/active
+m80 install-status
+sudo m80 install-cleanup --release-tag <old-tag>
+```
+
+For install-root fixtures, pass the same root to status and cleanup:
+
+```sh
+m80 install-status --install-root <install-root>
+m80 install-cleanup --install-root <install-root> --release-tag <old-tag>
+```
+
+`m80 install-cleanup` removes only one direct child of
+`<install-root>/versions/` and refuses malformed directories or the active
+version by default. `--remove-active` is the explicit break-glass path; it
+unlinks the active pointer before removal and leaves no active installed release
+selected. The behavior contract is recorded in
+`docs/behaviors/release/install-cleanup.md`.
+
 ## Installed Status Evidence
 
 Release evidence captures include the installed status JSON from the candidate
