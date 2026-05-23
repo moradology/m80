@@ -4,6 +4,10 @@ Behavior bead: `m80-o3uh9.3`.
 
 The public Linux install surface is the release installer:
 
+<!-- m80:freshness-status start -->
+Public installer status: public proof green for `v0.2.11`.
+<!-- m80:freshness-status end -->
+
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
 ```
