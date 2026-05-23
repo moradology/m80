@@ -206,6 +206,24 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
             ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),
             ("docs/runbook/release.md", expected_snippets["verified-install-handoff"], "verified/operator"),
+            ("examples/echo-hello/README.md", expected_snippets["post-install-smoke"], "common"),
+            ("examples/echo-hello/run.sh", expected_snippets["post-install-smoke"], "common"),
+            (
+                "examples/workspace-roundtrip/README.md",
+                "\n".join(
+                    [
+                        'tmp="$(mktemp -d)"',
+                        "m80 run --workspace \"$tmp\" --cwd /workspace --writeback on-success -- sh -c 'echo done > result.txt'",
+                        'cat "$tmp/result.txt"',
+                    ]
+                ),
+                "example-run",
+            ),
+            (
+                "examples/network-egress/run.sh",
+                "m80 run --egress outbound -- sh -c '/bin/busybox wget -qO- http://example.com | /bin/busybox head -n 1'",
+                "example-run",
+            ),
             (
                 "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
                 "\n".join([expected_snippets["latest-install"], expected_snippets["pinned-install"]]),
@@ -333,6 +351,10 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "unclassified public command snippet",
             ),
             (
+                "```sh\nM80_KERNEL_IMAGE=/tmp/vmlinux M80_ROOTFS_IMAGE=/tmp/rootfs.ext4 m80 run -- echo hello\n```\n",
+                "examples must use the installed default profile",
+            ),
+            (
                 "  ```sh\n  m80 install --release-tag v1.2.3\n  ```\n",
                 "unclassified public command snippet",
             ),
@@ -350,9 +372,9 @@ class ReleaseUrlContractTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            doc_dir = root / "docs" / "runbook"
+            doc_dir = root / "examples" / "bad"
             doc_dir.mkdir(parents=True)
-            doc = doc_dir / "release.md"
+            doc = doc_dir / "README.md"
             for body, expected_error in cases:
                 doc.write_text(body)
                 with self.assertRaisesRegex(ValueError, expected_error):

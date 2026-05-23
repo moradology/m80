@@ -1,7 +1,9 @@
 # m80 Examples
 
 These examples show m80 as a constrained-process wrapper. Every command assumes
-the selected runtime profile already contains the requested program.
+the selected runtime profile already contains the requested program. Start from
+the canonical Linux quickstart in [the README](../README.md#quickstart), then
+use these examples to exercise specific `m80 run` shapes.
 
 - [echo-hello](echo-hello/) — smallest pipe-mode run.
 - [workspace-roundtrip](workspace-roundtrip/) — expose a host directory and

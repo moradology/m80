@@ -44,6 +44,8 @@ look like public install/run snippets must classify as one of:
   context
 - `legacy-internal`: behavior-doc references that repeat the shared commands
   only to explain the hard cutover
+- `example-run`: example-local `m80 run` commands that rely on the installed
+  default profile instead of `M80_KERNEL_IMAGE` / `M80_ROOTFS_IMAGE`
 
 Unclassified `curl`, `m80 install`, `m80 quickstart`, `sudo sh install.sh`, or
 `m80 run -- echo hello` command blocks fail the release URL contract tests. This
@@ -83,6 +85,12 @@ release and host-prerequisite caveats. The public command inventory scans
 README files, release runbooks, behavior docs, and ops docs so those deeper
 pages cannot reintroduce raw-main installers, artifact-only latest tarballs, or
 wrong-owner release URLs.
+
+Examples are part of that surface. `examples/**/README.md` and
+`examples/**/*.sh` are scanned for public install and `m80 run` commands. They
+may show concrete `m80 run` variations, but those examples must use the
+installed default profile or explicitly declare fixture requirements; they must
+not make `M80_KERNEL_IMAGE` / `M80_ROOTFS_IMAGE` the common path.
 
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and

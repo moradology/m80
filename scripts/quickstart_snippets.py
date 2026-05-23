@@ -42,6 +42,8 @@ DEPRECATED_QUICKSTART_ALLOWED_URLS = {
 PUBLIC_COMMAND_DOCS = (
     "README.md",
     "crates/*/README.md",
+    "examples/**/*.md",
+    "examples/**/*.sh",
     "docs/runbook/**/*.md",
     "docs/ops/**/*.md",
     "docs/behaviors/**/*.md",
@@ -180,8 +182,13 @@ def public_command_doc_paths(root: Path) -> list[Path]:
 
 
 def extract_public_command_snippets(path: Path, *, root: Path) -> list[PublicCommandSnippet]:
+    if path.suffix == ".sh":
+        return extract_shell_public_command_snippets(path, root=root)
+
     lines = path.read_text().splitlines()
     snippets: list[PublicCommandSnippet] = []
+    relative = path.relative_to(root)
+    include_run_variants = str(relative).startswith("examples/")
     in_fence = False
     fence_start = 0
     block: list[str] = []
@@ -189,9 +196,8 @@ def extract_public_command_snippets(path: Path, *, root: Path) -> list[PublicCom
         if line.lstrip().startswith("```"):
             if in_fence:
                 body = normalize_snippet_body(block)
-                if is_public_command_block(body):
+                if is_public_command_block(body, include_run_variants=include_run_variants):
                     context = surrounding_context(lines, fence_start, line_number)
-                    relative = path.relative_to(root)
                     classification = classify_public_command_snippet(body, relative, context)
                     snippets.append(
                         PublicCommandSnippet(
@@ -214,21 +220,51 @@ def extract_public_command_snippets(path: Path, *, root: Path) -> list[PublicCom
     return snippets
 
 
-def is_public_command_block(body: str) -> bool:
+def extract_shell_public_command_snippets(path: Path, *, root: Path) -> list[PublicCommandSnippet]:
+    snippets: list[PublicCommandSnippet] = []
+    relative = path.relative_to(root)
+    lines = path.read_text().splitlines()
+    for line_number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if is_public_command_line(stripped, include_run_variants=True):
+            context = surrounding_context(lines, line_number, line_number)
+            classification = classify_public_command_snippet(stripped, relative, context)
+            snippets.append(
+                PublicCommandSnippet(
+                    path=relative,
+                    line=line_number,
+                    body=stripped,
+                    classification=classification,
+                )
+            )
+    return snippets
+
+
+def is_public_command_block(body: str, *, include_run_variants: bool) -> bool:
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     if not lines:
         return False
     for line in lines:
-        if line.startswith("curl ") and ("install.sh" in line or "releases/" in line):
+        if is_public_command_line(line, include_run_variants=include_run_variants):
             return True
-        if line.startswith("sudo sh ") and "install.sh" in line:
-            return True
-        if line.startswith("sh ") and "install.sh" in line:
-            return True
-        if line.startswith("m80 install") or line.startswith("m80 quickstart"):
-            return True
-        if line == quickstart_smoke_command():
-            return True
+    return False
+
+
+def is_public_command_line(line: str, *, include_run_variants: bool) -> bool:
+    if line.startswith("curl ") and ("install.sh" in line or "releases/" in line):
+        return True
+    if line.startswith("sudo sh ") and "install.sh" in line:
+        return True
+    if line.startswith("sh ") and "install.sh" in line:
+        return True
+    if line.startswith("m80 install") or line.startswith("m80 quickstart"):
+        return True
+    if line == quickstart_smoke_command():
+        return True
+    if include_run_variants and line.startswith("m80 run"):
+        return True
     return False
 
 
@@ -255,6 +291,8 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
         return "troubleshooting"
     if is_troubleshooting_pinned_install(body, context):
         return "troubleshooting"
+    if is_example_run_command(body, relative_path):
+        return "example-run"
     raise ValueError(
         f"{relative_path}: unclassified public command snippet starting with {first_nonempty_line(body)!r}"
     )
@@ -275,6 +313,10 @@ def validate_public_command_urls(body: str, relative_path: Path) -> None:
             raise ValueError(
                 f"{relative_path}: install URL uses {repository}, expected {release_repository()}"
             )
+    if str(relative_path).startswith("examples/"):
+        for env_var in ("M80_KERNEL_IMAGE", "M80_ROOTFS_IMAGE"):
+            if env_var in scanned_body:
+                raise ValueError(f"{relative_path}: examples must use the installed default profile, not {env_var}")
 
 
 def strip_deprecated_quickstart_marker_blocks(body: str, relative_path: Path) -> str:
@@ -317,6 +359,12 @@ def is_troubleshooting_pinned_install(body: str, context: str) -> bool:
         return False
     lowered_context = context.lower()
     return any(word in lowered_context for word in TROUBLESHOOTING_CONTEXT_WORDS)
+
+
+def is_example_run_command(body: str, relative_path: Path) -> bool:
+    if not str(relative_path).startswith("examples/"):
+        return False
+    return any(line.strip().startswith("m80 run") for line in body.splitlines())
 
 
 def is_install_status_command(body: str) -> bool:
