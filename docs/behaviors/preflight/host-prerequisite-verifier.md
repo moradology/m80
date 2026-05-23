@@ -55,6 +55,14 @@ for table readability without changing the machine identity. The registry is:
 `kernel_image`, `rootfs_manifest`, `run_root`, `run_root_filesystem`, and
 `storage_helpers`.
 
+Production machine consumers are linted against decisions keyed on
+`CheckRow.label` or `HostPrerequisiteCheck.check_name`. Human renderers may use
+those fields only for display, and any necessary exception must carry the narrow
+`m80-check-id-lint: allow-human-label-renderer` marker next to the display-only
+code. Installers, release proof readers, freshness/status checks, diagnostics,
+and other machine decisions use `HostPrerequisiteCheckId` or serialized
+`check_id` values.
+
 Readers fail closed on unknown schema versions, missing required fields,
 unknown check ids, unknown failure variants, and failed checks without a
 remediation token. The host substrate verifier emits this result for its rows

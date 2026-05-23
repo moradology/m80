@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+const HUMAN_LABEL_LINT_ALLOW: &str = "m80-check-id-lint: allow-human-label-renderer";
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -40,6 +42,91 @@ fn assert_contains_words(haystack: &str, needle: &str) {
         normalized_haystack.contains(&normalized_needle),
         "missing required text: {needle}"
     );
+}
+
+fn collect_files(root: PathBuf, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(root).expect("read scan directory") {
+        let path = entry.expect("read directory entry").path();
+        if path.is_dir() {
+            collect_files(path, files);
+        } else {
+            files.push(path);
+        }
+    }
+}
+
+fn host_prerequisite_consumer_files() -> Vec<PathBuf> {
+    let root = repo_root();
+    let mut files = Vec::new();
+    for relative in ["crates/m80-cli/src", "crates/m80-preflight/src", "scripts"] {
+        collect_files(root.join(relative), &mut files);
+    }
+    files
+        .into_iter()
+        .filter(|path| {
+            let relative = path.strip_prefix(&root).expect("path under repo root");
+            let relative_text = relative.to_string_lossy();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                return false;
+            };
+            if relative_text.contains("/tests/") || name.starts_with("test-") {
+                return false;
+            }
+            if relative.starts_with("scripts") {
+                return name.ends_with(".py")
+                    && [
+                        "freshness",
+                        "install",
+                        "preflight",
+                        "proof",
+                        "quickstart",
+                        "release",
+                    ]
+                    .iter()
+                    .any(|needle| name.contains(needle));
+            }
+            matches!(
+                path.extension().and_then(|extension| extension.to_str()),
+                Some("rs")
+            )
+        })
+        .collect()
+}
+
+fn is_machine_decision_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let condition_like = trimmed.starts_with("if ")
+        || trimmed.starts_with("match ")
+        || trimmed.starts_with("while ")
+        || line.contains(".find(")
+        || line.contains(".any(")
+        || line.contains(".all(")
+        || line.contains(".filter(")
+        || line.contains(".position(")
+        || line.contains(".contains(");
+    condition_like
+        && (line.contains("==")
+            || line.contains("!=")
+            || line.contains(".contains(")
+            || line.contains(" in "))
+}
+
+fn dangerous_human_label_lookup(line: &str) -> Option<&'static str> {
+    if line.contains(HUMAN_LABEL_LINT_ALLOW) {
+        return None;
+    }
+    if line.contains(".label") && is_machine_decision_line(line) {
+        return Some("CheckRow.label");
+    }
+    if (line.contains(".check_name")
+        || line.contains("[\"check_name\"]")
+        || line.contains(".get(\"check_name\")")
+        || line.contains("'check_name'"))
+        && is_machine_decision_line(line)
+    {
+        return Some("HostPrerequisiteCheck.check_name");
+    }
+    None
 }
 
 #[test]
@@ -138,6 +225,11 @@ fn verifier_doc_records_stable_check_id_registry() {
         &doc,
         "Machine consumers key on `check_id`, not `check_name`",
     );
+    assert_contains_words(
+        &doc,
+        "Production machine consumers are linted against decisions keyed on `CheckRow.label` or `HostPrerequisiteCheck.check_name`",
+    );
+    assert_contains(&doc, HUMAN_LABEL_LINT_ALLOW);
     for required in [
         "`os_gate`",
         "`kvm`",
@@ -151,6 +243,34 @@ fn verifier_doc_records_stable_check_id_registry() {
     ] {
         assert_contains(&doc, required);
     }
+}
+
+#[test]
+fn machine_consumers_do_not_key_on_human_preflight_labels() {
+    let root = repo_root();
+    let mut violations = Vec::new();
+
+    for path in host_prerequisite_consumer_files() {
+        let text = fs::read_to_string(&path).expect("read scanned source file");
+        for (index, line) in text.lines().enumerate() {
+            let Some(kind) = dangerous_human_label_lookup(line) else {
+                continue;
+            };
+            let relative = path.strip_prefix(&root).expect("path under repo root");
+            violations.push(format!(
+                "{}:{}: machine decision uses {kind}; key on check_id/HostPrerequisiteCheckId instead: {}",
+                relative.display(),
+                index + 1,
+                line.trim()
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "host prerequisite machine consumers must use check_id, not human labels:\n{}",
+        violations.join("\n")
+    );
 }
 
 #[test]
