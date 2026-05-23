@@ -695,7 +695,11 @@ boundary from drifting in CI. The publish job also runs
 `scripts/release_publish_authority.py` at the mutation boundary, before the
 publish decision receipt and before `gh release upload`, so the actual GitHub
 context must still match the expected repository, tag ref, workflow path, job
-id, token source, and write-permission posture. Run
+id, token source, and write-permission posture. That command writes
+`m80-release-token-authority.json`; a failed authority check preserves the
+failed receipt with the failing context and probe result so the operator can fix
+workflow permissions, release metadata access, repository settings, or the
+wrong run context before any release mutation. Run
 `python3 scripts/lint-github-workflows.py` locally before release workflow
 edits; it is the static m80 authority-policy and strict workflow shell check,
 and it should run beside the pinned `actionlint` syntax/run-block gate:

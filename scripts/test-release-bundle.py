@@ -1370,6 +1370,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Verify publish authority before mutation", workflow)
         self.assertIn("scripts/release_publish_authority.py", workflow)
         self.assertIn("M80_RELEASE_TOKEN_SOURCE: github.token", workflow)
+        self.assertIn('--release-tag "$GITHUB_REF_NAME"', workflow)
+        self.assertIn('--receipt "$UPLOAD_DIR/m80-release-token-authority.json"', workflow)
         self.assertLess(
             workflow.index("scripts/release_publish_authority.py"),
             workflow.index("scripts/release_publish_receipt.py"),

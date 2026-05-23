@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -322,20 +323,33 @@ class WorkflowPolicyTest(unittest.TestCase):
 
     def test_publish_authority_policy_allows_clean_publish_context(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
-            result = run_authority(root / "release-artifacts.yml")
+            receipt = root / "token-authority.json"
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True)
+            payload = json.loads(receipt.read_text())
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["kind"], "m80_release_publish_token_authority")
+        self.assertEqual(payload["decision"], "approved")
+        self.assertEqual(payload["repository"], "moradology/m80")
+        self.assertEqual(payload["release_tag"], "v0.1.0")
+        self.assertEqual(payload["token_source"], "github.token")
+        self.assertEqual(payload["probes"][0]["name"], "release_metadata")
 
     def test_publish_authority_policy_rejects_wrong_repository(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            receipt = root / "token-authority.json"
             result = run_authority(
                 root / "release-artifacts.yml",
+                receipt=receipt,
+                write=True,
                 repository="example/m80",
                 workflow_ref="example/m80/.github/workflows/release-artifacts.yml@refs/tags/v0.1.0",
             )
+            payload = json.loads(receipt.read_text())
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("repository mismatch", result.stderr)
+        self.assertEqual(payload["decision"], "failed")
 
     def test_publish_authority_policy_rejects_branch_ref(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
@@ -381,10 +395,46 @@ class WorkflowPolicyTest(unittest.TestCase):
 
     def test_publish_authority_policy_rejects_missing_token_material(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
-            result = run_authority(root / "release-artifacts.yml", token_present=False)
+            receipt = root / "token-authority.json"
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True, token_present=False)
+            payload = json.loads(receipt.read_text())
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("token env GH_TOKEN missing", result.stderr)
+        self.assertIn("token env GH_TOKEN missing", payload["failure_reason"])
+
+    def test_publish_authority_policy_rejects_unreadable_release_metadata(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            receipt = root / "token-authority.json"
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True, gh_mode="read_only")
+            payload = json.loads(receipt.read_text())
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release metadata unreadable", result.stderr)
+        self.assertEqual(payload["decision"], "failed")
+        self.assertIn("release metadata unreadable", payload["failure_reason"])
+        self.assertEqual(payload["probes"][0]["exit_status"], 1)
+        self.assertIn("resource not accessible", payload["probes"][0]["stderr"])
+
+    def test_publish_authority_policy_rejects_unavailable_release_api(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            receipt = root / "token-authority.json"
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True, gh_mode="unavailable")
+            payload = json.loads(receipt.read_text())
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release metadata unreadable", result.stderr)
+        self.assertEqual(payload["probes"][0]["exit_status"], 2)
+        self.assertIn("GitHub API unavailable", payload["probes"][0]["stderr"])
+
+    def test_publish_authority_policy_rejects_malformed_receipt(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            receipt = root / "token-authority.json"
+            receipt.write_text('{"kind":"wrong"}\n')
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("receipt missing fields", result.stderr)
 
     def test_publish_authority_policy_rejects_unexpected_write_authority(self) -> None:
         workflow = publish_authority_workflow().replace(
@@ -1007,6 +1057,9 @@ def run_authority(
     github_job: str = "publish-release-artifacts",
     token_source: str | None = "github.token",
     token_present: bool = True,
+    receipt: Path | None = None,
+    write: bool = False,
+    gh_mode: str = "ok",
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["GITHUB_REPOSITORY"] = repository
@@ -1021,13 +1074,46 @@ def run_authority(
         env["GH_TOKEN"] = "ghs_test_token"
     else:
         env.pop("GH_TOKEN", None)
-    return subprocess.run(
-        ["python3", str(AUTHORITY), "--workflow-file", str(workflow_file)],
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    with tempfile.TemporaryDirectory() as bin_dir:
+        fake_gh = Path(bin_dir) / "gh"
+        fake_gh.write_text(
+            textwrap.dedent(
+                """\
+                #!/bin/sh
+                case "${M80_FAKE_GH_MODE:-ok}" in
+                  ok)
+                    printf '{"tagName":"v0.1.0","url":"https://github.com/moradology/m80/releases/tag/v0.1.0","isDraft":false,"isPrerelease":false}\\n'
+                    ;;
+                  read_only)
+                    echo "HTTP 403: resource not accessible by integration" >&2
+                    exit 1
+                    ;;
+                  unavailable)
+                    echo "GitHub API unavailable" >&2
+                    exit 2
+                    ;;
+                  malformed)
+                    printf '{"tagName":"not-v0.1.0","isDraft":false,"isPrerelease":false}\\n'
+                    ;;
+                esac
+                """
+            )
+        )
+        fake_gh.chmod(0o755)
+        env["PATH"] = f"{bin_dir}:{env['PATH']}"
+        env["M80_FAKE_GH_MODE"] = gh_mode
+        command = ["python3", str(AUTHORITY), "--workflow-file", str(workflow_file)]
+        if receipt is not None:
+            command.extend(["--receipt", str(receipt)])
+        if write:
+            command.append("--write")
+        return subprocess.run(
+            command,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
 
 
 def publish_authority_workflow() -> str:

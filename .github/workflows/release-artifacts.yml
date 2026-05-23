@@ -434,7 +434,13 @@ jobs:
           set -euo pipefail
           scripts/release_publish_authority.py \
             --workflow-file .github/workflows/release-artifacts.yml \
-            --token-source "$M80_RELEASE_TOKEN_SOURCE"
+            --token-source "$M80_RELEASE_TOKEN_SOURCE" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --receipt "$UPLOAD_DIR/m80-release-token-authority.json" \
+            --write
 
       - name: Write and validate publish decision receipt before upload
         env:

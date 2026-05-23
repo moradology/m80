@@ -5,12 +5,19 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
+SCHEMA_VERSION = 1
+KIND = "m80_release_publish_token_authority"
+RECEIPT_NAME = "m80-release-token-authority.json"
 PUBLISH_AUTHORITY_POLICY = {
     "repository": "moradology/m80",
     "workflow_path": ".github/workflows/release-artifacts.yml",
@@ -61,32 +68,273 @@ def parse_args() -> argparse.Namespace:
         default=PUBLISH_AUTHORITY_POLICY["token_env"],
         help="environment variable expected to hold the publish token",
     )
+    parser.add_argument("--release-tag", default=None)
+    parser.add_argument("--workflow-run-id", default=None)
+    parser.add_argument("--workflow-run-attempt", default=None)
+    parser.add_argument("--actor", default=None)
+    parser.add_argument("--receipt", type=Path)
+    parser.add_argument("--generated-at")
+    parser.add_argument("--write", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    context = PublishContext(
-        repository=resolve_value(args.repository, "GITHUB_REPOSITORY", "repository"),
-        github_ref=resolve_value(args.github_ref, "GITHUB_REF", "github-ref"),
-        workflow_ref=resolve_value(args.workflow_ref, "GITHUB_WORKFLOW_REF", "github-workflow-ref"),
-        github_job=resolve_value(args.github_job, "GITHUB_JOB", "github-job"),
-        token_source=resolve_value(args.token_source, "M80_RELEASE_TOKEN_SOURCE", "token-source"),
-        token_env=args.token_env,
-    )
-    verify_context(context)
-    verify_workflow_policy(args.workflow_file)
-    print(
-        "release publish authority ok: "
-        f"{context.repository} {context.github_ref} {context.github_job}"
-    )
-    return 0
+    receipt_path = args.receipt.resolve() if args.receipt else None
+    receipt: dict | None = None
+    try:
+        context = PublishContext(
+            repository=resolve_value(args.repository, "GITHUB_REPOSITORY", "repository"),
+            github_ref=resolve_value(args.github_ref, "GITHUB_REF", "github-ref"),
+            workflow_ref=resolve_value(args.workflow_ref, "GITHUB_WORKFLOW_REF", "github-workflow-ref"),
+            github_job=resolve_value(args.github_job, "GITHUB_JOB", "github-job"),
+            token_source=resolve_value(args.token_source, "M80_RELEASE_TOKEN_SOURCE", "token-source"),
+            token_env=args.token_env,
+        )
+        verify_context(context)
+        release_tag = resolve_release_tag(args.release_tag, context.github_ref)
+        receipt = build_receipt(
+            context,
+            workflow_file=args.workflow_file,
+            release_tag=release_tag,
+            workflow_run_id=resolve_optional(args.workflow_run_id, "GITHUB_RUN_ID"),
+            workflow_run_attempt=resolve_optional(args.workflow_run_attempt, "GITHUB_RUN_ATTEMPT"),
+            actor=resolve_optional(args.actor, "GITHUB_ACTOR"),
+            generated_at=args.generated_at,
+        )
+        verify_workflow_policy(args.workflow_file)
+        receipt["probes"].append(run_release_metadata_probe(context.repository, release_tag))
+        verify_release_metadata_probe(receipt["probes"][-1], release_tag)
+        receipt["decision"] = "approved"
+        receipt["failure_reason"] = None
+        verify_receipt(receipt, context, release_tag)
+        if args.write:
+            require(receipt_path is not None, "release publish authority receipt path missing")
+            write_json(receipt_path, receipt)
+        elif receipt_path is not None:
+            existing = read_json(receipt_path, "release publish authority receipt")
+            verify_receipt(existing, context, release_tag)
+        print(
+            "release publish authority ok: "
+            f"{context.repository} {context.github_ref} {context.github_job}"
+        )
+        return 0
+    except SystemExit as exc:
+        message = str(exc)
+        if args.write and receipt_path is not None:
+            if receipt is not None:
+                receipt["decision"] = "failed"
+                receipt["failure_reason"] = message
+                write_json(receipt_path, receipt)
+            else:
+                write_json(receipt_path, failure_receipt(args, message))
+        raise SystemExit(message) from exc
 
 
 def resolve_value(value: str | None, env_name: str, label: str) -> str:
     observed = value if value is not None else os.environ.get(env_name, "")
     require(observed.strip() != "", f"release publish authority {label} missing")
     return observed
+
+
+def resolve_optional(value: str | None, env_name: str) -> str | None:
+    observed = value if value is not None else os.environ.get(env_name)
+    if observed is None or observed.strip() == "":
+        return None
+    return observed
+
+
+def resolve_release_tag(value: str | None, github_ref: str) -> str:
+    observed = value.strip() if value else ""
+    if observed:
+        return observed
+    prefix = "refs/tags/"
+    require(github_ref.startswith(prefix), "release publish authority release-tag missing")
+    return github_ref[len(prefix):]
+
+
+def build_receipt(
+    context: PublishContext,
+    *,
+    workflow_file: Path,
+    release_tag: str,
+    workflow_run_id: str | None,
+    workflow_run_attempt: str | None,
+    actor: str | None,
+    generated_at: str | None,
+) -> dict:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND,
+        "decision": "failed",
+        "repository": context.repository,
+        "github_ref": context.github_ref,
+        "release_tag": release_tag,
+        "workflow_ref": context.workflow_ref,
+        "workflow_path": PUBLISH_AUTHORITY_POLICY["workflow_path"],
+        "workflow_file": str(workflow_file),
+        "github_job": context.github_job,
+        "workflow_run_id": workflow_run_id,
+        "workflow_run_attempt": workflow_run_attempt,
+        "actor": actor,
+        "token_source": context.token_source,
+        "token_env": context.token_env,
+        "policy_id": "m80-release-publish-authority-v1",
+        "policy_digest": policy_digest(),
+        "generated_at": generated_at or utc_now(),
+        "probes": [],
+        "failure_reason": "not evaluated",
+    }
+
+
+def failure_receipt(args: argparse.Namespace, message: str) -> dict:
+    repository = args.repository or os.environ.get("GITHUB_REPOSITORY")
+    github_ref = args.github_ref or os.environ.get("GITHUB_REF")
+    workflow_ref = args.workflow_ref or os.environ.get("GITHUB_WORKFLOW_REF")
+    github_job = args.github_job or os.environ.get("GITHUB_JOB")
+    token_source = args.token_source or os.environ.get("M80_RELEASE_TOKEN_SOURCE")
+    release_tag = args.release_tag or tag_from_ref(github_ref)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND,
+        "decision": "failed",
+        "repository": repository,
+        "github_ref": github_ref,
+        "release_tag": release_tag,
+        "workflow_ref": workflow_ref,
+        "workflow_path": PUBLISH_AUTHORITY_POLICY["workflow_path"],
+        "workflow_file": str(args.workflow_file),
+        "github_job": github_job,
+        "workflow_run_id": args.workflow_run_id or os.environ.get("GITHUB_RUN_ID"),
+        "workflow_run_attempt": args.workflow_run_attempt or os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "actor": args.actor or os.environ.get("GITHUB_ACTOR"),
+        "token_source": token_source,
+        "token_env": args.token_env,
+        "policy_id": "m80-release-publish-authority-v1",
+        "policy_digest": policy_digest(),
+        "generated_at": args.generated_at or utc_now(),
+        "probes": [],
+        "failure_reason": message,
+    }
+
+
+def tag_from_ref(github_ref: str | None) -> str | None:
+    prefix = "refs/tags/"
+    if github_ref and github_ref.startswith(prefix):
+        return github_ref[len(prefix):]
+    return None
+
+
+def run_release_metadata_probe(repository: str, release_tag: str) -> dict:
+    command = [
+        "gh",
+        "release",
+        "view",
+        release_tag,
+        "--repo",
+        repository,
+        "--json",
+        "tagName,url,isDraft,isPrerelease",
+    ]
+    result = subprocess.run(command, text=True, capture_output=True, check=False)
+    probe = {
+        "name": "release_metadata",
+        "command": " ".join(command),
+        "exit_status": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+    return probe
+
+
+def verify_release_metadata_probe(probe: dict, release_tag: str) -> None:
+    require(probe["exit_status"] == 0, "release publish authority release metadata unreadable")
+    try:
+        payload = json.loads(probe["stdout"])
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"release publish authority release metadata malformed: {exc}") from exc
+    require(payload.get("tagName") == release_tag, "release publish authority release metadata tag mismatch")
+    require(payload.get("isDraft") is False, "release publish authority release metadata is draft")
+    require(payload.get("isPrerelease") is False, "release publish authority release metadata is prerelease")
+
+
+def verify_receipt(receipt: dict, context: PublishContext, release_tag: str) -> None:
+    expected_keys = {
+        "schema_version",
+        "kind",
+        "decision",
+        "repository",
+        "github_ref",
+        "release_tag",
+        "workflow_ref",
+        "workflow_path",
+        "workflow_file",
+        "github_job",
+        "workflow_run_id",
+        "workflow_run_attempt",
+        "actor",
+        "token_source",
+        "token_env",
+        "policy_id",
+        "policy_digest",
+        "generated_at",
+        "probes",
+        "failure_reason",
+    }
+    unknown = sorted(set(receipt) - expected_keys)
+    require(not unknown, f"release publish authority receipt unknown fields: {', '.join(unknown)}")
+    missing = sorted(expected_keys - set(receipt))
+    require(not missing, f"release publish authority receipt missing fields: {', '.join(missing)}")
+    require(receipt["schema_version"] == SCHEMA_VERSION, "release publish authority receipt schema_version mismatch")
+    require(receipt["kind"] == KIND, "release publish authority receipt kind mismatch")
+    require(receipt["decision"] == "approved", "release publish authority receipt decision must be approved")
+    require(receipt["repository"] == context.repository, "release publish authority receipt repository mismatch")
+    require(receipt["github_ref"] == context.github_ref, "release publish authority receipt github_ref mismatch")
+    require(receipt["release_tag"] == release_tag, "release publish authority receipt release_tag mismatch")
+    require(receipt["workflow_ref"] == context.workflow_ref, "release publish authority receipt workflow_ref mismatch")
+    require(receipt["github_job"] == context.github_job, "release publish authority receipt github_job mismatch")
+    require(receipt["token_source"] == context.token_source, "release publish authority receipt token_source mismatch")
+    require(receipt["token_env"] == context.token_env, "release publish authority receipt token_env mismatch")
+    require(receipt["policy_digest"] == policy_digest(), "release publish authority receipt policy_digest mismatch")
+    require(receipt["failure_reason"] is None, "release publish authority receipt approved with failure_reason")
+    require(isinstance(receipt["probes"], list) and receipt["probes"], "release publish authority receipt probes missing")
+    require(parse_timestamp(receipt["generated_at"]) is not None, "release publish authority receipt generated_at invalid")
+
+
+def policy_digest() -> str:
+    data = json.dumps(PUBLISH_AUTHORITY_POLICY, sort_keys=True, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def read_json(path: Path, label: str) -> dict:
+    require(path.is_file(), f"{label} missing: {path}")
+    try:
+        value = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{label} malformed: {exc}") from exc
+    require(isinstance(value, dict), f"{label} must be a JSON object")
+    return value
 
 
 def verify_context(context: PublishContext) -> None:
@@ -187,7 +435,7 @@ def verify_workflow_policy(path: Path) -> None:
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit("; ".join(errors))
 
 
 def top_level_permissions(lines: list[str]) -> dict[str, str] | None:
