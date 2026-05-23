@@ -43,6 +43,13 @@ pub(crate) struct ReleaseBundleFixture {
 }
 
 pub(crate) fn write_release_bundle(omit: Option<&str>) -> ReleaseBundleFixture {
+    write_release_bundle_with_hook(omit, |_| {})
+}
+
+pub(crate) fn write_release_bundle_with_hook<F>(omit: Option<&str>, hook: F) -> ReleaseBundleFixture
+where
+    F: FnOnce(&Path),
+{
     let temp = tempfile::tempdir().unwrap();
     let src = temp.path().join("src");
     fs::create_dir_all(src.join("bin")).unwrap();
@@ -80,6 +87,8 @@ pub(crate) fn write_release_bundle(omit: Option<&str>) -> ReleaseBundleFixture {
     write_build_receipt(&src, &stale_artifacts, &manifest_path);
     write_bundle_metadata(&src, &manifest_path);
     write_sha256s(&src);
+    set_bundle_modes(&src);
+    hook(&src);
 
     let tarball = temp.path().join("m80-linux-x86_64.tar.gz");
     let paths = REQUIRED_BUNDLE_FILES
@@ -237,6 +246,28 @@ fn run_checked(cmd: &mut StdCommand, label: &str) {
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn set_bundle_modes(src: &Path) {
+    for relpath in [
+        "bin/m80",
+        "bin/m80-jailer-harden",
+        "bin/m80-net-helper",
+        "install.sh",
+    ] {
+        set_mode(&src.join(relpath), 0o755);
+    }
+    for relpath in [
+        "artifacts/vmlinux",
+        "artifacts/output.ext4",
+        "artifacts/output.ext4.manifest.json",
+        "artifacts/output.ext4.build-receipt.json",
+        "artifacts/m80-guestd",
+        "bundle.json",
+        "SHA256SUMS",
+    ] {
+        set_mode(&src.join(relpath), 0o644);
+    }
 }
 
 pub(crate) fn set_mode(path: &Path, mode: u32) {

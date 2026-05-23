@@ -1,6 +1,7 @@
 # Installed Layout
 
-Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.7`, `m80-o3uh9.16.1`.
+Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.6`, `m80-o3uh9.3.7`,
+`m80-o3uh9.16.1`.
 
 `m80 install --release-tag <TAG> --install-root <PATH>` fetches the pinned
 release asset index, verifies its checksum sidecar, selects the matching Linux
@@ -68,7 +69,10 @@ host manifest path is `artifacts/host-binaries.manifest.json`.
 
 The installer validates the tar entry set before extraction. Duplicate paths,
 unexpected paths, escaping paths, missing required files, unsupported bundle
-metadata, `SHA256SUMS` mismatch, and non-regular extracted files fail closed.
+metadata, `SHA256SUMS` mismatch, non-regular extracted files, hardlinked
+payload files, unexpected payload directories, and wrong payload modes fail
+closed. The detailed extraction sandbox contract is captured in
+[`installer-extraction-sandbox.md`](installer-extraction-sandbox.md).
 
 The copy uses `<install-root>/.staging/layout-<pid>` as its transaction
 directory. Abandoned `layout-*` staging directories are deleted before a new
@@ -112,6 +116,11 @@ create `<install-root>`.
 - `install_bundle_layout_rejects_checksum_redirect_to_different_fixture_host`
 - `install_bundle_layout_missing_required_bundle_file_fails_before_activation`
 - `install_bundle_layout_duplicate_bundle_path_fails_before_activation`
+- `install_bundle_layout_symlink_payload_fails_before_activation`
+- `install_bundle_layout_hardlink_payload_fails_before_activation`
+- `install_bundle_layout_directory_payload_fails_before_activation`
+- `install_bundle_layout_device_like_payload_fails_before_activation`
+- `install_bundle_layout_bad_payload_mode_fails_before_activation`
 - `install_bundle_layout_permission_failure_leaves_active_state_untouched`
 - `install_bundle_layout_manifest_failure_leaves_previous_active_selected`
 - `install_bundle_layout_profile_failure_leaves_previous_active_and_profile`

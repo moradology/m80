@@ -1,6 +1,7 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 
 use m80_image_manifest::{
     BuildReceipt, BuildReceiptArtifactKind, InstallProvenance, InstallProvenanceArtifact,
@@ -24,7 +25,7 @@ mod remote_fetch;
 use common::m80;
 use fixture::{
     read_repo_file, running_as_root, set_mode, sha256_hex, write_duplicate_path_bundle,
-    write_release_bundle, RELEASE_TAG,
+    write_release_bundle, write_release_bundle_with_hook, RELEASE_TAG,
 };
 
 const REQUIRED_INSTALLED_FILES: &[&str] = &[
@@ -363,6 +364,53 @@ fn install_bundle_layout_duplicate_bundle_path_fails_before_activation() {
         !install_root.join("active").exists(),
         "duplicate bundle path must not switch active pointer"
     );
+}
+
+#[test]
+fn install_bundle_layout_symlink_payload_fails_before_activation() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        fs::remove_file(src.join("bin/m80-net-helper")).unwrap();
+        symlink("m80", src.join("bin/m80-net-helper")).unwrap();
+    });
+    assert_malformed_bundle_fails_before_activation(&bundle, "non-regular file");
+}
+
+#[test]
+fn install_bundle_layout_hardlink_payload_fails_before_activation() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        fs::remove_file(src.join("bin/m80-net-helper")).unwrap();
+        fs::hard_link(src.join("bin/m80"), src.join("bin/m80-net-helper")).unwrap();
+    });
+    assert_malformed_bundle_fails_before_activation(&bundle, "must not be a hardlink");
+}
+
+#[test]
+fn install_bundle_layout_directory_payload_fails_before_activation() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        fs::remove_file(src.join("bin/m80-net-helper")).unwrap();
+        fs::create_dir(src.join("bin/m80-net-helper")).unwrap();
+    });
+    assert_malformed_bundle_fails_before_activation(&bundle, "directory where file expected");
+}
+
+#[test]
+fn install_bundle_layout_device_like_payload_fails_before_activation() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        fs::remove_file(src.join("artifacts/vmlinux")).unwrap();
+        run_checked(
+            StdCommand::new("mkfifo").arg(src.join("artifacts/vmlinux")),
+            "mkfifo",
+        );
+    });
+    assert_malformed_bundle_fails_before_activation(&bundle, "non-regular file");
+}
+
+#[test]
+fn install_bundle_layout_bad_payload_mode_fails_before_activation() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        set_mode(&src.join("artifacts/vmlinux"), 0o755);
+    });
+    assert_malformed_bundle_fails_before_activation(&bundle, "bundle file mode mismatch");
 }
 
 #[test]
@@ -766,6 +814,47 @@ fn write_raw_install_lock(install_root: &Path, contents: &[u8]) -> PathBuf {
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     set_mode(path, 0o755);
+}
+
+fn assert_malformed_bundle_fails_before_activation(
+    bundle: &fixture::ReleaseBundleFixture,
+    expected_stderr: &str,
+) {
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+
+    let output = run_install(bundle, &install_root, None, &[], &[]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(expected_stderr),
+        "stderr missing {expected_stderr:?}: {stderr}"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous,
+        "malformed bundle must leave previous active pointer selected"
+    );
+    assert!(
+        !install_root
+            .join("versions")
+            .join(&bundle.release_tag)
+            .exists(),
+        "malformed bundle must not publish a version dir"
+    );
+}
+
+fn run_checked(cmd: &mut StdCommand, label: &str) {
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{label} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn assert_receipt_artifact(

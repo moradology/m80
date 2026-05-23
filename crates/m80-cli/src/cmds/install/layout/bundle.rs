@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
@@ -28,6 +29,12 @@ pub(super) const PAYLOAD_FILES: &[&str] = &[
     "artifacts/output.ext4.manifest.json",
     "artifacts/output.ext4.build-receipt.json",
     "artifacts/m80-guestd",
+    "install.sh",
+];
+const EXECUTABLE_BUNDLE_FILES: &[&str] = &[
+    "bin/m80",
+    "bin/m80-jailer-harden",
+    "bin/m80-net-helper",
     "install.sh",
 ];
 
@@ -123,8 +130,17 @@ fn normalize_tar_entry(entry: &str) -> Result<Option<String>, FcError> {
             }
         }
     }
-    if is_dir || parts.is_empty() {
+    if parts.is_empty() {
         Ok(None)
+    } else if is_dir {
+        let normalized = parts.join("/");
+        if normalized == "bin" || normalized == "artifacts" {
+            return Ok(None);
+        }
+        Err(FcError::Config(ConfigError::InvalidValue {
+            field: "bundle",
+            reason: format!("bundle directory where file expected: {normalized}"),
+        }))
     } else {
         Ok(Some(parts.join("/")))
     }
@@ -187,6 +203,7 @@ fn verify_extracted_tree_inner(
                     reason: format!("bundle unexpected extracted path: {rel}"),
                 }));
             }
+            verify_bundle_file_mode(&path, &rel)?;
         } else {
             return Err(FcError::Config(ConfigError::InvalidValue {
                 field: "bundle",
@@ -195,6 +212,37 @@ fn verify_extracted_tree_inner(
         }
     }
     Ok(())
+}
+
+fn verify_bundle_file_mode(path: &Path, rel: &str) -> Result<(), FcError> {
+    let metadata = fs::metadata(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.nlink() != 1 {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "bundle",
+            reason: format!(
+                "bundle file must not be a hardlink: path={rel} nlink={}",
+                metadata.nlink()
+            ),
+        }));
+    }
+    let expected = if EXECUTABLE_BUNDLE_FILES.contains(&rel) {
+        0o755
+    } else {
+        0o644
+    };
+    let observed = metadata.permissions().mode() & 0o777;
+    if observed == expected {
+        return Ok(());
+    }
+    Err(FcError::Config(ConfigError::InvalidValue {
+        field: "bundle",
+        reason: format!(
+            "bundle file mode mismatch: path={rel} expected={expected:o} observed={observed:o}"
+        ),
+    }))
 }
 
 pub(in crate::cmds::install::layout) fn extract_bundle(
@@ -254,6 +302,15 @@ mod tests {
             Some("bin/m80")
         );
         assert_eq!(normalize_tar_entry("./artifacts/").unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_tar_entry_rejects_directory_where_file_expected() {
+        let err = normalize_tar_entry("./bin/m80/").unwrap_err();
+        assert!(
+            err.to_string().contains("directory where file expected"),
+            "{err}"
+        );
     }
 
     #[test]
