@@ -75,7 +75,8 @@ fn update_check_doc_names_read_only_states_and_outputs() {
 
     for required in [
         "m80 update --check",
-        "If it prints a `next_command=...`, run that command.",
+        "This is the safe update entrypoint.",
+        "If it prints a `next_command=...`, run that\npinned command.",
     ] {
         assert!(readme.contains(required), "README missing {required:?}");
     }

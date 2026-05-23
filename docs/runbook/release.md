@@ -419,6 +419,39 @@ renderer emits as `next_command`:
 next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
 ```
 
+## Upgrade And Rollback Evidence
+
+Release evidence for an upgrade path must prove the target became active only
+after verification and that the previous release stayed available for explicit
+rollback. Capture or reference artifacts showing:
+
+- `install-status.json` has `status: healthy_active_release`,
+  `active.release_tag` equal to the newer target, empty `diagnostics`, empty
+  `mismatches`, `proof_cache.status: available`, and `next_action.kind: ready`.
+- The installer transcript or machine summary names the newer
+  `active_version_dir`, `previous_active_release_tag`, and
+  `previous_active_version_dir`.
+- The versioned directory for `previous_active_release_tag` still exists under
+  `<install-root>/versions/` after the active flip.
+- `last-install-attempt.json` either records `successful_upgrade` for the
+  target tag or is absent only in a dry-run/proof path that did not mutate the
+  install root.
+
+Rollback evidence must prove intent and avoid treating downgrade-by-install as
+rollback. Capture or reference artifacts showing:
+
+- The rollback command was the active-pointer command, not an older pinned
+  installer command:
+  `sudo ln -sfnT -- '<install-root>/versions/<previous-tag>' '<install-root>/active'`.
+- Post-rollback `install-status.json` names `<previous-tag>` as
+  `active.release_tag`, has `status: healthy_active_release`, and has empty
+  `diagnostics` and `mismatches`.
+- Any cleanup after rollback used `m80 install-cleanup --release-tag <old-tag>`
+  for an inactive direct child of `<install-root>/versions/`.
+- A refused older install, when exercised, records `downgrade_refused` in
+  command output or `last-install-attempt.json` and leaves the pre-attempt
+  active release selected.
+
 ## Verification
 
 The release identity is pinned by:

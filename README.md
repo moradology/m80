@@ -55,7 +55,8 @@ m80 update --check
 ```
 <!-- m80:quickstart-snippet freshness-check end -->
 
-If it prints a `next_command=...`, run that command.
+This is the safe update entrypoint. If it prints a `next_command=...`, run that
+pinned command.
 
 Pin a version for automation:
 

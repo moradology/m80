@@ -5,7 +5,8 @@ Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
 `m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`,
 `m80-o3uh9.16.7.6`, `m80-o3uh9.16.8.4`,
-`m80-o3uh9.16.11`, `m80-o3uh9.16.12.6`.
+`m80-o3uh9.16.11`, `m80-o3uh9.16.12.6`,
+`m80-o3uh9.16.12.7`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -18,6 +19,31 @@ The active install is selected by `<install-root>/active`, an absolute symlink
 that points at one versioned directory. Status readers treat the active pointer
 as the local install selector; they do not infer trust from transient download
 directories, workflow logs, or current GitHub release pages.
+
+## Upgrade And Downgrade Policy
+
+Release installs publish immutable versioned directories under
+`<install-root>/versions/<release_tag>`. A mutating install verifies the target
+release in a private staging tree, writes installed metadata and proof material
+inside that staged tree, publishes the version directory, updates the generated
+profile/config only through the install transaction, and flips
+`<install-root>/active` last.
+
+A successful upgrade to a newer stable release preserves the previous active
+version directory. That previous directory is the only rollback target the
+operator should use: rollback is an explicit active-pointer move to an
+already-installed version, followed by `m80 install-status`. Installing an older
+stable release is not rollback; normal install and update paths refuse it by
+default with `downgrade_refused` and record bounded attempt metadata in
+`<install-root>/last-install-attempt.json`.
+
+| Outcome | Mutation behavior | Repair command |
+| --- | --- | --- |
+| First install or newer verified release | Stage and verify target, publish `<install-root>/versions/<release_tag>`, update generated selector files, then flip `<install-root>/active` last. | `m80 run -- echo hello` after status is healthy. |
+| Failed verification or failed finalization | Leave previous active pointer, generated profile, config, proof cache, and version selection unchanged. | Retry the same pinned `curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh \| sudo sh` command after fixing the named failure. |
+| Older target without explicit rollback | Refuse before active-state mutation; do not stage, rewrite profiles, or flip `<install-root>/active`. | Reinstall the current active release with its pinned `install.sh` command, or choose the explicit rollback path below. |
+| Explicit rollback to an already-installed version | Operator moves only `<install-root>/active` to `<install-root>/versions/<previous-tag>`; m80 does not fetch, rewrite, or bless bytes. | `sudo ln -sfnT -- '<install-root>/versions/<previous-tag>' '<install-root>/active'` then `m80 install-status`. |
+| Operator profile/config override | Report `explicit_override`; do not treat the override as installed-default proof. | Remove the override, or pass the same explicit profile/root to status and support captures. |
 
 ## Active Install Resolver
 
