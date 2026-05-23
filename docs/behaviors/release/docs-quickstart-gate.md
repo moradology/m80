@@ -78,6 +78,18 @@ manifest/receipt details, and host policy details stay behind links to the
 release runbook, troubleshooting matrix, host prerequisite behavior docs, and
 operator setup docs.
 
+Public link health is part of the same gate. The checker walks `README.md`,
+`docs/runbook/release.md`, `docs/behaviors/release/*.md`, and `examples/**/*.md`.
+Local Markdown links must resolve to repository files and, when they include a
+fragment, to a generated heading anchor or explicit HTML anchor. Public GitHub
+release URLs must classify as generated latest installer, generated pinned
+installer, public proof link, pinned troubleshooting installer, direct
+operator bundle, or an explicitly ignored negative example. Raw `main`
+installer URLs, artifact-only latest bundle URLs, wrong-owner release URLs,
+missing local files, missing anchors, and unclassified release URLs fail with a
+diagnostic that names the file, line, target, classification, and repair
+command.
+
 Easy Linux install means the public release `install.sh` is the normal path and
 plain `m80 run -- echo hello` is the public proof command. Manual binary or
 artifact placement belongs only in advanced/operator docs with explicit matching

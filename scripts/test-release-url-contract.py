@@ -24,6 +24,7 @@ from quickstart_snippets import (
     expected_quickstart_snippets,
     extract_marked_quickstart_snippets,
     public_command_inventory,
+    validate_public_docs_links,
 )
 
 
@@ -313,6 +314,75 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 f"README quickstart is missing follow-up doc link: {target}",
             )
             self.assertTrue((REPO_ROOT / target).is_file(), f"README quickstart link is stale: {target}")
+
+    def test_public_docs_links_and_release_urls_are_classified(self) -> None:
+        links = validate_public_docs_links(REPO_ROOT)
+        observed = {(str(link.path), link.target, link.classification) for link in links}
+
+        self.assertIn(
+            (
+                "README.md",
+                "docs/behaviors/release/quickstart-troubleshooting-matrix.md#network",
+                "local",
+            ),
+            observed,
+        )
+        self.assertIn(
+            (
+                "README.md",
+                public_release_root().latest_install_url,
+                "generated-latest",
+            ),
+            observed,
+        )
+        self.assertIn(
+            (
+                "docs/behaviors/release/installer-input.md",
+                "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+                "operator-direct-bundle",
+            ),
+            observed,
+        )
+
+    def test_public_docs_link_checker_rejects_broken_links_and_urls(self) -> None:
+        cases = [
+            ("[missing](docs/missing.md)\n", "missing local link"),
+            ("[missing anchor](docs/target.md#missing)\n", "missing local link anchor"),
+            (
+                "https://github.com/example/m80/releases/latest/download/install.sh\n",
+                "wrong repository",
+            ),
+            (
+                "https://raw.githubusercontent.com/moradology/m80/main/scripts/install.sh\n",
+                "raw main script URL",
+            ),
+            (
+                "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64.tar.gz\n",
+                "artifact-only latest URL",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "docs" / "target.md").write_text("# Present\n")
+            readme = root / "README.md"
+            for body, expected_error in cases:
+                readme.write_text(body)
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    validate_public_docs_links(root)
+
+            readme.write_text(
+                "\n".join(
+                    [
+                        "[present](docs/target.md#present)",
+                        public_release_root().latest_install_url,
+                        "Troubleshooting repair command:",
+                        "https://github.com/moradology/m80/releases/download/v1.2.3/install.sh",
+                    ]
+                )
+            )
+            validate_public_docs_links(root)
 
     def test_ops_docs_name_installer_first_path_and_demote_manual_placement(self) -> None:
         expectations = {

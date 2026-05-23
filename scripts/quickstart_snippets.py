@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import shlex
+from urllib.parse import unquote
 
 from release_url_contract import (
     latest_install_command,
@@ -35,6 +36,10 @@ DEPRECATED_QUICKSTART_MARKER_RE = re.compile(
     re.DOTALL,
 )
 URL_RE = re.compile(r"https?://[^`'\"\s<>]+")
+MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+EXPLICIT_ANCHOR_RE = re.compile(r"<a\s+id=[\"']([^\"']+)[\"']\s*></a>")
+GITHUB_RELEASE_URL_RE = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/releases/[^\s`'\"<>)]*")
 DEPRECATED_QUICKSTART_ALLOWED_URLS = {
     "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz",
     "https://raw.githubusercontent.com/moradology/m80/main/scripts/install.sh",
@@ -48,6 +53,12 @@ PUBLIC_COMMAND_DOCS = (
     "docs/ops/**/*.md",
     "docs/behaviors/**/*.md",
 )
+PUBLIC_LINK_DOCS = (
+    "README.md",
+    "docs/runbook/release.md",
+    "docs/behaviors/release/*.md",
+    "examples/**/*.md",
+)
 LEGACY_INTERNAL_DOCS = {
     "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
     "docs/behaviors/release/docs-quickstart-gate.md",
@@ -59,6 +70,10 @@ TROUBLESHOOTING_CONTEXT_WORDS = ("repair", "troubleshoot", "troubleshooting", "d
 FRESHNESS_STATUS_MARKER_RE = re.compile(r"m80:freshness-status\s+start")
 FRESHNESS_STATUS_GUARD_WORDS = ("public installer status", "proof")
 FRESHNESS_STATUS_VALUES = ("pending", "scaffolded", "public proof green", "stale", "failed")
+PUBLIC_RELEASE_REPAIR_COMMAND = (
+    "use scripts/quickstart_snippets.py or docs/behaviors/release/public-release-root.env "
+    "for public install URLs"
+)
 
 
 @dataclass(frozen=True)
@@ -72,6 +87,14 @@ class PublicCommandSnippet:
     path: Path
     line: int
     body: str
+    classification: str
+
+
+@dataclass(frozen=True)
+class PublicLink:
+    path: Path
+    line: int
+    target: str
     classification: str
 
 
@@ -179,6 +202,200 @@ def public_command_doc_paths(root: Path) -> list[Path]:
     for pattern in PUBLIC_COMMAND_DOCS:
         paths.update(path for path in root.glob(pattern) if path.is_file())
     return sorted(paths)
+
+
+def validate_public_docs_links(root: Path) -> list[PublicLink]:
+    links: list[PublicLink] = []
+    for path in public_link_doc_paths(root):
+        text = path.read_text()
+        relative = path.relative_to(root)
+        scanned_text = strip_deprecated_for_link_scan(text, relative)
+        lines = scanned_text.splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            context = surrounding_line_context(lines, line_number)
+            links.extend(validate_markdown_links_in_line(root, path, relative, line_number, line, context))
+            links.extend(validate_release_urls_in_line(relative, line_number, line, context))
+    return links
+
+
+def public_link_doc_paths(root: Path) -> list[Path]:
+    paths: set[Path] = set()
+    for pattern in PUBLIC_LINK_DOCS:
+        paths.update(path for path in root.glob(pattern) if path.is_file())
+    return sorted(paths)
+
+
+def validate_markdown_links_in_line(
+    root: Path,
+    path: Path,
+    relative: Path,
+    line_number: int,
+    line: str,
+    context: str | None = None,
+) -> list[PublicLink]:
+    links: list[PublicLink] = []
+    for match in MARKDOWN_LINK_RE.finditer(line):
+        target = normalize_markdown_link_target(match.group(1))
+        if not target or should_ignore_link_target(target):
+            continue
+        if target.startswith("http://") or target.startswith("https://"):
+            classification = classify_public_release_url(target, relative, line_number, context or line)
+            if classification is not None:
+                links.append(PublicLink(relative, line_number, target, classification))
+            continue
+        validate_local_link(root, path, relative, line_number, target)
+        links.append(PublicLink(relative, line_number, target, "local"))
+    return links
+
+
+def validate_release_urls_in_line(
+    relative: Path,
+    line_number: int,
+    line: str,
+    context: str | None = None,
+) -> list[PublicLink]:
+    links: list[PublicLink] = []
+    for match in URL_RE.finditer(line):
+        target = match.group(0).rstrip(".,;")
+        classification = classify_public_release_url(target, relative, line_number, context or line)
+        if classification is not None:
+            links.append(PublicLink(relative, line_number, target, classification))
+    return links
+
+
+def surrounding_line_context(lines: list[str], line_number: int) -> str:
+    start = max(0, line_number - 2)
+    end = min(len(lines), line_number + 1)
+    return "\n".join(lines[start:end])
+
+
+def normalize_markdown_link_target(raw: str) -> str:
+    target = raw.strip()
+    if " " in target:
+        target = target.split()[0]
+    return target.strip("<>")
+
+
+def should_ignore_link_target(target: str) -> bool:
+    return (
+        target.startswith("mailto:")
+        or target.startswith("tel:")
+        or target.startswith("app://")
+        or target.startswith("file://")
+    )
+
+
+def validate_local_link(root: Path, path: Path, relative: Path, line_number: int, target: str) -> None:
+    target_path, _, fragment = target.partition("#")
+    if not target_path:
+        destination = path
+    else:
+        destination = (path.parent / unquote(target_path)).resolve()
+        try:
+            destination.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ValueError(
+                f"{relative}:{line_number}: local link escapes repository: target={target!r} "
+                "classification=local repair=use a repository-relative docs link"
+            ) from exc
+    if not destination.exists():
+        raise ValueError(
+            f"{relative}:{line_number}: missing local link target={target!r} "
+            "classification=local repair=fix or remove the link"
+        )
+    if fragment:
+        anchors = markdown_anchors(destination)
+        if fragment not in anchors:
+            raise ValueError(
+                f"{relative}:{line_number}: missing local link anchor target={target!r} "
+                f"classification=local repair=add anchor #{fragment} or update the link"
+            )
+
+
+def markdown_anchors(path: Path) -> set[str]:
+    text = path.read_text()
+    anchors = set(EXPLICIT_ANCHOR_RE.findall(text))
+    for line in text.splitlines():
+        match = HEADING_RE.match(line)
+        if match is not None:
+            anchors.add(github_heading_anchor(match.group(2)))
+    return anchors
+
+
+def github_heading_anchor(text: str) -> str:
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.strip().lower()
+    text = re.sub(r"[^a-z0-9 _-]", "", text)
+    text = re.sub(r"[\s_]+", "-", text)
+    return text.strip("-")
+
+
+def strip_deprecated_for_link_scan(text: str, relative_path: Path) -> str:
+    if str(relative_path) == "docs/behaviors/release/legacy-quickstart-hard-cutover.md":
+        return DEPRECATED_QUICKSTART_MARKER_RE.sub("", text)
+    return text
+
+
+def classify_public_release_url(url: str, relative: Path, line_number: int, context: str) -> str | None:
+    if RAW_MAIN_INSTALL_RE.search(url) is not None:
+        raise ValueError(
+            f"{relative}:{line_number}: raw main script URL is not public docs input "
+            f"target={url!r} classification=raw-main repair={PUBLIC_RELEASE_REPAIR_COMMAND}"
+        )
+    artifact_match = ARTIFACT_ONLY_LATEST_RE.search(url)
+    if artifact_match is not None:
+        raise ValueError(
+            f"{relative}:{line_number}: artifact-only latest URL is not public docs input "
+            f"target={artifact_match.group(0)!r} classification=artifact-only-latest "
+            f"repair={PUBLIC_RELEASE_REPAIR_COMMAND}"
+        )
+
+    if "github.com/" not in url or "/releases/" not in url:
+        return None
+    match = GITHUB_RELEASE_URL_RE.search(url)
+    if match is None:
+        return "ignored-template"
+    repository = match.group(1)
+    if repository != release_repository():
+        if ignored_negative_example_context(context):
+            return "ignored-negative-example"
+        raise ValueError(
+            f"{relative}:{line_number}: GitHub release URL uses wrong repository "
+            f"target={url!r} classification=wrong-owner repair=use {release_repository()}"
+        )
+    if "/releases/latest/download/install.sh" in url:
+        return "generated-latest"
+    if url.endswith("/releases/download/") and (
+        "install.sh" in context and ("<version>" in context or "<tag>" in context or "${tag}" in context)
+    ):
+        return "generated-pinned"
+    if url.endswith("/releases/download/") and (
+        "<bundle>" in context or ".tar.gz" in context or "--bundle-url" in context
+    ):
+        return "operator-direct-bundle"
+    if re.search(r"/releases/download/(?:v[0-9]+\.[0-9]+\.[0-9]+|<version>|&lt;version&gt;|\$\{tag\})/install\.sh", url):
+        if troubleshooting_context(context):
+            return "pinned-troubleshooting"
+        return "generated-pinned"
+    if re.search(r"/releases/download/(?:v[0-9]+\.[0-9]+\.[0-9]+|\$\{tag\})/m80-[^/\s]+\.tar\.gz", url):
+        return "operator-direct-bundle"
+    if re.search(r"/releases/(?:latest|tag/v[0-9]+\.[0-9]+\.[0-9]+)$", url):
+        return "public-proof-link"
+    raise ValueError(
+        f"{relative}:{line_number}: unclassified GitHub release URL target={url!r} "
+        f"classification=unclassified-release-url repair={PUBLIC_RELEASE_REPAIR_COMMAND}"
+    )
+
+
+def ignored_negative_example_context(context: str) -> bool:
+    lowered = context.lower()
+    return any(word in lowered for word in ("reject", "rejected", "foreign", "wrong", "invalid"))
+
+
+def troubleshooting_context(context: str) -> bool:
+    lowered = context.lower()
+    return any(word in lowered for word in TROUBLESHOOTING_CONTEXT_WORDS)
 
 
 def extract_public_command_snippets(path: Path, *, root: Path) -> list[PublicCommandSnippet]:
