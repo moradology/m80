@@ -618,6 +618,74 @@ fn diagnostic_path_fallback_keeps_jailer_identity_under_firecracker_dir() {
 }
 
 #[test]
+fn diagnostic_path_io_preserves_verifier_origin_check_ids() {
+    let cases = [
+        ("/proc/cpuinfo", HostPrerequisiteCheckId::KvmCpuExtensions),
+        ("/proc/modules", HostPrerequisiteCheckId::KernelModules),
+        (
+            "/proc/sys/net/bridge/bridge-nf-call-iptables",
+            HostPrerequisiteCheckId::KernelModules,
+        ),
+        (
+            "/proc/sys/net/netfilter/nf_conntrack_max",
+            HostPrerequisiteCheckId::ConntrackCapacity,
+        ),
+        ("/tmp/vmlinux", HostPrerequisiteCheckId::KernelImage),
+        ("/tmp/rootfs.ext4", HostPrerequisiteCheckId::RootfsManifest),
+    ];
+
+    for (path, check_id) in cases {
+        let err = PreflightError::PathIo {
+            path: path.into(),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        };
+
+        let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+        assert_eq!(check.check_id, check_id, "path {path}");
+        assert_eq!(
+            check.failure_variant,
+            Some(HostPrerequisiteFailureKind::PathIo)
+        );
+        assert_eq!(check.final_path.as_deref(), Some(Path::new(path)));
+    }
+}
+
+#[test]
+fn diagnostic_system_io_preserves_verifier_origin_check_ids() {
+    let cases = [
+        ("uname", HostPrerequisiteCheckId::OsGate),
+        ("cgroup v2 probe", HostPrerequisiteCheckId::CgroupMode),
+        ("user lookup", HostPrerequisiteCheckId::JailerIdentity),
+        ("group lookup", HostPrerequisiteCheckId::JailerIdentity),
+        (
+            "host prerequisite result construction",
+            HostPrerequisiteCheckId::HostSubstrateProof,
+        ),
+    ];
+
+    for (operation, check_id) in cases {
+        let err = PreflightError::SystemIo {
+            operation,
+            source: std::io::Error::other("host failure"),
+        };
+
+        let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+        assert_eq!(check.check_id, check_id, "operation {operation}");
+        assert_eq!(
+            check.failure_variant,
+            Some(HostPrerequisiteFailureKind::SystemIo)
+        );
+        assert_eq!(
+            check.expected_value.as_deref(),
+            Some(format!("{operation} succeeds").as_str())
+        );
+        assert_eq!(check.actual_value.as_deref(), Some("host failure"));
+    }
+}
+
+#[test]
 fn diagnostic_maps_bad_kvm_substrate_to_repair_token() {
     let err = PreflightError::KvmNotWritable {
         path: "/dev/kvm".into(),

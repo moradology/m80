@@ -668,6 +668,37 @@ fn preflight_json_error_report_includes_selected_profile_context() {
 }
 
 #[test]
+fn preflight_json_error_preserves_path_io_origin_check_id() {
+    let profile = installed_runtime_profile();
+    let err = m80_firecracker::FcError::Preflight(PreflightError::PathIo {
+        path: "/proc/modules".into(),
+        source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+    });
+    let runtime_profile = profile::runtime_profile_report(&profile);
+    let report = PreflightErrorReport {
+        error: crate::errors::envelope(&err),
+        proof_cache: ProofCacheStatusOutput::from_runtime_profile(&runtime_profile),
+        host_prerequisite_failure: host_prerequisite_failure(&err, &runtime_profile),
+        runtime_profile,
+    };
+    let json = json::to_pretty(&report);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["check_id"],
+        "kernel_modules"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["failure_variant"],
+        "path_io"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["final_path"],
+        "/proc/modules"
+    );
+}
+
+#[test]
 fn preflight_json_error_pins_m80_owned_repair_command_to_release_tag() {
     let profile = installed_runtime_profile();
     let runtime_report = profile::runtime_profile_report(&profile);
@@ -725,6 +756,22 @@ fn preflight_text_error_renders_expected_actual_values() {
     assert!(text.contains("expected_value: present and writable"));
     assert!(text.contains("actual_value: not writable"));
     assert!(text.contains("remediation_id: repair-kvm"));
+}
+
+#[test]
+fn preflight_text_error_preserves_system_io_origin_check_id() {
+    let err = PreflightError::SystemIo {
+        operation: "cgroup v2 probe",
+        source: std::io::Error::other("probe failed"),
+    };
+    let check = m80_preflight::HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    let text = render_host_prerequisite_failure(&check);
+
+    assert!(text.contains("check_id: cgroup_mode"));
+    assert!(text.contains("failure_variant: system_io"));
+    assert!(text.contains("expected_value: cgroup v2 probe succeeds"));
+    assert!(text.contains("actual_value: probe failed"));
 }
 
 #[test]

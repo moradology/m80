@@ -78,7 +78,15 @@ remediation token. The host substrate verifier emits this result for its rows
 today. `HostPrerequisiteCheck::from_preflight_error()` projects typed preflight
 failures into the same schema, including final path, expected/actual scalar
 values, release version fields when known, a typed failure variant, and a
-policy-linked remediation token. `m80 preflight` renders that projected record
+policy-linked remediation token. Opaque `PathIo` and `SystemIo` failures keep
+the originating verifier identity where the source is known: `/proc/cpuinfo`
+maps to `kvm_cpu_extensions`, `/proc/modules` and
+`bridge-nf-call-iptables` map to `kernel_modules`, `nf_conntrack_max` maps to
+`conntrack_capacity`, `uname` maps to `os_gate`, `cgroup v2 probe` maps to
+`cgroup_mode`, jail user/group lookups map to `jailer_identity`, and
+host-prerequisite result construction maps to `host_substrate_proof`.
+Path-shape fallback remains only for artifact and host-binary paths that do not
+carry a more precise typed error. `m80 preflight` renders that projected record
 in both JSON and plain text so machine consumers and operators see the same
 structured repair fields. When the selected runtime profile names a release
 tag, CLI rendering pins m80-owned helper repairs to that exact `install.sh`

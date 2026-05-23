@@ -459,7 +459,7 @@ fn check_id_for_preflight_error(error: &PreflightError) -> HostPrerequisiteCheck
         }
         PreflightError::NonAbsolutePath { kind, .. } => check_id_for_non_absolute_kind(kind),
         PreflightError::PathIo { path, .. } => check_id_for_path(path),
-        PreflightError::SystemIo { .. } => HostPrerequisiteCheckId::HostBinaryManifest,
+        PreflightError::SystemIo { operation, .. } => check_id_for_system_operation(operation),
         _ => HostPrerequisiteCheckId::RootfsManifest,
     }
 }
@@ -495,6 +495,13 @@ fn check_id_for_non_absolute_kind(kind: &str) -> HostPrerequisiteCheckId {
 fn check_id_for_path(path: &std::path::Path) -> HostPrerequisiteCheckId {
     match path.to_str() {
         Some("/dev/kvm") => HostPrerequisiteCheckId::Kvm,
+        Some("/proc/cpuinfo") => HostPrerequisiteCheckId::KvmCpuExtensions,
+        Some("/proc/modules") | Some("/proc/sys/net/bridge/bridge-nf-call-iptables") => {
+            HostPrerequisiteCheckId::KernelModules
+        }
+        Some("/proc/sys/net/netfilter/nf_conntrack_max") => {
+            HostPrerequisiteCheckId::ConntrackCapacity
+        }
         Some(value) if value.contains("seccomp") => {
             HostPrerequisiteCheckId::FirecrackerSeccompFilter
         }
@@ -509,6 +516,16 @@ fn check_id_for_path(path: &std::path::Path) -> HostPrerequisiteCheckId {
         Some(value) if value.contains("rootfs") || value.ends_with(".ext4") => {
             HostPrerequisiteCheckId::RootfsManifest
         }
+        _ => HostPrerequisiteCheckId::HostBinaryManifest,
+    }
+}
+
+fn check_id_for_system_operation(operation: &str) -> HostPrerequisiteCheckId {
+    match operation {
+        "uname" => HostPrerequisiteCheckId::OsGate,
+        "cgroup v2 probe" => HostPrerequisiteCheckId::CgroupMode,
+        "user lookup" | "group lookup" => HostPrerequisiteCheckId::JailerIdentity,
+        "host prerequisite result construction" => HostPrerequisiteCheckId::HostSubstrateProof,
         _ => HostPrerequisiteCheckId::HostBinaryManifest,
     }
 }
