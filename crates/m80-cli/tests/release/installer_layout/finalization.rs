@@ -1,7 +1,11 @@
 use std::fs;
+use std::os::unix::fs::symlink;
 
 use super::fixture::write_release_bundle;
-use super::{read_repo_file, run_install, seed_previous_active_install, HostPrereqFixture};
+use super::{
+    read_repo_file, run_install, run_install_with_extra_args, seed_previous_active_install,
+    HostPrereqFixture,
+};
 
 #[test]
 fn installed_layout_doc_names_directory_contract_and_tests() {
@@ -205,6 +209,102 @@ fn install_bundle_layout_injected_interruption_leaves_previous_active_selected()
 }
 
 #[test]
+fn install_bundle_layout_active_flip_failure_restores_previous_state() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    fs::create_dir_all(install_root.join("bin")).unwrap();
+    symlink(previous.join("bin/m80"), install_root.join("bin/m80")).unwrap();
+    let profile_path = install_root.join("profiles/default.toml");
+    fs::create_dir_all(profile_path.parent().unwrap()).unwrap();
+    fs::write(&profile_path, "description = \"old profile\"\n").unwrap();
+    fs::write(
+        install_root.join("config.toml"),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n",
+    )
+    .unwrap();
+
+    let output = run_install_with_extra_args(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &["--adopt-existing-config"],
+        &[("M80_INSTALL_INJECT_ACTIVE_FLIP_FAILURE", "1")],
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("injected active pointer flip failure"),
+        "unexpected stderr: {stderr}"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("bin/m80")).unwrap(),
+        previous.join("bin/m80")
+    );
+    assert_eq!(
+        fs::read_to_string(profile_path).unwrap(),
+        "description = \"old profile\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(install_root.join("config.toml")).unwrap(),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n"
+    );
+    assert!(
+        !install_root
+            .join("versions")
+            .join(&bundle.release_tag)
+            .exists(),
+        "failed active flip must remove the attempted version directory"
+    );
+    assert!(
+        fs::read_dir(install_root.join(".staging"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "failed active flip must not leave staging dirs"
+    );
+}
+
+#[test]
+fn install_bundle_layout_manifest_failure_removes_attempted_version_dir() {
+    let bundle = write_release_bundle(None);
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+
+    let output = run_install(
+        &bundle,
+        &install_root,
+        None,
+        &[("M80_FIRECRACKER_BIN", "/definitely/missing/firecracker")],
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert!(
+        !install_root
+            .join("versions")
+            .join(&bundle.release_tag)
+            .exists(),
+        "host manifest failure must remove the attempted version directory"
+    );
+}
+
+#[test]
 fn install_bundle_layout_cleans_abandoned_staging_dirs() {
     let bundle = write_release_bundle(None);
     let host = HostPrereqFixture::new();
@@ -266,6 +366,8 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "install_bundle_layout_manifest_failure_leaves_previous_active_selected",
         "install_bundle_layout_profile_failure_leaves_previous_active_and_profile",
         "install_bundle_layout_injected_interruption_leaves_previous_active_selected",
+        "install_bundle_layout_active_flip_failure_restores_previous_state",
+        "install_bundle_layout_manifest_failure_removes_attempted_version_dir",
         "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
@@ -294,6 +396,7 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "upgrade_install_replaces_active_after_new_release_is_fully_committed",
         "install_explicit_preflight_only_gate_accepts_hostless_fixture",
         "install_preflight_only_failure_leaves_version_inactive",
+        "install_preflight_only_failure_restores_previous_upgrade_state",
         "install_run_smoke_refuses_hostless_fixture_before_activation",
         "run_smoke_command_uses_installed_binary_and_public_echo_probe",
         "`previous_active_release_tag`",

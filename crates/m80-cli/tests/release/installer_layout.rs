@@ -444,6 +444,56 @@ fn install_preflight_only_failure_leaves_version_inactive() {
 }
 
 #[test]
+fn install_preflight_only_failure_restores_previous_upgrade_state() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    let profile_path = install_root.join("profiles/default.toml");
+    fs::create_dir_all(profile_path.parent().unwrap()).unwrap();
+    fs::write(&profile_path, "description = \"old profile\"\n").unwrap();
+    fs::write(
+        install_root.join("config.toml"),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n",
+    )
+    .unwrap();
+
+    let output = run_install_with_extra_args(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &["--adopt-existing-config", "--smoke-gate", "preflight-only"],
+        &[("M80_JAIL_UID", "not-a-uid")],
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("M80_JAIL_UID"), "{stderr}");
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert_eq!(
+        fs::read_to_string(profile_path).unwrap(),
+        "description = \"old profile\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(install_root.join("config.toml")).unwrap(),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n"
+    );
+    assert!(
+        !install_root
+            .join("versions")
+            .join(&bundle.release_tag)
+            .exists(),
+        "failed preflight gate must remove the attempted version directory"
+    );
+}
+
+#[test]
 fn install_bundle_layout_fails_when_older_m80_shadows_installed_path() {
     let bundle = write_release_bundle(None);
     let host = HostPrereqFixture::new();
@@ -938,6 +988,7 @@ fn clear_install_env(command: &mut assert_cmd::Command) {
         "M80_INSTALL_INJECT_PROOF_CACHE_WRITE_FAILURE",
         "M80_INSTALL_INJECT_PROOF_CACHE_DIGEST_FAILURE",
         "M80_INSTALL_INJECT_PROOF_CACHE_MODE_FAILURE",
+        "M80_INSTALL_INJECT_ACTIVE_FLIP_FAILURE",
         "M80_RELEASE_ATTESTATION_GH",
     ] {
         command.env_remove(key);

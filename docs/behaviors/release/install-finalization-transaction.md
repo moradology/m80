@@ -71,13 +71,15 @@ temporary sibling and renamed into place after profile writing, manifest
 generation, and the preflight gate have passed.
 
 If bundle verification, release proof-cache verification, host-binaries manifest
-generation, profile writing, or the interruption injection fails, any previous
-`<install-root>/active` symlink continues to select the previous version. An
-unselected version directory may remain after a late failure so the operator can
-inspect it; it is not current until the active symlink points at it.
-Proof-cache write, manifest-digest, and mode failures also leave the attempted
-version unpublished, do not create runtime state, and do not leak active
-`layout-*` staging directories.
+generation, profile writing, the interruption injection, PATH handoff, or
+`active_pointer_flip` fails, any previous `<install-root>/active` symlink
+continues to select the previous version. The attempted version directory is
+removed on ordinary transaction failures before the active pointer moves, so a
+failed upgrade does not leave an inactive tree that can be mistaken for a
+verified rollback target. Proof-cache write, manifest-digest, mode,
+host-manifest, profile, preflight, and active-flip failures also leave the
+previous default profile, config, and command handoff selected, do not create
+runtime state, and do not leak active `layout-*` staging directories.
 
 A normal upgrade from one installed stable release to a newer stable release is
 the same transaction, not a special compatibility path. The installer verifies
@@ -128,6 +130,8 @@ not publish a version or switch active state until all finalization gates pass.
 - `install_bundle_layout_manifest_failure_leaves_previous_active_selected`
 - `install_bundle_layout_profile_failure_leaves_previous_active_and_profile`
 - `install_bundle_layout_injected_interruption_leaves_previous_active_selected`
+- `install_bundle_layout_active_flip_failure_restores_previous_state`
+- `install_bundle_layout_manifest_failure_removes_attempted_version_dir`
 - `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
@@ -152,6 +156,7 @@ not publish a version or switch active state until all finalization gates pass.
 - `upgrade_install_replaces_active_after_new_release_is_fully_committed`
 - `install_explicit_preflight_only_gate_accepts_hostless_fixture`
 - `install_preflight_only_failure_leaves_version_inactive`
+- `install_preflight_only_failure_restores_previous_upgrade_state`
 - `install_run_smoke_refuses_hostless_fixture_before_activation`
 - `run_smoke_command_uses_installed_binary_and_public_echo_probe`
 - `install_finalization_transaction_doc_names_state_machine_and_tests`

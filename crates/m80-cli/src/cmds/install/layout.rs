@@ -232,6 +232,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         path: final_dir.clone(),
         source,
     })?;
+    let mut final_dir_guard = PublishedVersionGuard::armed(final_dir.clone());
 
     let binary_config = installed_binary_config(&final_dir, &metadata);
     let host_binaries_manifest = write_install_host_binaries_manifest(&final_dir, &binary_config)?;
@@ -273,9 +274,15 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let active_pointer = PathBuf::from(&plan.active_pointer);
     let previous_active = previous_active_candidate(&active_pointer)?;
     if let Err(err) = flip_active_pointer(&active_pointer, &final_dir) {
+        if let Err(rollback_err) = handoff.rollback() {
+            selector_transaction.rollback();
+            return Err(path_handoff_rollback_error(err, rollback_err));
+        }
         selector_transaction.rollback();
         return Err(err);
     }
+    handoff.commit();
+    final_dir_guard.disarm();
 
     let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
     let release_material = verified_official_bundle.as_ref().map(|verified_bundle| {
@@ -345,6 +352,9 @@ fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
 struct PathHandoffSummary {
     installed_m80_path: String,
     installed_m80_version: String,
+    link_path: PathBuf,
+    backup_link: PathBuf,
+    had_previous_link: bool,
 }
 
 fn install_path_handoff(final_dir: &Path, bin_dir: &Path) -> Result<PathHandoffSummary, FcError> {
@@ -389,16 +399,57 @@ fn install_path_handoff(final_dir: &Path, bin_dir: &Path) -> Result<PathHandoffS
         restore_previous_m80_link(&link_path, &backup_link, previous_link.exists)?;
     }
     let installed_m80_version = handoff?;
-    if previous_link.exists {
-        fs::remove_file(&backup_link).map_err(|source| FcError::PathIo {
-            path: backup_link.clone(),
-            source,
-        })?;
-    }
     Ok(PathHandoffSummary {
         installed_m80_path: link_path.display().to_string(),
         installed_m80_version,
+        link_path,
+        backup_link,
+        had_previous_link: previous_link.exists,
     })
+}
+
+impl PathHandoffSummary {
+    fn rollback(&self) -> Result<(), FcError> {
+        restore_previous_m80_link(&self.link_path, &self.backup_link, self.had_previous_link)
+    }
+
+    fn commit(&self) {
+        if self.had_previous_link {
+            let _ = fs::remove_file(&self.backup_link);
+        }
+    }
+}
+
+fn path_handoff_rollback_error(primary: FcError, rollback: FcError) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "install.bin_dir",
+        reason: format!(
+            "active pointer flip failed after PATH handoff, and PATH handoff rollback also failed; primary_error={primary}; rollback_error={rollback}"
+        ),
+    })
+}
+
+struct PublishedVersionGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl PublishedVersionGuard {
+    fn armed(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PublishedVersionGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1105,6 +1156,7 @@ fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
 }
 
 fn flip_active_pointer(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
+    maybe_inject_active_flip_failure()?;
     require_absolute_path("active_pointer", active_pointer)?;
     require_absolute_path("active_pointer_target", final_dir)?;
     let parent = active_pointer.parent().ok_or_else(|| {
@@ -1165,6 +1217,19 @@ fn maybe_inject_interruption_after_profile() -> Result<(), FcError> {
             return Err(FcError::Config(ConfigError::InvalidValue {
                 field: "install.finalization",
                 reason: "injected interruption after profile write".to_owned(),
+            }));
+        }
+    }
+    Ok(())
+}
+
+fn maybe_inject_active_flip_failure() -> Result<(), FcError> {
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("M80_INSTALL_INJECT_ACTIVE_FLIP_FAILURE").is_some() {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "install.active_pointer",
+                reason: "injected active pointer flip failure".to_owned(),
             }));
         }
     }
