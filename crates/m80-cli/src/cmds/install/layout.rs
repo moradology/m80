@@ -962,13 +962,11 @@ fn verify_preflight_gate(bundle_url: &str) -> Result<&'static str, FcError> {
 }
 
 fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
-    #[cfg(test)]
-    if std::env::var_os("M80_INSTALL_TEST_HOSTLESS_OFFICIAL").is_some() {
-        let _ = bundle_url;
-        return Ok(true);
-    }
     #[cfg(debug_assertions)]
     {
+        if std::env::var_os("M80_INSTALL_TEST_HOSTLESS_OFFICIAL").is_some() {
+            return Ok(true);
+        }
         Ok(std::env::var_os("M80_INSTALL_HOSTLESS_FIXTURE").is_some()
             && source::is_fixture_bundle_url(bundle_url)?)
     }
