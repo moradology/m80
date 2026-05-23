@@ -430,12 +430,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           M80_RELEASE_TOKEN_SOURCE: github.token
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           set -euo pipefail
           scripts/release_publish_authority.py \
             --workflow-file .github/workflows/release-artifacts.yml \
             --token-source "$M80_RELEASE_TOKEN_SOURCE" \
             --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
             --workflow-run-id "$GITHUB_RUN_ID" \
             --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --actor "$GITHUB_ACTOR" \
@@ -456,6 +458,7 @@ jobs:
             --actor "$GITHUB_ACTOR" \
             --repository "$GITHUB_REPOSITORY" \
             --github-ref "$GITHUB_REF" \
+            --token-authority "$UPLOAD_DIR/m80-release-token-authority.json" \
             --write
 
       - name: Resolve release publication plan
@@ -483,8 +486,19 @@ jobs:
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           set -euo pipefail
+          scripts/release_publish_receipt.py \
+            --dist-dir "$UPLOAD_DIR" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-ref "$GITHUB_REF" \
+            --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
           import json
@@ -580,8 +594,19 @@ jobs:
       - name: Publish validated draft without latest promotion
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           set -euo pipefail
+          scripts/release_publish_receipt.py \
+            --dist-dir "$UPLOAD_DIR" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-ref "$GITHUB_REF" \
+            --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
           import json
@@ -670,8 +695,19 @@ jobs:
       - name: Mark validated release as latest
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           set -euo pipefail
+          scripts/release_publish_receipt.py \
+            --dist-dir "$UPLOAD_DIR" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-ref "$GITHUB_REF" \
+            --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
           import json

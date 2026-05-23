@@ -69,6 +69,7 @@ def parse_args() -> argparse.Namespace:
         help="environment variable expected to hold the publish token",
     )
     parser.add_argument("--release-tag", default=None)
+    parser.add_argument("--commit-sha", default=None)
     parser.add_argument("--workflow-run-id", default=None)
     parser.add_argument("--workflow-run-attempt", default=None)
     parser.add_argument("--actor", default=None)
@@ -97,6 +98,7 @@ def main() -> int:
             context,
             workflow_file=args.workflow_file,
             release_tag=release_tag,
+            commit_sha=resolve_value(args.commit_sha, "RELEASE_COMMIT", "commit-sha"),
             workflow_run_id=resolve_optional(args.workflow_run_id, "GITHUB_RUN_ID"),
             workflow_run_attempt=resolve_optional(args.workflow_run_attempt, "GITHUB_RUN_ATTEMPT"),
             actor=resolve_optional(args.actor, "GITHUB_ACTOR"),
@@ -107,13 +109,13 @@ def main() -> int:
         verify_release_metadata_probe(receipt["probes"][-1], release_tag)
         receipt["decision"] = "approved"
         receipt["failure_reason"] = None
-        verify_receipt(receipt, context, release_tag)
+        verify_receipt(receipt, context, release_tag, resolve_value(args.commit_sha, "RELEASE_COMMIT", "commit-sha"))
         if args.write:
             require(receipt_path is not None, "release publish authority receipt path missing")
             write_json(receipt_path, receipt)
         elif receipt_path is not None:
             existing = read_json(receipt_path, "release publish authority receipt")
-            verify_receipt(existing, context, release_tag)
+            verify_receipt(existing, context, release_tag, resolve_value(args.commit_sha, "RELEASE_COMMIT", "commit-sha"))
         print(
             "release publish authority ok: "
             f"{context.repository} {context.github_ref} {context.github_job}"
@@ -158,6 +160,7 @@ def build_receipt(
     *,
     workflow_file: Path,
     release_tag: str,
+    commit_sha: str,
     workflow_run_id: str | None,
     workflow_run_attempt: str | None,
     actor: str | None,
@@ -170,6 +173,7 @@ def build_receipt(
         "repository": context.repository,
         "github_ref": context.github_ref,
         "release_tag": release_tag,
+        "commit_sha": commit_sha,
         "workflow_ref": context.workflow_ref,
         "workflow_path": PUBLISH_AUTHORITY_POLICY["workflow_path"],
         "workflow_file": str(workflow_file),
@@ -194,6 +198,7 @@ def failure_receipt(args: argparse.Namespace, message: str) -> dict:
     github_job = args.github_job or os.environ.get("GITHUB_JOB")
     token_source = args.token_source or os.environ.get("M80_RELEASE_TOKEN_SOURCE")
     release_tag = args.release_tag or tag_from_ref(github_ref)
+    commit_sha = args.commit_sha or os.environ.get("RELEASE_COMMIT")
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
@@ -201,6 +206,7 @@ def failure_receipt(args: argparse.Namespace, message: str) -> dict:
         "repository": repository,
         "github_ref": github_ref,
         "release_tag": release_tag,
+        "commit_sha": commit_sha,
         "workflow_ref": workflow_ref,
         "workflow_path": PUBLISH_AUTHORITY_POLICY["workflow_path"],
         "workflow_file": str(args.workflow_file),
@@ -258,7 +264,7 @@ def verify_release_metadata_probe(probe: dict, release_tag: str) -> None:
     require(payload.get("isPrerelease") is False, "release publish authority release metadata is prerelease")
 
 
-def verify_receipt(receipt: dict, context: PublishContext, release_tag: str) -> None:
+def verify_receipt(receipt: dict, context: PublishContext, release_tag: str, commit_sha: str) -> None:
     expected_keys = {
         "schema_version",
         "kind",
@@ -266,6 +272,7 @@ def verify_receipt(receipt: dict, context: PublishContext, release_tag: str) -> 
         "repository",
         "github_ref",
         "release_tag",
+        "commit_sha",
         "workflow_ref",
         "workflow_path",
         "workflow_file",
@@ -291,6 +298,7 @@ def verify_receipt(receipt: dict, context: PublishContext, release_tag: str) -> 
     require(receipt["repository"] == context.repository, "release publish authority receipt repository mismatch")
     require(receipt["github_ref"] == context.github_ref, "release publish authority receipt github_ref mismatch")
     require(receipt["release_tag"] == release_tag, "release publish authority receipt release_tag mismatch")
+    require(receipt["commit_sha"] == commit_sha, "release publish authority receipt commit_sha mismatch")
     require(receipt["workflow_ref"] == context.workflow_ref, "release publish authority receipt workflow_ref mismatch")
     require(receipt["github_job"] == context.github_job, "release publish authority receipt github_job mismatch")
     require(receipt["token_source"] == context.token_source, "release publish authority receipt token_source mismatch")

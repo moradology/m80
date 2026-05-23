@@ -1097,6 +1097,7 @@ def run_authority(
     env["GITHUB_REF"] = github_ref
     env["GITHUB_WORKFLOW_REF"] = workflow_ref
     env["GITHUB_JOB"] = github_job
+    env["RELEASE_COMMIT"] = "0123456789abcdef0123456789abcdef01234567"
     if token_source is None:
         env.pop("M80_RELEASE_TOKEN_SOURCE", None)
     else:

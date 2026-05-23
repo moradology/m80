@@ -6,7 +6,7 @@ The tag publish job must write and validate
 The receipt is the publish-authority handoff: it records which already-verified
 inputs justified moving public release state.
 
-The receipt uses `schema_version: 2` and `kind:
+The receipt uses `schema_version: 3` and `kind:
 "m80_release_publish_decision"`. It records:
 
 - `release_tag`, `commit_sha`, `workflow_run_id`, `workflow_run_attempt`,
@@ -17,6 +17,10 @@ The receipt uses `schema_version: 2` and `kind:
 - `proof_ledger` and `proof_ledger_digest`, bound to
   `m80-release-proof-ledger.jsonl`. This field must never point at a
   `m80-quickstart-proof-*.json` proof artifact.
+- `token_authority` and `token_authority_digest`, bound to
+  `m80-release-token-authority.json`. The token authority receipt must be an
+  approved publish-job receipt for the same tag, commit, run id, actor,
+  repository, and GitHub ref.
 - `quickstart_proofs`, a lane-indexed list of proof JSON refs. The current
   hostless lane points at `m80-quickstart-proof-hostless.json`; future real-KVM
   lanes point at their own proof JSON and remain separate from the ledger.
@@ -26,14 +30,15 @@ The receipt uses `schema_version: 2` and `kind:
 `scripts/release_publish_receipt.py --write` writes the receipt and then
 validates it. A non-writing invocation validates an existing receipt against
 the current dist directory, tag, commit, actor, repository, ref, upload
-manifest, proof input, and public asset bytes.
+manifest, token authority receipt, proof input, and public asset bytes.
 
 The verifier fails closed for a missing receipt, stale upload-manifest digest,
 stale proof-ledger digest, missing or stale quickstart proof JSON, swapped
 ledger/proof refs, duplicate proof JSON refs, legacy ambiguous schema, wrong
-actor, wrong repository, wrong ref, wrong tag, wrong commit, stale public asset
-hash or size, and malformed receipt fields. The publish job runs the verifier
-before upload. A later failed publish preserves the attempted receipt in the
+actor, wrong repository, wrong ref, wrong tag, wrong commit, failed or wrong-job
+token authority, stale public asset hash or size, and malformed receipt fields.
+The publish job runs the verifier before upload, draft publication, and latest
+promotion. A later failed publish preserves the attempted receipt in the
 failed publish diagnostics artifact; successful publishes upload the receipt as
 a durable workflow artifact.
 

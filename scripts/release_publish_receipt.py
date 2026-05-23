@@ -11,8 +11,9 @@ from pathlib import Path
 import re
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 RECEIPT_NAME = "m80-release-publish-decision.json"
+TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 HOSTLESS_PROOF_NAME = "m80-quickstart-proof-hostless.json"
@@ -37,6 +38,8 @@ TOP_LEVEL_FIELDS = {
     "artifact_manifest_digest",
     "proof_ledger",
     "proof_ledger_digest",
+    "token_authority",
+    "token_authority_digest",
     "quickstart_proofs",
     "public_assets",
     "failure_reason",
@@ -97,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         help=f"optional: <dist-dir>/{REAL_KVM_PROOF_NAME}",
     )
     parser.add_argument(
+        "--token-authority",
+        type=Path,
+        help=f"default: <dist-dir>/{TOKEN_AUTHORITY_NAME}",
+    )
+    parser.add_argument(
         "--receipt",
         type=Path,
         help=f"default: <dist-dir>/{RECEIPT_NAME}",
@@ -112,6 +120,7 @@ def main() -> int:
     proof_ledger_path = (args.proof_ledger or dist_dir / RELEASE_PROOF_LEDGER_NAME).resolve()
     hostless_proof_path = (args.hostless_proof or dist_dir / HOSTLESS_PROOF_NAME).resolve()
     real_kvm_proof_path = args.real_kvm_proof.resolve() if args.real_kvm_proof else None
+    token_authority_path = (args.token_authority or dist_dir / TOKEN_AUTHORITY_NAME).resolve()
     receipt_path = (args.receipt or dist_dir / RECEIPT_NAME).resolve()
 
     if args.write:
@@ -132,6 +141,7 @@ def main() -> int:
             proof_ledger_path=proof_ledger_path,
             hostless_proof_path=hostless_proof_path,
             real_kvm_proof_path=real_kvm_proof_path,
+            token_authority_path=token_authority_path,
         )
         write_json(receipt_path, receipt)
 
@@ -150,6 +160,7 @@ def main() -> int:
         proof_ledger_path=proof_ledger_path,
         hostless_proof_path=hostless_proof_path,
         real_kvm_proof_path=real_kvm_proof_path,
+        token_authority_path=token_authority_path,
     )
     print(f"release publish decision receipt ok: {receipt_path}")
     return 0
@@ -173,11 +184,13 @@ def build_receipt(
     proof_ledger_path: Path,
     hostless_proof_path: Path,
     real_kvm_proof_path: Path | None,
+    token_authority_path: Path,
 ) -> dict:
     manifest = read_json(manifest_path, "release upload manifest")
     public_assets = normalized_public_assets(manifest)
     artifact_manifest = file_ref(dist_dir, manifest_path, "artifact manifest")
     proof_ledger = file_ref(dist_dir, proof_ledger_path, "proof ledger")
+    token_authority = file_ref(dist_dir, token_authority_path, "token authority receipt")
     hostless_proof = file_ref(dist_dir, hostless_proof_path, "hostless quickstart proof")
     quickstart_proofs = [
         {
@@ -214,6 +227,8 @@ def build_receipt(
         "artifact_manifest_digest": artifact_manifest["sha256"],
         "proof_ledger": proof_ledger,
         "proof_ledger_digest": proof_ledger["sha256"],
+        "token_authority": token_authority,
+        "token_authority_digest": token_authority["sha256"],
         "quickstart_proofs": quickstart_proofs,
         "public_assets": public_assets,
         "failure_reason": failure_reason,
@@ -235,6 +250,7 @@ def verify_receipt(
     proof_ledger_path: Path,
     hostless_proof_path: Path,
     real_kvm_proof_path: Path | None,
+    token_authority_path: Path,
 ) -> None:
     require_exact_fields(receipt, TOP_LEVEL_FIELDS, "release publish decision receipt")
     require(receipt["schema_version"] == SCHEMA_VERSION, "release publish decision receipt schema_version mismatch")
@@ -294,6 +310,26 @@ def verify_receipt(
     require(
         receipt["proof_ledger_digest"] == proof_ledger["sha256"],
         "release publish decision receipt proof_ledger_digest mismatch",
+    )
+    token_authority = verify_file_ref(
+        receipt["token_authority"],
+        dist_dir=dist_dir,
+        path=token_authority_path,
+        label="token authority receipt",
+    )
+    require(
+        receipt["token_authority_digest"] == token_authority["sha256"],
+        "release publish decision receipt token_authority_digest mismatch",
+    )
+    verify_token_authority_receipt(
+        read_json(token_authority_path, "release publish token authority receipt"),
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        workflow_run_id=workflow_run_id,
+        workflow_run_attempt=workflow_run_attempt,
+        actor=actor,
+        repository=repository,
+        github_ref=github_ref,
     )
     expected_paths = {"hostless-quickstart": hostless_proof_path}
     if real_kvm_proof_path is not None:
@@ -380,6 +416,36 @@ def require_quickstart_proofs(value: object, *, dist_dir: Path, expected_paths: 
         not missing,
         f"release publish decision receipt missing quickstart proof lane: {comma_or_none(missing)}",
     )
+
+
+def verify_token_authority_receipt(
+    receipt: dict,
+    *,
+    release_tag: str,
+    commit_sha: str,
+    workflow_run_id: str,
+    workflow_run_attempt: str,
+    actor: str,
+    repository: str,
+    github_ref: str,
+) -> None:
+    require(receipt.get("kind") == "m80_release_publish_token_authority", "release publish token authority receipt kind mismatch")
+    require(receipt.get("decision") == "approved", "release publish token authority receipt decision must be approved")
+    require(receipt.get("release_tag") == release_tag, "release publish token authority receipt release_tag mismatch")
+    require(receipt.get("commit_sha") == commit_sha, "release publish token authority receipt commit_sha mismatch")
+    require(receipt.get("workflow_run_id") == workflow_run_id, "release publish token authority receipt workflow_run_id mismatch")
+    require(
+        receipt.get("workflow_run_attempt") == workflow_run_attempt,
+        "release publish token authority receipt workflow_run_attempt mismatch",
+    )
+    require(receipt.get("actor") == actor, "release publish token authority receipt actor mismatch")
+    require(receipt.get("repository") == repository, "release publish token authority receipt repository mismatch")
+    require(receipt.get("github_ref") == github_ref, "release publish token authority receipt github_ref mismatch")
+    require(
+        receipt.get("github_job") == "publish-release-artifacts",
+        "release publish token authority receipt github_job mismatch",
+    )
+    require(receipt.get("failure_reason") is None, "release publish token authority receipt approved with failure_reason")
 
 
 def require_known_lane(value: object, label: str) -> str:

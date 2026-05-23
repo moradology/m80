@@ -44,6 +44,7 @@ INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
+TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
@@ -1380,6 +1381,7 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("scripts/release_publish_receipt.py", workflow)
         self.assertIn("--workflow-run-id \"$GITHUB_RUN_ID\"", workflow)
         self.assertIn("--actor \"$GITHUB_ACTOR\"", workflow)
+        self.assertIn('--token-authority "$UPLOAD_DIR/m80-release-token-authority.json"', workflow)
         self.assertLess(
             workflow.index("scripts/release_publish_receipt.py"),
             workflow.index("scripts/release_publication_plan.py"),
@@ -1392,6 +1394,26 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("--draft", workflow)
         self.assertIn('gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag', workflow)
         self.assertIn('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag', workflow)
+        self.assertLess(
+            workflow.rindex("scripts/release_publish_receipt.py", 0, workflow.index('gh release upload "$GITHUB_REF_NAME"')),
+            workflow.index('gh release upload "$GITHUB_REF_NAME"'),
+        )
+        self.assertLess(
+            workflow.rindex(
+                "scripts/release_publish_receipt.py",
+                0,
+                workflow.index('gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag'),
+            ),
+            workflow.index('gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag'),
+        )
+        self.assertLess(
+            workflow.rindex(
+                "scripts/release_publish_receipt.py",
+                0,
+                workflow.index('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag'),
+            ),
+            workflow.index('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag'),
+        )
         self.assertIn("validate_existing_public_release)", workflow)
         self.assertIn("mapfile -t upload_paths < <(", workflow)
         self.assertIn("--print-upload-paths", workflow)
@@ -1765,7 +1787,7 @@ class ReleaseBundleTest(unittest.TestCase):
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(receipt["schema_version"], 2)
+            self.assertEqual(receipt["schema_version"], 3)
             self.assertEqual(receipt["kind"], "m80_release_publish_decision")
             self.assertEqual(receipt["decision"], "approved")
             self.assertEqual(receipt["release_tag"], "v0.2.11")
@@ -1778,6 +1800,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(receipt["artifact_manifest_digest"], receipt["artifact_manifest"]["sha256"])
             self.assertEqual(receipt["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
             self.assertEqual(receipt["proof_ledger_digest"], receipt["proof_ledger"]["sha256"])
+            self.assertEqual(receipt["token_authority"]["name"], TOKEN_AUTHORITY_NAME)
+            self.assertEqual(receipt["token_authority_digest"], receipt["token_authority"]["sha256"])
             self.assertEqual(
                 receipt["quickstart_proofs"],
                 [
@@ -1834,6 +1858,63 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("proof ledger sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_missing_token_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            (out_dir / TOKEN_AUTHORITY_NAME).unlink()
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish token authority receipt missing", result.stderr)
+
+    def test_release_publish_receipt_rejects_failed_token_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            authority = write_token_authority_receipt(out_dir, decision="failed", failure_reason="read-only token")
+
+            result = run_release_publish_receipt(out_dir, "--write", "--token-authority", str(authority), check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("token authority receipt decision must be approved", result.stderr)
+
+    def test_release_publish_receipt_rejects_stale_token_authority_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            authority = write_token_authority_receipt(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            authority.write_text(json.dumps({**json.loads(authority.read_text()), "actor": "other"}, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("token authority receipt sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_wrong_job_token_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            authority = write_token_authority_receipt(out_dir, github_job="build-release-artifacts")
+
+            result = run_release_publish_receipt(out_dir, "--write", "--token-authority", str(authority), check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("token authority receipt github_job mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_wrong_run_token_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            authority = write_token_authority_receipt(out_dir, workflow_run_id="54321")
+
+            result = run_release_publish_receipt(out_dir, "--write", "--token-authority", str(authority), check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("token authority receipt workflow_run_id mismatch", result.stderr)
 
     def test_release_publish_receipt_rejects_ledger_proof_json_swap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5143,7 +5224,58 @@ def evidence_bundle_fixture(root: Path) -> Path:
 
 def write_publish_proof_ledger(out_dir: Path) -> Path:
     write_hostless_quickstart_proof_placeholder(out_dir)
+    write_token_authority_receipt(out_dir)
     return write_release_proof_ledger_placeholder(out_dir)
+
+
+def write_token_authority_receipt(
+    out_dir: Path,
+    *,
+    decision: str = "approved",
+    failure_reason: str | None = None,
+    github_job: str = "publish-release-artifacts",
+    workflow_run_id: str = "12345",
+) -> Path:
+    receipt = out_dir / TOKEN_AUTHORITY_NAME
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "m80_release_publish_token_authority",
+                "decision": decision,
+                "repository": "moradology/m80",
+                "github_ref": "refs/tags/v0.2.11",
+                "release_tag": "v0.2.11",
+                "commit_sha": INTEGRITY_COMMIT_SHA,
+                "workflow_ref": "moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/v0.2.11",
+                "workflow_path": ".github/workflows/release-artifacts.yml",
+                "workflow_file": ".github/workflows/release-artifacts.yml",
+                "github_job": github_job,
+                "workflow_run_id": workflow_run_id,
+                "workflow_run_attempt": "1",
+                "actor": "release-bot",
+                "token_source": "github.token",
+                "token_env": "GH_TOKEN",
+                "policy_id": "m80-release-publish-authority-v1",
+                "policy_digest": "sha256:" + ("1" * 64),
+                "generated_at": "2026-05-21T00:00:00Z",
+                "probes": [
+                    {
+                        "name": "release_metadata",
+                        "command": "gh release view v0.2.11 --repo moradology/m80 --json tagName,url,isDraft,isPrerelease",
+                        "exit_status": 0,
+                        "stdout": "{\"tagName\":\"v0.2.11\",\"isDraft\":false,\"isPrerelease\":false}",
+                        "stderr": "",
+                    }
+                ],
+                "failure_reason": failure_reason,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return receipt
 
 
 def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:

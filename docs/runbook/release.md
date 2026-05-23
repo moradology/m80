@@ -754,10 +754,12 @@ Before the tag publish job mutates GitHub release state, it writes and validates
 `m80-release-publish-decision.json` with
 `scripts/release_publish_receipt.py`. The receipt binds the release tag, commit
 SHA, workflow run id/attempt, actor, repository, tag ref, upload manifest
-digest, `m80-release-proof-ledger.jsonl` digest, separate
+digest, `m80-release-token-authority.json` digest,
+`m80-release-proof-ledger.jsonl` digest, separate
 `m80-quickstart-proof-*.json` proof refs, and public asset list. The mutating
-`gh release upload` step runs only after the receipt validates against the
-downloaded workflow artifact bytes. The ledger is the durable JSONL index; the
+`gh release upload`, draft-publication, and latest-promotion steps run only
+after the receipt validates against the downloaded workflow artifact bytes and
+the token authority receipt. The ledger is the durable JSONL index; the
 quickstart proof JSON is the per-lane proof payload. They are never
 interchangeable receipt fields.
 
