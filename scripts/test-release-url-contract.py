@@ -436,14 +436,16 @@ class ReleaseUrlContractTest(unittest.TestCase):
             text = read_repo_file(relative)
             install_urls = list(INSTALL_URL_RE.finditer(text))
             self.assertGreater(len(install_urls), 0, f"{relative} has no tested install URL")
-            for match in install_urls:
+            self.assertNotIn("raw.githubusercontent.com", text)
+            self.assertNotIn("/main/install.sh", text)
+        for relative in QUICKSTART_SURFACE_FILES:
+            text = read_repo_file(relative)
+            for match in INSTALL_URL_RE.finditer(text):
                 self.assertEqual(
                     match.group(1),
                     release_repository(),
                     f"{relative} uses the wrong public release repository",
                 )
-            self.assertNotIn("raw.githubusercontent.com", text)
-            self.assertNotIn("/main/install.sh", text)
 
     def test_quickstart_surfaces_do_not_reintroduce_legacy_latest_artifacts(self) -> None:
         for relative in QUICKSTART_SURFACE_FILES:
