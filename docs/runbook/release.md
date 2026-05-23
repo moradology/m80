@@ -101,6 +101,13 @@ release integrity, attestation, and public checksum material. `install.sh`,
 before network/index work. See
 `docs/behaviors/release/stable-channel.md`.
 
+The public `install.sh` performs a local preflight before release downloads.
+Its minimal shell dependency set is `curl`, `python3`, `sha256sum`, `tar`,
+`mktemp`, `chmod`, `mkdir`, `rm`, `uname`, `wc`, and `id`. A real install into
+the default `/opt/m80` root must run as root; use the documented `curl | sudo
+sh` form. `--dry-run` and explicit non-`/opt` `--install-root` fixture paths do
+not require root at the script preflight.
+
 Latest metadata resolution is bounded separately from release-asset downloads:
 both the initial and guard GitHub metadata fetches use a 10 second connect
 timeout, 120 second total timeout, two retries, and a one second retry delay

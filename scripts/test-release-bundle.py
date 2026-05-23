@@ -432,31 +432,35 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("must use selector-driven m80 install", result.stderr)
 
-    def test_rendered_install_script_preflights_missing_gh_before_curl(self) -> None:
+    def test_rendered_install_script_preflights_missing_local_tools_before_curl(self) -> None:
+        for tool in ["curl", "sha256sum", "tar", "python3"]:
+            with self.subTest(tool=tool):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    package_fixture(root)
+
+                    result, urls, install_args = run_rendered_install(
+                        root,
+                        missing_tool=tool,
+                    )
+
+                    self.assertEqual(result.returncode, 127)
+                    self.assertIn(f"missing required tool: {tool}", result.stderr)
+                    self.assertEqual(urls, [], "release downloads must wait for local tool preflight")
+                    self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_non_root_default_install_before_curl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             package_fixture(root)
-            fakebin = root / "fakebin"
-            fakebin.mkdir()
-            curl_marker = root / "curl-called"
-            write_executable(
-                fakebin / "curl",
-                "#!/bin/sh\nprintf called > \"$M80_CURL_MARKER\"\nexit 88\n",
-            )
-            for tool in ["sha256sum", "tar", "mktemp", "chmod", "mkdir", "rm", "uname", "wc"]:
-                write_executable(fakebin / tool, "#!/bin/sh\nexit 0\n")
 
-            result = subprocess.run(
-                [str(root / "out" / INSTALL_NAME)],
-                check=False,
-                text=True,
-                capture_output=True,
-                env={"PATH": str(fakebin), "M80_CURL_MARKER": str(curl_marker)},
-            )
+            result, urls, install_args = run_rendered_install(root, id_u="1000")
 
-            self.assertEqual(result.returncode, 127)
-            self.assertIn("missing required tool: python3", result.stderr)
-            self.assertFalse(curl_marker.exists(), "curl must not run before local tool preflight")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing required tool: sudo", result.stderr)
+            self.assertIn("needed to install into /opt/m80 as root", result.stderr)
+            self.assertEqual(urls, [], "root preflight must run before release downloads")
+            self.assertFalse(install_args.exists())
 
     def test_rendered_install_script_selects_verified_selector_before_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4743,6 +4747,8 @@ def run_rendered_install(
     args: list[str] | None = None,
     uname_arch: str = "x86_64",
     curl_script: str | None = None,
+    missing_tool: str | None = None,
+    id_u: str = "0",
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
     out_dir = root / "out"
     fakebin = root / "fakebin-install"
@@ -4751,6 +4757,8 @@ def run_rendered_install(
     tar_log = root / "tar.log"
     install_args = root / "install-args.log"
     write_install_test_tools(fakebin)
+    if missing_tool is not None:
+        (fakebin / missing_tool).unlink()
     if curl_script is not None:
         write_executable(fakebin / "curl", curl_script)
     env = {
@@ -4760,6 +4768,7 @@ def run_rendered_install(
         "M80_CURL_ARGS_LOG": str(curl_args_log),
         "M80_TAR_LOG": str(tar_log),
         "M80_FAKE_UNAME_M": uname_arch,
+        "M80_FAKE_ID_U": id_u,
         "M80_FAKE_INSTALL_ARGS": str(install_args),
     }
     result = subprocess.run(
@@ -4910,6 +4919,12 @@ print(json.dumps([{{"verificationResult": {{"statement": {{"subject": [{{"name":
         ("wc", "/usr/bin/wc"),
     ]:
         write_executable(fakebin / name, f"#!/bin/sh\nexec {target} \"$@\"\n")
+    write_executable(
+        fakebin / "id",
+        "#!/bin/sh\n"
+        "if [ \"$1\" = -u ]; then printf '%s\\n' \"${M80_FAKE_ID_U:-0}\"; exit 0; fi\n"
+        "exec /usr/bin/id \"$@\"\n",
+    )
     write_executable(
         fakebin / "tar",
         "#!/bin/sh\n"

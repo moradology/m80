@@ -81,7 +81,6 @@
       "id": "github-auth-rate-limit",
       "proof_artifacts": [],
       "source_refs": [
-        "test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl",
         "doc:docs/behaviors/release/release-integrity-material.md"
       ],
       "verifier_code_families": [
@@ -140,7 +139,8 @@
       "id": "missing-local-tool",
       "proof_artifacts": [],
       "source_refs": [
-        "test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl",
+        "test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_local_tools_before_curl",
+        "test:scripts/test-release-bundle.py::test_rendered_install_script_rejects_non_root_default_install_before_curl",
         "source:scripts/install.sh"
       ],
       "verifier_code_families": []

@@ -71,6 +71,7 @@ need mkdir
 need rm
 need uname
 need wc
+need id
 
 validate_stable_release_tag() {
     tag=$1
@@ -100,6 +101,47 @@ validate_stable_release_tag() {
 validate_stable_release_tag "$M80_RELEASE_TAG"
 
 need python3
+
+selected_install_root=/opt/m80
+install_dry_run=no
+preflight_install_args() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --dry-run)
+                install_dry_run=yes
+                ;;
+            --install-root)
+                if [ "$#" -lt 2 ]; then
+                    fail "--install-root requires a path"
+                fi
+                selected_install_root=$2
+                shift
+                ;;
+            --install-root=*)
+                selected_install_root=${1#--install-root=}
+                [ -n "$selected_install_root" ] || fail "--install-root requires a path"
+                ;;
+        esac
+        shift
+    done
+}
+
+preflight_install_args "$@"
+
+install_requires_root() {
+    [ "$install_dry_run" = no ] || return 1
+    case "$selected_install_root" in
+        /opt|/opt/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if install_requires_root && [ "$(id -u)" != 0 ]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        fail "missing required tool: sudo; needed to install into $selected_install_root as root; install sudo or rerun with --install-root PATH you own"
+    fi
+    fail "root privileges required for install-root=$selected_install_root; rerun the public installer as: curl -fsSL $(asset_url "$M80_INSTALL_NAME") | sudo sh"
+fi
 
 host_os() {
     case "$(uname -s)" in

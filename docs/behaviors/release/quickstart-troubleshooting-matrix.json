@@ -35,17 +35,13 @@
     },
     {
       "id": "github-auth-rate-limit",
-      "title": "GitHub auth, verifier, or rate-limit failure",
+      "title": "GitHub release service, attestation, or rate-limit failure",
       "owner_action": "operator",
-      "action_kind": "install",
+      "action_kind": "retry",
       "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
-      "diagnostic_command": "gh auth status",
-      "repair_command": "sudo apt-get install gh",
+      "diagnostic_command": "curl -I https://github.com/moradology/m80/releases/latest",
+      "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "source_mappings": [
-        {
-          "kind": "test",
-          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl"
-        },
         {
           "kind": "doc",
           "ref": "docs/behaviors/release/release-integrity-material.md"
@@ -162,12 +158,16 @@
       "owner_action": "operator",
       "action_kind": "install",
       "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
-      "diagnostic_command": "command -v curl python3 sha256sum tar mktemp chmod gh",
-      "repair_command": "sudo apt-get install curl python3 coreutils tar gh",
+      "diagnostic_command": "command -v curl python3 sha256sum tar mktemp chmod mkdir rm uname wc id",
+      "repair_command": "sudo apt-get install curl python3 coreutils tar",
       "source_mappings": [
         {
           "kind": "test",
-          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl"
+          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_local_tools_before_curl"
+        },
+        {
+          "kind": "test",
+          "ref": "scripts/test-release-bundle.py::test_rendered_install_script_rejects_non_root_default_install_before_curl"
         },
         {
           "kind": "source",
