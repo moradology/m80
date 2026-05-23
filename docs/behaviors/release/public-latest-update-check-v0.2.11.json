@@ -59,6 +59,7 @@
     "stderr_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live.stderr",
     "stdout_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live.json"
   },
+  "exit_status": 0,
   "freshness_status_asset": {
     "checked_url_count": 17,
     "downloaded_path": "/tank/tmp/m80-o3uh9.16.9.8/m80-latest-freshness-proof-public.json",
@@ -72,6 +73,7 @@
   },
   "generated_at": "2026-05-23T04:45:57Z",
   "kind": "public_latest_update_check_proof",
+  "log_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live.json",
   "m80_binary_build": {
     "path": "target/debug/m80",
     "release_tag_env": "v0.2.11",
@@ -100,6 +102,7 @@
     "metadata_source": "https://github.com/moradology/m80/releases/latest/download/m80-latest-freshness-proof.json",
     "next_action_command": "m80 run -- echo hello"
   },
+  "resolved_tag": "v0.2.11",
   "schema_version": 1,
   "setup": {
     "install_command": "sudo -n env PATH=/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root/bin:$PATH M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) target/debug/m80 install --release-tag v0.2.11 --install-root /tank/tmp/m80-o3uh9.16.9.8/fresh-install-root",
@@ -111,6 +114,7 @@
   "substrate": {
     "auth_state": "unauthenticated-public-read",
     "fixture_source": false,
+    "github_write_apis_available": false,
     "install_root": "/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root",
     "kind": "linux-host-with-sudo",
     "network_target": "public-github-release",
