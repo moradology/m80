@@ -53,6 +53,10 @@ HOSTLESS_QUICKSTART_STDERR_NAME = "m80-quickstart-stderr.txt"
 HOSTLESS_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries.manifest.json"
 REAL_KVM_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
+WORKFLOW_POLICY_REPORT_NAME = "m80-workflow-policy-report.json"
+WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
+RELEASE_INTEGRITY_READINESS_RECEIPT_NAME = "m80-readiness-release-bundle-integrity.json"
+HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME = "m80-readiness-hostless-quickstart.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
 RELEASE_TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
@@ -1367,6 +1371,15 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("m80-quickstart-proof-hostless.json", workflow)
         self.assertIn("m80-quickstart-proof-hostless.verifier-result.json", workflow)
         self.assertIn("m80-release-proof-ledger.jsonl", workflow)
+        self.assertIn("Write workflow-policy release readiness receipt", workflow)
+        self.assertIn("Write release-bundle-integrity release readiness receipt", workflow)
+        self.assertIn("scripts/release_readiness_receipt.py", workflow)
+        self.assertIn("--lane-id workflow-policy", workflow)
+        self.assertIn("--lane-id release-bundle-integrity", workflow)
+        self.assertIn("--lane-id hostless-quickstart", workflow)
+        self.assertIn("m80-readiness-workflow-policy.json", workflow)
+        self.assertIn("m80-readiness-release-bundle-integrity.json", workflow)
+        self.assertIn("m80-readiness-hostless-quickstart.json", workflow)
         self.assertGreaterEqual(workflow.count("scripts/release_upload_manifest.py"), 5)
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
@@ -1597,12 +1610,20 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn(HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME, non_public_names)
             self.assertIn(HOSTLESS_QUICKSTART_STDERR_NAME, non_public_names)
             self.assertIn(HOSTLESS_QUICKSTART_HOST_BINARIES_NAME, non_public_names)
+            self.assertIn(WORKFLOW_POLICY_REPORT_NAME, non_public_names)
+            self.assertIn(WORKFLOW_POLICY_READINESS_RECEIPT_NAME, non_public_names)
+            self.assertIn(RELEASE_INTEGRITY_READINESS_RECEIPT_NAME, non_public_names)
+            self.assertIn(HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME, non_public_names)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_PROOF_NAME, public_assets)
             self.assertNotIn(RELEASE_PROOF_LEDGER_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_STDERR_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_HOST_BINARIES_NAME, public_assets)
+            self.assertNotIn(WORKFLOW_POLICY_REPORT_NAME, public_assets)
+            self.assertNotIn(WORKFLOW_POLICY_READINESS_RECEIPT_NAME, public_assets)
+            self.assertNotIn(RELEASE_INTEGRITY_READINESS_RECEIPT_NAME, public_assets)
+            self.assertNotIn(HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME, public_assets)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, inventory)
             for name in [
                 HOSTLESS_QUICKSTART_PROOF_NAME,
@@ -1610,12 +1631,55 @@ class ReleaseBundleTest(unittest.TestCase):
                 HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME,
                 HOSTLESS_QUICKSTART_STDERR_NAME,
                 HOSTLESS_QUICKSTART_HOST_BINARIES_NAME,
+                WORKFLOW_POLICY_REPORT_NAME,
+                WORKFLOW_POLICY_READINESS_RECEIPT_NAME,
+                RELEASE_INTEGRITY_READINESS_RECEIPT_NAME,
+                HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME,
             ]:
                 self.assertEqual(inventory[name]["sha256"], sha256(out_dir / name))
                 self.assertEqual(inventory[name]["size_bytes"], (out_dir / name).stat().st_size)
             for name, asset in public_assets.items():
                 self.assertEqual(asset["sha256"], sha256(out_dir / name))
                 self.assertEqual(asset["size_bytes"], (out_dir / name).stat().st_size)
+
+    def test_release_upload_manifest_fixture_readiness_receipts_are_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+
+            for receipt_name, lane_id, substrate in [
+                (WORKFLOW_POLICY_READINESS_RECEIPT_NAME, "workflow-policy", "github-actions"),
+                (RELEASE_INTEGRITY_READINESS_RECEIPT_NAME, "release-bundle-integrity", "github-actions"),
+                (HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME, "hostless-quickstart", "hostless"),
+            ]:
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(REPO_ROOT / "scripts" / "release_readiness_receipt.py"),
+                        "--lane-id",
+                        lane_id,
+                        "--status",
+                        "passed",
+                        "--release-tag",
+                        "v0.2.11",
+                        "--commit-sha",
+                        INTEGRITY_COMMIT_SHA,
+                        "--workflow-run-id",
+                        "12345",
+                        "--substrate-kind",
+                        substrate,
+                        "--artifact-root",
+                        str(out_dir),
+                        "--artifact",
+                        str(out_dir / receipt_artifact_name(receipt_name)),
+                        "--out",
+                        str(out_dir / receipt_name),
+                    ],
+                    cwd=REPO_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_release_upload_manifest_prints_upload_paths_and_download_patterns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5710,6 +5774,108 @@ def write_workflow_only_proof_sidecars(out_dir: Path) -> None:
         )
         + "\n"
     )
+    (out_dir / WORKFLOW_POLICY_REPORT_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "workflow-policy-report",
+                "status": "passed",
+                "release_tag": "v0.2.11",
+                "commit_sha": INTEGRITY_COMMIT_SHA,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    write_readiness_receipt_placeholder(
+        out_dir,
+        receipt_name=WORKFLOW_POLICY_READINESS_RECEIPT_NAME,
+        lane_id="workflow-policy",
+        lane_kind="workflow-policy",
+        proof_kind="workflow-policy-report",
+        substrate_kind="github-actions",
+        artifact_name=WORKFLOW_POLICY_REPORT_NAME,
+        digest_field="workflow_policy_sha256",
+        remediation_command="python3 scripts/lint-github-workflows.py",
+    )
+    write_readiness_receipt_placeholder(
+        out_dir,
+        receipt_name=RELEASE_INTEGRITY_READINESS_RECEIPT_NAME,
+        lane_id="release-bundle-integrity",
+        lane_kind="release-integrity",
+        proof_kind="release-integrity-predicate",
+        substrate_kind="github-actions",
+        artifact_name=INTEGRITY_NAME,
+        digest_field="predicate_sha256",
+        remediation_command="scripts/verify-release-bundle.py --verify-integrity",
+    )
+    write_readiness_receipt_placeholder(
+        out_dir,
+        receipt_name=HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME,
+        lane_id="hostless-quickstart",
+        lane_kind="hostless-quickstart",
+        proof_kind="quickstart-proof",
+        substrate_kind="hostless",
+        artifact_name=HOSTLESS_QUICKSTART_PROOF_NAME,
+        digest_field="proof_sha256",
+        remediation_command="scripts/verify-quickstart-proof.py",
+        fixture=True,
+    )
+
+
+def write_readiness_receipt_placeholder(
+    out_dir: Path,
+    *,
+    receipt_name: str,
+    lane_id: str,
+    lane_kind: str,
+    proof_kind: str,
+    substrate_kind: str,
+    artifact_name: str,
+    digest_field: str,
+    remediation_command: str,
+    fixture: bool = False,
+) -> None:
+    artifact = out_dir / artifact_name
+    digest = f"sha256:{sha256(artifact)}"
+    payload = {
+        "schema_version": 1,
+        "kind": "m80_release_readiness_lane_receipt",
+        "lane_id": lane_id,
+        "lane_kind": lane_kind,
+        "proof_kind": proof_kind,
+        "status": "passed",
+        "release_tag": "v0.2.11",
+        "commit_sha": INTEGRITY_COMMIT_SHA,
+        "workflow_run_id": "12345",
+        "verification_time": INTEGRITY_VERIFICATION_TIME,
+        "substrate": {
+            "kind": substrate_kind,
+            "fixture": fixture,
+        },
+        "artifact": {
+            "path": artifact_name,
+            "sha256": digest,
+            "size_bytes": artifact.stat().st_size,
+        },
+        digest_field: digest,
+        "remediation": {
+            "command": remediation_command,
+            "bead_id": None,
+        },
+    }
+    (out_dir / receipt_name).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def receipt_artifact_name(receipt_name: str) -> str:
+    if receipt_name == WORKFLOW_POLICY_READINESS_RECEIPT_NAME:
+        return WORKFLOW_POLICY_REPORT_NAME
+    if receipt_name == RELEASE_INTEGRITY_READINESS_RECEIPT_NAME:
+        return INTEGRITY_NAME
+    if receipt_name == HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME:
+        return HOSTLESS_QUICKSTART_PROOF_NAME
+    raise AssertionError(f"unknown readiness receipt fixture: {receipt_name}")
 
 
 def write_token_authority_receipt(

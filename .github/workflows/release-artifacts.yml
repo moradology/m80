@@ -206,6 +206,44 @@ jobs:
             --install-sh scripts/install.sh \
             --out-dir "$DIST_DIR"
 
+      - name: Write workflow-policy release readiness receipt
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          scripts/lint-github-workflows.py
+          python3 - "$DIST_DIR/m80-workflow-policy-report.json" <<'PY'
+          import json
+          import os
+          import sys
+          from datetime import datetime, timezone
+
+          payload = {
+              "schema_version": 1,
+              "kind": "workflow-policy-report",
+              "status": "passed",
+              "release_tag": os.environ["GITHUB_REF_NAME"],
+              "commit_sha": os.environ["RELEASE_COMMIT"],
+              "workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+          }
+          with open(sys.argv[1], "w") as f:
+              json.dump(payload, f, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+          scripts/release_readiness_receipt.py \
+            --lane-id workflow-policy \
+            --status passed \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --substrate-kind github-actions \
+            --artifact-root "$DIST_DIR" \
+            --artifact "$DIST_DIR/m80-workflow-policy-report.json" \
+            --out "$DIST_DIR/m80-readiness-workflow-policy.json" \
+            --write
+
       - name: Prepare release integrity attestation subject
         id: integrity-subject
         if: startsWith(github.ref, 'refs/tags/')
@@ -240,8 +278,28 @@ jobs:
             --commit-sha "$RELEASE_COMMIT" \
             --out "$DIST_DIR/m80-release-attestation.json"
 
+      - name: Write release-bundle-integrity release readiness receipt
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          scripts/release_readiness_receipt.py \
+            --lane-id release-bundle-integrity \
+            --status passed \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --substrate-kind github-actions \
+            --artifact-root "$DIST_DIR" \
+            --artifact "$DIST_DIR/m80-release-integrity.json" \
+            --out "$DIST_DIR/m80-readiness-release-bundle-integrity.json" \
+            --write
+
       - name: Write and validate hostless quickstart proof artifact
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
         run: |
           set -euo pipefail
           scripts/write-quickstart-proof-fixture.py \
@@ -270,6 +328,18 @@ jobs:
             --require-proof m80-quickstart-proof-hostless.json \
             --require-proof-type hostless \
             --expect-record-count 1
+          scripts/release_readiness_receipt.py \
+            --lane-id hostless-quickstart \
+            --status passed \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --substrate-kind hostless \
+            --fixture \
+            --artifact-root "$DIST_DIR" \
+            --artifact "$DIST_DIR/m80-quickstart-proof-hostless.json" \
+            --out "$DIST_DIR/m80-readiness-hostless-quickstart.json" \
+            --write
 
       - name: Write and validate release upload manifest
         id: release-upload-manifest

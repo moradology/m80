@@ -21,6 +21,10 @@ HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME = "m80-quickstart-proof-hostless.verifi
 HOSTLESS_QUICKSTART_STDERR_NAME = "m80-quickstart-stderr.txt"
 HOSTLESS_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries.manifest.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
+WORKFLOW_POLICY_REPORT_NAME = "m80-workflow-policy-report.json"
+WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
+RELEASE_INTEGRITY_READINESS_RECEIPT_NAME = "m80-readiness-release-bundle-integrity.json"
+HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME = "m80-readiness-hostless-quickstart.json"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
@@ -61,6 +65,10 @@ NON_PUBLIC_WORKFLOW_ARTIFACTS = {
     HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME: "quickstart proof verifier result is workflow-only audit evidence",
     HOSTLESS_QUICKSTART_STDERR_NAME: "quickstart proof stderr/log sidecar is workflow-only audit evidence",
     HOSTLESS_QUICKSTART_HOST_BINARIES_NAME: "quickstart proof host-binaries manifest is workflow-only audit evidence",
+    WORKFLOW_POLICY_REPORT_NAME: "workflow-policy report is workflow-only receipt evidence",
+    WORKFLOW_POLICY_READINESS_RECEIPT_NAME: "workflow-policy readiness receipt is workflow-only gate input",
+    RELEASE_INTEGRITY_READINESS_RECEIPT_NAME: "release-integrity readiness receipt is workflow-only gate input",
+    HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME: "hostless quickstart readiness receipt is workflow-only gate input",
 }
 WORKFLOW_ARTIFACT_INVENTORY = {
     name: reason
