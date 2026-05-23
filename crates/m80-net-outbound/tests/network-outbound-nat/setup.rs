@@ -422,6 +422,7 @@ fn concurrent_launch_no_ipv4_collision() {
 fn concurrent_launch_serializes_run_root_bridge_creation() {
     let temp = tempfile::tempdir().unwrap();
     let run_root = temp.path().to_path_buf();
+    let (first_vm_id, second_vm_id) = distinct_guest_ip_vm_ids(&run_root);
     let barrier = Arc::new(Barrier::new(2));
     let shared = Arc::new(Mutex::new(SharedBridgeRaceState::default()));
 
@@ -430,13 +431,12 @@ fn concurrent_launch_serializes_run_root_bridge_creation() {
         let barrier = Arc::clone(&barrier);
         let shared = Arc::clone(&shared);
         std::thread::spawn(move || {
-            let vm_id = "vm-bridge-race-a";
-            let run_dir = run_root.join(vm_id);
+            let run_dir = run_root.join(&first_vm_id);
             std::fs::create_dir(&run_dir).unwrap();
             let mut ops = SharedBridgeRaceOps { shared };
             let intent = intent_with_exception();
             barrier.wait();
-            realize_for_test(&mut ops, &intent, vm_id, &run_root, &run_dir)
+            realize_for_test(&mut ops, &intent, &first_vm_id, &run_root, &run_dir)
         })
     };
     let second = {
@@ -444,13 +444,12 @@ fn concurrent_launch_serializes_run_root_bridge_creation() {
         let barrier = Arc::clone(&barrier);
         let shared = Arc::clone(&shared);
         std::thread::spawn(move || {
-            let vm_id = "vm-bridge-race-b";
-            let run_dir = run_root.join(vm_id);
+            let run_dir = run_root.join(&second_vm_id);
             std::fs::create_dir(&run_dir).unwrap();
             let mut ops = SharedBridgeRaceOps { shared };
             let intent = intent_with_exception();
             barrier.wait();
-            realize_for_test(&mut ops, &intent, vm_id, &run_root, &run_dir)
+            realize_for_test(&mut ops, &intent, &second_vm_id, &run_root, &run_dir)
         })
     };
 
@@ -464,6 +463,18 @@ fn concurrent_launch_serializes_run_root_bridge_creation() {
         bridge_creates, 1,
         "run-root bridge creation must be serialized across concurrent launches"
     );
+}
+
+fn distinct_guest_ip_vm_ids(run_root: &std::path::Path) -> (String, String) {
+    let first = "vm-bridge-race-0".to_owned();
+    let first_ip = derive_guest_addressing(run_root, &first).0;
+    for index in 1..512 {
+        let candidate = format!("vm-bridge-race-{index}");
+        if derive_guest_addressing(run_root, &candidate).0 != first_ip {
+            return (first, candidate);
+        }
+    }
+    panic!("could not find distinct guest IPs for bridge race test");
 }
 
 #[test]
