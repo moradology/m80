@@ -43,6 +43,7 @@ PUBLIC_COMMAND_DOCS = (
     "README.md",
     "crates/*/README.md",
     "docs/runbook/**/*.md",
+    "docs/ops/**/*.md",
     "docs/behaviors/**/*.md",
 )
 LEGACY_INTERNAL_DOCS = {

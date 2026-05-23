@@ -70,6 +70,8 @@ QUICKSTART_SURFACE_FILES = [
     "docs/runbook/release.md",
     "scripts/quickstart.sh",
     "crates/m80-cli/README.md",
+    "docs/ops/host-setup.md",
+    "docs/ops/binary-installation.md",
     "docs/behaviors/cli/command-surface.md",
     "docs/behaviors/cli/product-surface.md",
     "docs/behaviors/release/quickstart-troubleshooting-matrix.md",
@@ -293,6 +295,24 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 f"README quickstart is missing follow-up doc link: {target}",
             )
             self.assertTrue((REPO_ROOT / target).is_file(), f"README quickstart link is stale: {target}")
+
+    def test_ops_docs_name_installer_first_path_and_demote_manual_placement(self) -> None:
+        expectations = {
+            "docs/ops/host-setup.md": "## Normal Linux Install",
+            "docs/ops/binary-installation.md": "## Advanced Manual Placement",
+        }
+
+        for relative, heading in expectations.items():
+            text = read_repo_file(relative)
+            normalized = " ".join(text.split())
+            self.assertIn(latest_install_command(), text)
+            self.assertIn("m80 run -- echo hello", text)
+            self.assertIn(heading, text)
+            self.assertIn(
+                "Manual binary and artifact placement is an advanced/operator path",
+                normalized,
+                f"{relative} must keep manual placement out of the normal quickstart path",
+            )
 
     def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
         cases = [

@@ -5,6 +5,21 @@ install, or run m80. m80 can validate many launch preconditions at runtime, but
 it cannot make a compromised build host, broad operator account, or hostile
 dependency source trustworthy after the fact.
 
+## Normal Linux Install
+
+The normal Linux entrypoint is the release installer:
+
+`curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`
+
+Then verify the installed runtime with `m80 run -- echo hello`.
+
+The installer owns the matched m80 binary, host helpers, guest artifacts,
+manifests, receipts, default profile, and active pointer. Manual binary and
+artifact placement is an advanced/operator path for release engineering,
+forensics, or nonstandard hosts; it must keep binaries, guest artifacts, and
+manifests from the same release set and then satisfy the host prerequisite
+policy below.
+
 ## Identity Model
 
 Use three identities with separate credentials and host permissions:

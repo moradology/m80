@@ -4,6 +4,23 @@ This is the deploy-time procedure for host-side binaries that `m80-preflight`
 will later verify. It covers only m80's local TCB binaries; guest image
 provenance stays in `<rootfs>.manifest.json`.
 
+## Normal Linux Install
+
+Use the release installer for normal Linux hosts:
+
+`curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`
+
+The installer stages the matched m80 binary, host helpers, guest artifacts,
+manifest material, default profile, and active version pointer. After it
+finishes, `m80 run -- echo hello` is the public smoke command.
+
+Manual binary and artifact placement is an advanced/operator path. Use it only
+for release engineering, forensics, or hosts where the release installer cannot
+own final placement; keep every binary, guest artifact, and manifest from the
+same release set.
+
+## Advanced Manual Placement
+
 Install the release binaries as `root:root`, mode `0755` or narrower:
 
 ```sh

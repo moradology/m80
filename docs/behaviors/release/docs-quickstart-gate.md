@@ -76,6 +76,14 @@ manifest/receipt details, and host policy details stay behind links to the
 release runbook, troubleshooting matrix, host prerequisite behavior docs, and
 operator setup docs.
 
+Easy Linux install means the public release `install.sh` is the normal path and
+plain `m80 run -- echo hello` is the public proof command. Manual binary or
+artifact placement belongs only in advanced/operator docs with explicit matching
+release and host-prerequisite caveats. The public command inventory scans
+README files, release runbooks, behavior docs, and ops docs so those deeper
+pages cannot reintroduce raw-main installers, artifact-only latest tarballs, or
+wrong-owner release URLs.
+
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and
 `scripts/verify-quickstart-proof.py`: normal hostless and real-KVM quickstart

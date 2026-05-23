@@ -23,6 +23,8 @@ install packages implicitly.
 
 - `m80 run [OPTIONS] -- <program> [args...]`
 - `m80 preflight`
+- public Linux install: release `install.sh`, which hands off to
+  `m80 install --release-tag <tag>|--bundle-url <url>`
 - `m80 quickstart --artifact-url <url> [--artifact-dir <path>] [--run-root <path>] [--no-run]`
 - `m80 config show`
 - `m80 list`
