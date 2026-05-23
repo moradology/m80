@@ -140,6 +140,8 @@ jobs:
       RUSTFLAGS: ""
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install audit toolchain
         run: rustup toolchain install 1.85 --profile minimal
