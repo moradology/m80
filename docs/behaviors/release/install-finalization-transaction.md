@@ -1,7 +1,7 @@
 # Install Finalization Transaction
 
 Behavior beads: `m80-o3uh9.16.1`, `m80-o3uh9.16.4`,
-`m80-o3uh9.16.8.3`, `m80-o3uh9.16.11`.
+`m80-o3uh9.16.8.3`, `m80-o3uh9.16.11`, `m80-o3uh9.16.12.2`.
 
 `m80 install --bundle-url <URL>` publishes a version only after the installer
 has enough local state to run it. The active install selection is the last write
@@ -68,6 +68,20 @@ Proof-cache write, manifest-digest, and mode failures also leave the attempted
 version unpublished, do not create runtime state, and do not leak active
 `layout-*` staging directories.
 
+A normal upgrade from one installed stable release to a newer stable release is
+the same transaction, not a special compatibility path. The installer verifies
+the new release material, writes the new version directory, writes the generated
+host-binaries manifest and install-owned default profile, runs the preflight
+gate, performs PATH handoff, and only then renames `<install-root>/active` to
+the new version directory. The previous version directory remains intact after
+success, so explicit rollback can repoint the active symlink to the old version.
+The install summary reports the new `release_tag`, `active_version_dir`, and,
+when the install was an upgrade, `previous_active_release_tag` and
+`previous_active_version_dir`.
+Generated m80 default profiles are install-owned selector state and may be
+replaced by a later install; arbitrary operator profile contents still fail
+closed unless the operator passes the explicit adoption flag.
+
 ## Staging Cleanup
 
 Each install uses `<install-root>/.staging/layout-<pid>`. Before starting, the
@@ -124,4 +138,5 @@ not publish a version or switch active state until all finalization gates pass.
 - `same_version_reinstall_refuses_when_existing_version_is_not_active`
 - `same_version_reinstall_refuses_when_active_pointer_is_missing`
 - `same_version_reinstall_change_error_names_explicit_repair_version_dir`
+- `upgrade_install_replaces_active_after_new_release_is_fully_committed`
 - `install_finalization_transaction_doc_names_state_machine_and_tests`

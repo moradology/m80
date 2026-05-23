@@ -166,6 +166,9 @@ fn ensure_selector_write_allowed(
     if existing == proposed_contents || adopt_existing_config {
         return Ok(());
     }
+    if kind == "profile" && is_installed_default_profile(&existing) {
+        return Ok(());
+    }
     Err(FcError::Config(
         m80_firecracker::ConfigError::InvalidValue {
             field: "install.config_preservation",
@@ -179,6 +182,38 @@ fn ensure_selector_write_allowed(
             ),
         },
     ))
+}
+
+fn is_installed_default_profile(existing: &str) -> bool {
+    let Ok(toml::Value::Table(table)) = existing.parse::<toml::Value>() else {
+        return false;
+    };
+    if !matches!(
+        table.get("description").and_then(toml::Value::as_str),
+        Some("m80 installed default profile")
+    ) {
+        return false;
+    }
+    [
+        "artifact_dir",
+        "kernel_image",
+        "rootfs_image",
+        "kernel_kind",
+        "guestd",
+        "guest_manifest",
+        "build_receipt",
+        "install_provenance",
+        "host_binaries_manifest",
+        "firecracker_bin",
+        "firecracker_seccomp_filter",
+        "jailer_bin",
+        "jailer_harden_bin",
+        "net_helper_bin",
+        "run_root",
+        "m80_version",
+    ]
+    .into_iter()
+    .all(|key| table.get(key).and_then(toml::Value::as_str).is_some())
 }
 
 fn backup_path(path: &Path) -> PathBuf {
@@ -345,6 +380,42 @@ impl PathBackup {
             PathState::Other => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_installed_default_profile;
+
+    #[test]
+    fn installed_default_profile_marker_requires_generated_profile_shape() {
+        let generated = r#"
+artifact_dir = "/opt/m80/versions/v0.0.0/artifacts"
+kernel_image = "/opt/m80/versions/v0.0.0/artifacts/vmlinux"
+rootfs_image = "/opt/m80/versions/v0.0.0/artifacts/output.ext4"
+kernel_kind = "stock"
+guestd = "/opt/m80/versions/v0.0.0/artifacts/m80-guestd"
+guest_manifest = "/opt/m80/versions/v0.0.0/artifacts/output.ext4.manifest.json"
+build_receipt = "/opt/m80/versions/v0.0.0/artifacts/output.ext4.build-receipt.json"
+install_provenance = "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json"
+host_binaries_manifest = "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"
+firecracker_bin = "/usr/bin/firecracker"
+firecracker_seccomp_filter = "/opt/m80/seccomp.json"
+jailer_bin = "/usr/bin/jailer"
+jailer_harden_bin = "/opt/m80/versions/v0.0.0/bin/m80-jailer-harden"
+net_helper_bin = "/opt/m80/versions/v0.0.0/bin/m80-net-helper"
+run_root = "/opt/m80/run"
+m80_version = "v0.0.0"
+description = "m80 installed default profile"
+"#;
+
+        assert!(is_installed_default_profile(generated));
+        assert!(!is_installed_default_profile(
+            r#"description = "m80 installed default profile""#
+        ));
+        assert!(!is_installed_default_profile(
+            r#"description = "operator-owned profile""#
+        ));
     }
 }
 

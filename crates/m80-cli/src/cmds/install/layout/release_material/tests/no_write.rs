@@ -14,7 +14,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use super::super::test_env::{
-    fake_gh_fixture, official_release_plan, write_fake_curl, EnvVarGuard,
+    fake_gh_fixture, official_release_plan, official_release_plan_for_tag, write_fake_curl,
+    EnvVarGuard,
 };
 use super::super::test_fixture::{
     write_direct_release_materials_with, write_direct_release_materials_with_bundle_bytes,
@@ -25,12 +26,114 @@ mod reinstall;
 mod release_verifier_matrix;
 
 #[test]
+fn upgrade_install_replaces_active_after_new_release_is_fully_committed() {
+    let _guard = super::super::super::INSTALL_PREFLIGHT_ENV_LOCK
+        .lock()
+        .unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+
+    let first = install_layout_success_with_installable_bundle(&install_root, "v0.0.0");
+    assert_eq!(first.release_tag, "v0.0.0");
+    assert!(first.active_pointer_flipped);
+    let previous_active = fs::read_link(install_root.join("active")).unwrap();
+    let previous_bundle = fs::read(previous_active.join("bundle.json")).unwrap();
+    let previous_profile = fs::read_to_string(install_root.join("profiles/default.toml")).unwrap();
+    assert!(
+        previous_profile.contains("description = 'm80 installed default profile'"),
+        "first install should create an install-owned profile: {previous_profile}"
+    );
+
+    let second = install_layout_success_with_installable_bundle(&install_root, "v0.0.1");
+
+    assert_eq!(second.release_tag, "v0.0.1");
+    assert!(second.active_pointer_flipped);
+    assert_eq!(
+        second.previous_active_version_dir.as_deref(),
+        Some(previous_active.to_str().unwrap())
+    );
+    assert_eq!(
+        second.previous_active_release_tag.as_deref(),
+        Some("v0.0.0")
+    );
+    assert_eq!(
+        second.finalization_order.last().copied(),
+        Some("active_pointer_flip")
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        install_root.join("versions/v0.0.1")
+    );
+    assert_eq!(
+        fs::read(previous_active.join("bundle.json")).unwrap(),
+        previous_bundle,
+        "upgrade must leave the previous version directory intact"
+    );
+    let upgraded_profile = fs::read_to_string(install_root.join("profiles/default.toml")).unwrap();
+    assert!(
+        upgraded_profile.contains("release_tag = 'v0.0.1'"),
+        "upgrade should move the install-owned default profile to the new release: {upgraded_profile}"
+    );
+    assert!(
+        install_root.join("versions/v0.0.0/bin/m80").exists(),
+        "previous active version remains available for explicit rollback"
+    );
+    assert_no_layout_staging_dirs(&install_root, "successful upgrade");
+}
+
+#[test]
 fn proof_cache_write_failure_leaves_previous_active_profile_and_config_selected() {
     assert_proof_cache_failure_preserves_active_state(ProofCacheFailureScenario {
         name: "write failure",
         env_key: "M80_INSTALL_INJECT_PROOF_CACHE_WRITE_FAILURE",
         expected: "injected proof-cache write failure",
     });
+}
+
+fn install_layout_success_with_installable_bundle(
+    install_root: &Path,
+    release_tag: &'static str,
+) -> super::super::super::LayoutInstallSummary {
+    let temp = tempfile::tempdir().unwrap();
+    let material_dir = temp.path().join("materials");
+    fs::create_dir(&material_dir).unwrap();
+    let log_path = temp.path().join("curl.log");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    write_fake_curl(&bin_dir);
+    let bundle_bytes = write_installable_bundle_bytes_for_tag(temp.path(), release_tag);
+    let fixture = write_direct_release_materials_with_bundle_bytes(
+        &material_dir,
+        ReleaseFixtureOptions {
+            release_tag: Some(release_tag),
+            ..ReleaseFixtureOptions::default()
+        },
+        &bundle_bytes,
+    );
+
+    let _path_env = EnvVarGuard::prepend_paths(&[install_root.join("bin"), bin_dir]);
+    let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
+    let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
+    let _gh_env = EnvVarGuard::set(
+        "M80_RELEASE_ATTESTATION_GH",
+        &fake_gh_fixture("fake-gh-attestation-supported.sh"),
+    );
+    let _expect_source_digest = EnvVarGuard::set_value(
+        "M80_FAKE_GH_EXPECT_SOURCE_DIGEST",
+        "0123456789abcdef0123456789abcdef01234567",
+    );
+    let _hostless_preflight = EnvVarGuard::set_value("M80_INSTALL_TEST_HOSTLESS_OFFICIAL", "1");
+
+    super::super::super::install_bundle_layout(&official_release_plan_for_tag(
+        install_root,
+        release_tag,
+    ))
+    .unwrap_or_else(|err| {
+        panic!(
+            "installable fixture should install verified bundle {}: {err}",
+            fixture.bundle_url
+        )
+    })
 }
 
 #[test]
@@ -265,12 +368,19 @@ const INSTALLABLE_PAYLOAD_FILES: &[&str] = &[
 ];
 
 fn write_installable_bundle_bytes(root: &Path) -> Vec<u8> {
+    write_installable_bundle_bytes_for_tag(root, "v0.0.0")
+}
+
+fn write_installable_bundle_bytes_for_tag(root: &Path, release_tag: &str) -> Vec<u8> {
     let src = root.join("installable-src");
     fs::create_dir_all(src.join("bin")).unwrap();
     fs::create_dir_all(src.join("artifacts")).unwrap();
     write_executable(
         &src.join("bin/m80"),
-        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 0.0.0\\n'; exit 0; fi\n",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 {}\\n'; exit 0; fi\n",
+            release_tag.trim_start_matches('v')
+        ),
     );
     write_executable(
         &src.join("bin/m80-jailer-harden"),
@@ -293,7 +403,7 @@ fn write_installable_bundle_bytes(root: &Path) -> Vec<u8> {
     write_manifest(&src, &stale_artifacts);
     let manifest_path = stale_artifacts.join("output.ext4.manifest.json");
     write_build_receipt(&src, &stale_artifacts, &manifest_path);
-    write_bundle_metadata(&src, &manifest_path);
+    write_bundle_metadata(&src, &manifest_path, release_tag);
     write_sha256s(&src);
     set_installable_bundle_modes(&src);
 
@@ -365,7 +475,7 @@ fn write_build_receipt(src: &Path, stale_artifacts: &Path, manifest_path: &Path)
         .unwrap();
 }
 
-fn write_bundle_metadata(src: &Path, manifest_path: &Path) {
+fn write_bundle_metadata(src: &Path, manifest_path: &Path, release_tag: &str) {
     let files = INSTALLABLE_PAYLOAD_FILES
         .iter()
         .map(|path| {
@@ -379,8 +489,8 @@ fn write_bundle_metadata(src: &Path, manifest_path: &Path) {
         .collect::<Vec<_>>();
     let metadata = json!({
         "schema_version": 1,
-        "release_tag": "v0.0.0",
-        "m80_version": "v0.0.0",
+        "release_tag": release_tag,
+        "m80_version": release_tag,
         "package_version": env!("CARGO_PKG_VERSION"),
         "target": "linux-x86_64",
         "os": "linux",

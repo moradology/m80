@@ -30,12 +30,22 @@ pub(super) fn valid_material() -> crate::release_asset_index::DirectBundleIndexM
 }
 
 pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
-    let bundle_url = crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz");
+    official_release_plan_for_tag(install_root, "v0.0.0")
+}
+
+pub(super) fn official_release_plan_for_tag(install_root: &Path, release_tag: &str) -> InstallPlan {
+    let bundle_url = crate::release_urls::release_asset_url(release_tag, "m80-linux-x86_64.tar.gz");
     InstallPlan {
         dry_run: false,
         install_root: install_root.display().to_string(),
         bin_dir: install_root.join("bin").display().to_string(),
-        active_version_dir: Some(install_root.join("versions/v0.0.0").display().to_string()),
+        active_version_dir: Some(
+            install_root
+                .join("versions")
+                .join(release_tag)
+                .display()
+                .to_string(),
+        ),
         active_pointer: install_root.join("active").display().to_string(),
         active_pointer_changed: false,
         repair_stale_install_lock: false,
@@ -43,7 +53,7 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
         source: SourcePlan {
             kind: SourceKind::BundleUrl,
             selector: bundle_url.clone(),
-            release_tag: Some("v0.0.0".to_owned()),
+            release_tag: Some(release_tag.to_owned()),
             bundle_url: Some(bundle_url.clone()),
         },
         bundle_url: Some(bundle_url),
@@ -53,14 +63,16 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
             .to_string(),
         host_binaries_manifest: Some(
             install_root
-                .join("versions/v0.0.0/artifacts/host-binaries.manifest.json")
+                .join("versions")
+                .join(release_tag)
+                .join("artifacts/host-binaries.manifest.json")
                 .display()
                 .to_string(),
         ),
         profile_written: false,
         next_command: "m80 run -- echo hello".to_owned(),
-        binary_version: "v0.0.0".to_owned(),
-        binary_release_tag: Some("v0.0.0".to_owned()),
+        binary_version: release_tag.to_owned(),
+        binary_release_tag: Some(release_tag.to_owned()),
         version_status: "release".to_owned(),
     }
 }

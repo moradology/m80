@@ -572,6 +572,16 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
             summary.finalization_order.join(",")
         ),
     ];
+    if let Some(previous_active_version_dir) = &summary.previous_active_version_dir {
+        lines.push(format!(
+            "previous_active_version_dir={previous_active_version_dir}"
+        ));
+    }
+    if let Some(previous_active_release_tag) = &summary.previous_active_release_tag {
+        lines.push(format!(
+            "previous_active_release_tag={previous_active_release_tag}"
+        ));
+    }
     if let Some(reinstall) = &summary.reinstall {
         lines.push(format!("reinstall_status={}", reinstall.status));
         lines.push(format!(

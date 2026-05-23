@@ -9,6 +9,7 @@ use super::test_env::{fake_gh_fixture, write_fake_curl, EnvVarGuard};
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct ReleaseFixtureOptions {
+    pub(super) release_tag: Option<&'static str>,
     pub(super) omit: Option<&'static str>,
     pub(super) tamper_bundle: bool,
     pub(super) wrong_bundle_checksum: bool,
@@ -101,8 +102,9 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     options: ReleaseFixtureOptions,
     bundle_bytes: &[u8],
 ) -> ReleaseFixture {
+    let release_tag = options.release_tag.unwrap_or("v0.0.0");
     let bundle_name = "m80-linux-x86_64.tar.gz";
-    let bundle_url = crate::release_urls::release_asset_url("v0.0.0", bundle_name);
+    let bundle_url = crate::release_urls::release_asset_url(release_tag, bundle_name);
     let tampered_bundle_bytes = b"tampered release bundle bytes\n";
     let bundle_sha256 = sha256_bytes(bundle_bytes);
     let bundle_size = bundle_bytes.len();
@@ -125,8 +127,8 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
 
     let metadata_name = "m80-linux-x86_64.bundle.json";
     let metadata_bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "release_tag": "v0.0.0",
-        "m80_version": "v0.0.0",
+        "release_tag": release_tag,
+        "m80_version": release_tag,
         "package_version": "0.0.0",
         "target": "linux-x86_64",
         "os": "linux",
@@ -142,7 +144,7 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
 
     let index = serde_json::json!({
         "schema_version": 1,
-        "release_tag": "v0.0.0",
+        "release_tag": release_tag,
         "assets": [{
             "name": bundle_name,
             "url": bundle_url.as_str(),
@@ -157,8 +159,8 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
             "os": "linux",
             "arch": "x86_64",
             "image_kind": "minimal",
-            "release_tag": "v0.0.0",
-            "m80_version": "v0.0.0",
+            "release_tag": release_tag,
+            "m80_version": release_tag,
             "guest_protocol_version": 1,
             "manifest_schema_version": 1,
             "expected_firecracker_version": "v1.15.1"
@@ -174,7 +176,7 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
         b"#!/bin/sh\nexit 0\n"
     };
     let selector_bytes = format!(
-        "schema_version\t1\nrelease_tag\tv0.0.0\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t{bundle_name}.sha256\t-\tm80-release-integrity.attestation.jsonl\tv0.0.0\n"
+        "schema_version\t1\nrelease_tag\t{release_tag}\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t{bundle_name}.sha256\t-\tm80-release-integrity.attestation.jsonl\t{release_tag}\n"
     );
     let commit_sha = if options.wrong_commit_sha {
         "1111111111111111111111111111111111111111"
@@ -189,11 +191,11 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     let predicate_release_tag = if options.wrong_release_tag {
         "v9.9.9"
     } else {
-        "v0.0.0"
+        release_tag
     };
     let build_bytes = serde_json::to_vec_pretty(&serde_json::json!({
         "schema_version": 1,
-        "release_tag": "v0.0.0",
+        "release_tag": release_tag,
         "source_commit": commit_sha
     }))
     .unwrap();
@@ -521,6 +523,33 @@ fn attestation_bundle_bytes(
     predicate_sha256: &str,
     options: ReleaseFixtureOptions,
 ) -> String {
+    let workflow_ref = if options.gh_wrong_source_ref {
+        "refs/tags/v9.9.9"
+    } else {
+        return attestation_bundle_bytes_with_workflow_ref(
+            release_tag,
+            commit_sha,
+            predicate_sha256,
+            options,
+            &format!("refs/tags/{release_tag}"),
+        );
+    };
+    attestation_bundle_bytes_with_workflow_ref(
+        release_tag,
+        commit_sha,
+        predicate_sha256,
+        options,
+        workflow_ref,
+    )
+}
+
+fn attestation_bundle_bytes_with_workflow_ref(
+    release_tag: &str,
+    commit_sha: &str,
+    predicate_sha256: &str,
+    options: ReleaseFixtureOptions,
+    workflow_ref: &str,
+) -> String {
     let bundle_commit_sha = if options.gh_wrong_commit {
         "1111111111111111111111111111111111111111"
     } else {
@@ -538,11 +567,6 @@ fn attestation_bundle_bytes(
             "name": "m80-release-integrity.json",
             "digest": {"sha256": subject_sha}
         }])
-    };
-    let workflow_ref = if options.gh_wrong_source_ref {
-        "refs/tags/v9.9.9"
-    } else {
-        "refs/tags/v0.0.0"
     };
     let runner_environment = if options.self_hosted_runner {
         "self-hosted"

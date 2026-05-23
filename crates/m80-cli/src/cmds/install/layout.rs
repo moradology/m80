@@ -67,6 +67,10 @@ pub(super) struct LayoutInstallSummary {
     pub(super) profile_path: String,
     pub(super) active_pointer: String,
     pub(super) active_pointer_flipped: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) previous_active_version_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) previous_active_release_tag: Option<String>,
     pub(super) profile_written: bool,
     pub(super) host_prerequisite_status: String,
     pub(super) preflight_gate: &'static str,
@@ -262,6 +266,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     };
 
     let active_pointer = PathBuf::from(&plan.active_pointer);
+    let previous_active = previous_active_candidate(&active_pointer)?;
     if let Err(err) = flip_active_pointer(&active_pointer, &final_dir) {
         selector_transaction.rollback();
         return Err(err);
@@ -291,6 +296,10 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         profile_path: profile_path.display().to_string(),
         active_pointer: active_pointer.display().to_string(),
         active_pointer_flipped: true,
+        previous_active_version_dir: previous_active
+            .as_ref()
+            .map(|candidate| candidate.version_dir.display().to_string()),
+        previous_active_release_tag: previous_active.map(|candidate| candidate.release_tag),
         profile_written: true,
         host_prerequisite_status: host_prerequisite_status(preflight_gate),
         preflight_gate,
@@ -388,6 +397,43 @@ fn install_path_handoff(final_dir: &Path, bin_dir: &Path) -> Result<PathHandoffS
 #[derive(Debug)]
 struct PreviousM80Link {
     exists: bool,
+}
+
+struct PreviousActiveCandidate {
+    version_dir: PathBuf,
+    release_tag: String,
+}
+
+fn previous_active_candidate(
+    active_pointer: &Path,
+) -> Result<Option<PreviousActiveCandidate>, FcError> {
+    let target = match fs::read_link(active_pointer) {
+        Ok(target) => target,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: active_pointer.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let release_tag = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "install.active_pointer",
+                reason: format!(
+                    "active pointer target has no UTF-8 release tag: {}",
+                    target.display()
+                ),
+            })
+        })?
+        .to_owned();
+    Ok(Some(PreviousActiveCandidate {
+        version_dir: target,
+        release_tag,
+    }))
 }
 
 fn previous_m80_link_state(link_path: &Path) -> Result<PreviousM80Link, FcError> {
@@ -591,6 +637,8 @@ fn idempotent_reinstall_summary(
         profile_path: default_profile.display().to_string(),
         active_pointer: plan.active_pointer.clone(),
         active_pointer_flipped: false,
+        previous_active_version_dir: None,
+        previous_active_release_tag: None,
         profile_written: false,
         host_prerequisite_status: "not_run_idempotent_reinstall".to_owned(),
         preflight_gate: "not_run_idempotent_reinstall",
@@ -630,6 +678,8 @@ pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
         profile_path: "/etc/m80/profiles/default.toml".to_owned(),
         active_pointer: "/opt/m80/active".to_owned(),
         active_pointer_flipped: false,
+        previous_active_version_dir: None,
+        previous_active_release_tag: None,
         profile_written: false,
         host_prerequisite_status: "not_run_idempotent_reinstall".to_owned(),
         preflight_gate: "not_run_idempotent_reinstall",
@@ -912,6 +962,11 @@ fn verify_preflight_gate(bundle_url: &str) -> Result<&'static str, FcError> {
 }
 
 fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
+    #[cfg(test)]
+    if std::env::var_os("M80_INSTALL_TEST_HOSTLESS_OFFICIAL").is_some() {
+        let _ = bundle_url;
+        return Ok(true);
+    }
     #[cfg(debug_assertions)]
     {
         Ok(std::env::var_os("M80_INSTALL_HOSTLESS_FIXTURE").is_some()
