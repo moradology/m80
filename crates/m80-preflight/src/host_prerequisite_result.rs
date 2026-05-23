@@ -50,6 +50,14 @@ impl HostPrerequisiteResult {
         ))
     }
 
+    /// Build a schema-current success result from a complete full-preflight
+    /// report and fail if stable check ids drift out of registry order.
+    pub fn from_full_report_rows(rows: &[CheckRow]) -> Result<Self, HostPrerequisiteResultError> {
+        let result = Self::from_success_rows(rows)?;
+        result.validate_full_report_check_id_order()?;
+        Ok(result)
+    }
+
     /// Build a schema-current result from a successful full preflight
     /// discovery, preserving structured fields that table rows only render as
     /// human text.
@@ -90,6 +98,14 @@ impl HostPrerequisiteResult {
                 _ => {}
             }
         }
+        Ok(result)
+    }
+
+    /// Build a schema-current result from a successful full preflight
+    /// discovery and validate the complete check-id order contract.
+    pub fn from_full_discovery(discovery: &Discovery) -> Result<Self, HostPrerequisiteResultError> {
+        let result = Self::from_discovery(discovery)?;
+        result.validate_full_report_check_id_order()?;
         Ok(result)
     }
 
@@ -147,6 +163,53 @@ impl HostPrerequisiteResult {
                 return Err(HostPrerequisiteResultError::MissingRemediationTarget {
                     check_name: check.check_name.clone(),
                 });
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_full_report_check_id_order(&self) -> Result<(), HostPrerequisiteResultError> {
+        for (duplicate_index, check) in self.checks.iter().enumerate() {
+            if let Some(first_index) = self.checks[..duplicate_index]
+                .iter()
+                .position(|seen| seen.check_id == check.check_id)
+            {
+                return Err(HostPrerequisiteResultError::DuplicateCheckId {
+                    check_id: check.check_id.as_str(),
+                    first_index,
+                    duplicate_index,
+                });
+            }
+        }
+
+        let actual = self
+            .checks
+            .iter()
+            .map(|check| check.check_id)
+            .collect::<Vec<_>>();
+        for (expected_index, expected) in HostPrerequisiteCheckId::ALL.iter().copied().enumerate() {
+            match actual.get(expected_index).copied() {
+                Some(actual) if actual == expected => {}
+                Some(actual) => {
+                    if !self.checks.iter().any(|check| check.check_id == expected) {
+                        return Err(HostPrerequisiteResultError::MissingCheckId {
+                            check_id: expected.as_str(),
+                            expected_index,
+                        });
+                    }
+                    return Err(HostPrerequisiteResultError::OutOfOrderCheckId {
+                        expected_check_id: expected.as_str(),
+                        actual_check_id: actual.as_str(),
+                        index: expected_index,
+                    });
+                }
+                None => {
+                    return Err(HostPrerequisiteResultError::MissingCheckId {
+                        check_id: expected.as_str(),
+                        expected_index,
+                    });
+                }
             }
         }
 
@@ -816,5 +879,39 @@ pub enum HostPrerequisiteResultError {
     UnexpectedFailedSuccessRow {
         /// Check name.
         check_name: String,
+    },
+    /// Full report is missing an expected check id.
+    #[error(
+        "host prerequisite full report missing check_id {check_id:?} at index {expected_index}"
+    )]
+    MissingCheckId {
+        /// Missing check id.
+        check_id: &'static str,
+        /// Expected registry index.
+        expected_index: usize,
+    },
+    /// Full report repeated a check id.
+    #[error(
+        "host prerequisite full report duplicate check_id {check_id:?}: first index {first_index}, duplicate index {duplicate_index}"
+    )]
+    DuplicateCheckId {
+        /// Duplicated check id.
+        check_id: &'static str,
+        /// First observed index.
+        first_index: usize,
+        /// Repeated observed index.
+        duplicate_index: usize,
+    },
+    /// Full report emitted a check id at the wrong registry position.
+    #[error(
+        "host prerequisite full report out-of-order check_id at index {index}: expected {expected_check_id:?}, got {actual_check_id:?}"
+    )]
+    OutOfOrderCheckId {
+        /// Expected check id at this index.
+        expected_check_id: &'static str,
+        /// Actual observed check id at this index.
+        actual_check_id: &'static str,
+        /// Mismatched index.
+        index: usize,
     },
 }

@@ -219,6 +219,12 @@ which is the right place for a security review to start.
   for install, diagnostics, and release evidence. The CLI embeds this proof
   under `data.host_prerequisites` in `m80 --json preflight` alongside the
   selected runtime-profile report.
+  `HostPrerequisiteResult::from_full_report_rows()` and
+  `HostPrerequisiteResult::from_full_discovery()` validate that complete
+  preflight reports emit `check_id` values in `HostPrerequisiteCheckId::ALL`
+  order and name the first missing, duplicate, or out-of-order id. Use
+  `from_success_rows()` or `from_discovery()` only for partial fixtures and
+  focused projections.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.

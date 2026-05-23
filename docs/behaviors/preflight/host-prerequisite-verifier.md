@@ -55,6 +55,15 @@ for table readability without changing the machine identity. The registry is:
 `kernel_image`, `rootfs_manifest`, `run_root`, `run_root_filesystem`, and
 `storage_helpers`.
 
+Successful full-preflight JSON is stricter than ad hoc partial projections:
+`HostPrerequisiteResult::from_full_discovery()` validates that the emitted
+`check_id` sequence exactly matches that registry order across substrate,
+tuning advisory, host binary, launch material, artifact, run-root, and storage
+helper rows. The validator reports the first missing, duplicate, or
+out-of-order `check_id` with its registry index. This makes the full report
+order a contract for machine consumers that need stable,
+presentation-independent summaries.
+
 Production machine consumers are linted against decisions keyed on
 `CheckRow.label` or `HostPrerequisiteCheck.check_name`. Human renderers may use
 those fields only for display, and any necessary exception must carry the narrow

@@ -45,8 +45,16 @@ fn fake_discovery() -> Discovery {
         privilege: m80_preflight::PrivilegeStatus::Root,
         report: Vec::new(),
     };
-    d.report = vec![CheckRow::pass(HostPrerequisiteCheckId::Kvm, "fixture").with_label("kvm")];
+    d.report = full_preflight_report_rows();
     d
+}
+
+fn full_preflight_report_rows() -> Vec<CheckRow> {
+    HostPrerequisiteCheckId::ALL
+        .iter()
+        .copied()
+        .map(|check_id| CheckRow::pass(check_id, "fixture"))
+        .collect()
 }
 
 fn fake_manifest() -> m80_image_manifest::Manifest {
@@ -448,7 +456,7 @@ fn preflight_success_fixture_needs_no_kvm() {
 
 #[test]
 fn preflight_json_formats_host_prerequisite_result_without_kvm() {
-    let rows = fake_discovery().report;
+    let rows = vec![CheckRow::pass(HostPrerequisiteCheckId::Kvm, "fixture").with_label("kvm")];
     let proof = m80_preflight::HostPrerequisiteResult::from_success_rows(&rows).unwrap();
     let json = json::to_pretty(&proof);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

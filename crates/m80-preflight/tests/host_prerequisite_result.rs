@@ -17,6 +17,14 @@ fn fixture_config() -> HostFeaturePreflightConfig {
     }
 }
 
+fn full_report_rows() -> Vec<CheckRow> {
+    HostPrerequisiteCheckId::ALL
+        .iter()
+        .copied()
+        .map(|check_id| CheckRow::pass(check_id, "fixture"))
+        .collect()
+}
+
 #[test]
 fn success_rows_reject_failed_table_rows() {
     let rows = [CheckRow::fail(
@@ -44,6 +52,96 @@ fn success_rows_preserve_check_id_when_human_label_changes() {
 
     assert_eq!(result.checks[0].check_id, HostPrerequisiteCheckId::Kvm);
     assert_eq!(result.checks[0].check_name, "Kernel virtualization device");
+}
+
+#[test]
+fn full_report_rows_keep_registry_order_despite_human_label_changes() {
+    let rows = full_report_rows()
+        .into_iter()
+        .map(|row| {
+            let check_id = row.check_id;
+            row.with_label(format!("human label for {}", check_id.as_str()))
+        })
+        .collect::<Vec<_>>();
+
+    let result = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap();
+    let check_ids = result
+        .checks
+        .iter()
+        .map(|check| check.check_id)
+        .collect::<Vec<_>>();
+
+    assert_eq!(check_ids, HostPrerequisiteCheckId::ALL);
+    assert_eq!(
+        result.checks[0].check_name, "human label for os_gate",
+        "human label changes must not affect the machine check-id order"
+    );
+}
+
+#[test]
+fn full_report_rows_name_first_missing_check_id() {
+    let rows = full_report_rows()
+        .into_iter()
+        .filter(|row| row.check_id != HostPrerequisiteCheckId::RootfsManifest)
+        .collect::<Vec<_>>();
+
+    let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
+
+    match err {
+        HostPrerequisiteResultError::MissingCheckId {
+            check_id,
+            expected_index,
+        } => {
+            assert_eq!(check_id, "rootfs_manifest");
+            assert_eq!(expected_index, 22);
+        }
+        other => panic!("expected missing check_id, got {other:?}"),
+    }
+}
+
+#[test]
+fn full_report_rows_name_first_duplicate_check_id() {
+    let mut rows = full_report_rows();
+    rows.insert(
+        4,
+        CheckRow::pass(HostPrerequisiteCheckId::Kvm, "duplicate fixture"),
+    );
+
+    let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
+
+    match err {
+        HostPrerequisiteResultError::DuplicateCheckId {
+            check_id,
+            first_index,
+            duplicate_index,
+        } => {
+            assert_eq!(check_id, "kvm");
+            assert_eq!(first_index, 2);
+            assert_eq!(duplicate_index, 4);
+        }
+        other => panic!("expected duplicate check_id, got {other:?}"),
+    }
+}
+
+#[test]
+fn full_report_rows_name_first_out_of_order_check_id() {
+    let mut rows = full_report_rows();
+    rows.swap(21, 22);
+
+    let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
+
+    match err {
+        HostPrerequisiteResultError::OutOfOrderCheckId {
+            expected_check_id,
+            actual_check_id,
+            index,
+        } => {
+            assert_eq!(expected_check_id, "kernel_image");
+            assert_eq!(actual_check_id, "rootfs_manifest");
+            assert_eq!(index, 21);
+        }
+        other => panic!("expected out-of-order check_id, got {other:?}"),
+    }
 }
 
 #[test]

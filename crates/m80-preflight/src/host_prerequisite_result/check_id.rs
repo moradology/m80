@@ -121,4 +121,37 @@ impl HostPrerequisiteCheckId {
             Self::StorageHelpers => "Storage helpers",
         }
     }
+
+    /// Stable serialized check identity.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OsGate => "os_gate",
+            Self::HostKernelFloor => "host_kernel_floor",
+            Self::Kvm => "kvm",
+            Self::CgroupMode => "cgroup_mode",
+            Self::JailerIdentity => "jailer_identity",
+            Self::Privilege => "privilege",
+            Self::HostSubstrateProof => "host_substrate_proof",
+            Self::KvmCpuExtensions => "kvm_cpu_extensions",
+            Self::KernelModules => "kernel_modules",
+            Self::TransparentHugepages => "transparent_hugepages",
+            Self::KvmHaltPolling => "kvm_halt_polling",
+            Self::CpuGovernor => "cpu_governor",
+            Self::CpuMicrocode => "cpu_microcode",
+            Self::CpuVulnerabilities => "cpu_vulnerabilities",
+            Self::ConntrackCapacity => "conntrack_capacity",
+            Self::FirecrackerBinary => "firecracker_binary",
+            Self::FirecrackerSeccompFilter => "firecracker_seccomp_filter",
+            Self::JailerBinary => "jailer_binary",
+            Self::JailerHardeningWrapper => "jailer_hardening_wrapper",
+            Self::NetworkHelper => "network_helper",
+            Self::HostBinaryManifest => "host_binary_manifest",
+            Self::KernelImage => "kernel_image",
+            Self::RootfsManifest => "rootfs_manifest",
+            Self::RunRoot => "run_root",
+            Self::RunRootFilesystem => "run_root_filesystem",
+            Self::StorageHelpers => "storage_helpers",
+        }
+    }
 }

@@ -236,17 +236,17 @@ pub(super) fn render_preflight_result(
     match result {
         Ok(discovery) => {
             if json {
-                let proof = match m80_preflight::HostPrerequisiteResult::from_discovery(&discovery)
-                {
-                    Ok(proof) => proof,
-                    Err(err) => {
-                        let fc_err = FcError::Config(ConfigError::InvalidValue {
-                            field: "preflight.host_prerequisite_result",
-                            reason: err.to_string(),
-                        });
-                        return errors::render_error(&fc_err, json);
-                    }
-                };
+                let proof =
+                    match m80_preflight::HostPrerequisiteResult::from_full_discovery(&discovery) {
+                        Ok(proof) => proof,
+                        Err(err) => {
+                            let fc_err = FcError::Config(ConfigError::InvalidValue {
+                                field: "preflight.host_prerequisite_result",
+                                reason: err.to_string(),
+                            });
+                            return errors::render_error(&fc_err, json);
+                        }
+                    };
                 let report = PreflightReport {
                     schema_version: 1,
                     proof_cache: ProofCacheStatusOutput::from_runtime_profile(&runtime_profile),
