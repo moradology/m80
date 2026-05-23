@@ -101,6 +101,15 @@ fn install_layout_success_with_installable_bundle(
     let bin_dir = temp.path().join("bin");
     fs::create_dir(&bin_dir).unwrap();
     write_fake_curl(&bin_dir);
+    let firecracker_bin = bin_dir.join("firecracker");
+    let jailer_bin = bin_dir.join("jailer");
+    let firecracker_seccomp_filter = bin_dir.join("firecracker-seccomp-filter.bin");
+    write_executable(
+        &firecracker_bin,
+        "#!/bin/sh\nprintf 'Firecracker v1.15.1\\n'\n",
+    );
+    write_executable(&jailer_bin, "#!/bin/sh\nprintf 'Jailer v1.15.1\\n'\n");
+    fs::write(&firecracker_seccomp_filter, b"{\"seccomp_level\":2}\n").unwrap();
     let bundle_bytes = write_installable_bundle_bytes_for_tag(temp.path(), release_tag);
     let fixture = write_direct_release_materials_with_bundle_bytes(
         &material_dir,
@@ -122,6 +131,12 @@ fn install_layout_success_with_installable_bundle(
         "M80_FAKE_GH_EXPECT_SOURCE_DIGEST",
         "0123456789abcdef0123456789abcdef01234567",
     );
+    let _firecracker_env = EnvVarGuard::set("M80_FIRECRACKER_BIN", &firecracker_bin);
+    let _seccomp_env = EnvVarGuard::set(
+        "M80_FIRECRACKER_SECCOMP_FILTER",
+        &firecracker_seccomp_filter,
+    );
+    let _jailer_env = EnvVarGuard::set("M80_JAILER_BIN", &jailer_bin);
     let _hostless_preflight = EnvVarGuard::set_value("M80_INSTALL_TEST_HOSTLESS_OFFICIAL", "1");
 
     super::super::super::install_bundle_layout(&official_release_plan_for_tag(
