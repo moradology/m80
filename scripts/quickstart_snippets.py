@@ -250,6 +250,8 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
         return "legacy-internal"
     if is_install_status_command(body):
         return "troubleshooting"
+    if is_rollback_cleanup_command(body, context):
+        return "troubleshooting"
     if is_troubleshooting_pinned_install(body, context):
         return "troubleshooting"
     raise ValueError(
@@ -318,6 +320,22 @@ def is_troubleshooting_pinned_install(body: str, context: str) -> bool:
 
 def is_install_status_command(body: str) -> bool:
     return body.strip() == "m80 install-status"
+
+
+def is_rollback_cleanup_command(body: str, context: str) -> bool:
+    lowered_context = context.lower()
+    if "rollback" not in lowered_context and "cleanup" not in lowered_context:
+        return False
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not lines:
+        return False
+    allowed_prefixes = (
+        "sudo ln -sfnT -- ",
+        "m80 install-status",
+        "sudo m80 install-cleanup ",
+        "m80 install-cleanup ",
+    )
+    return all(line.startswith(allowed_prefixes) for line in lines)
 
 
 def surrounding_context(lines: list[str], start_line: int, end_line: int) -> str:

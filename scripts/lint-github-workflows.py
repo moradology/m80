@@ -288,18 +288,27 @@ def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str
         errors.append(f"{path}: freshness workflow must invoke scripts/release_freshness.py")
     if not has_always_artifact_upload(lines):
         errors.append(f"{path}: freshness workflow must upload proof/log artifacts with if: always()")
-    for forbidden in [
+    if not has_freshness_release_publish(lines):
+        errors.append(
+            f"{path}: freshness workflow must publish m80-latest-freshness-proof.json to the resolved latest release"
+        )
+    forbidden_mutations = [
         "gh release upload",
         "gh release edit",
         "gh release delete",
         "gh api --method POST",
         "gh api --method PATCH",
         "gh api --method DELETE",
-    ]:
-        if forbidden in text:
-            errors.append(f"{path}: freshness workflow must not run release mutation command: {forbidden}")
+    ]
     for job_id, start, end in job_blocks(lines):
         block = lines[start:end]
+        block_text = "\n".join(block)
+        for forbidden in forbidden_mutations:
+            if forbidden not in block_text:
+                continue
+            if forbidden == "gh release upload" and is_publish_job(job_id):
+                continue
+            errors.append(f"{path}: freshness workflow must not run release mutation command: {forbidden}")
         for offset, line in enumerate(block):
             if "runs-on:" not in line:
                 continue
@@ -702,6 +711,29 @@ def has_always_artifact_upload(lines: list[str]) -> bool:
             "m80-latest-freshness.stderr",
         ]
         if "if: always()" in step and all(artifact in step for artifact in required_artifacts):
+            return True
+    return False
+
+
+def has_freshness_release_publish(lines: list[str]) -> bool:
+    for job_id, start, end in job_blocks(lines):
+        if not is_publish_job(job_id):
+            continue
+        block = "\n".join(lines[start:end])
+        required = [
+            "needs: hostless-public-freshness",
+            "needs.hostless-public-freshness.result == 'success'",
+            "permissions:",
+            "contents: write",
+            "actions/download-artifact@",
+            "m80-latest-freshness-${{ github.run_id }}",
+            "m80-latest-freshness-proof.json",
+            "resolved_tag",
+            "gh release upload",
+            "--clobber",
+            "--repo \"$GITHUB_REPOSITORY\"",
+        ]
+        if all(token in block for token in required):
             return True
     return False
 

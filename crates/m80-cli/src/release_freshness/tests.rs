@@ -24,6 +24,40 @@ fn reader_accepts_freshness_status_artifact_used_by_ci() {
 }
 
 #[test]
+fn reader_accepts_full_freshness_proof_artifact_used_by_public_update_check() {
+    let raw = status_artifact(Some("v1.2.3"), Some("2026-05-21T12:00:00Z"))
+        .replacen(
+            r#""schema_version":1"#,
+            r#""schema_version":1,"status":"success","generated_at":"2026-05-21T12:00:00Z","workflow_run_id":"123","workflow":{"name":"Latest freshness"},"resolved_latest_tag":"v1.2.3","public_command_inventory":{"status":"success"},"tag_agreement":{"status":"success"},"integrity_result":{"status":"success"},"fixture_install_result":{"status":"not_run"},"failure_taxonomy":{"status":"success"},"substrate":{"network_target":"public-github-release"}"#,
+            1,
+        );
+
+    let metadata = read_freshness_status_artifact_json(&raw)
+        .expect("full public freshness proof should parse as latest metadata");
+
+    assert_eq!(metadata.latest_tag(), "v1.2.3");
+}
+
+#[test]
+fn reader_rejects_failed_full_freshness_proof_artifact() {
+    let raw = status_artifact(Some("v1.2.3"), Some("2026-05-21T12:00:00Z")).replacen(
+        r#""schema_version":1"#,
+        r#""schema_version":1,"status":"failure""#,
+        1,
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("failed public freshness proof must not drive update state");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::UnsupportedStatus {
+            status: "failure".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn reader_accepts_typed_safety_floor_fields() {
     let metadata = read_freshness_status_artifact_json(&status_artifact_with_safety(
         Some("v1.2.3"),

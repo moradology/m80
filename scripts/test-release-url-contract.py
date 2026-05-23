@@ -183,6 +183,17 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("README.md", expected_snippets["latest-install"], "common"),
             ("README.md", expected_snippets["pinned-install"], "pinned"),
             ("README.md", "m80 install-status", "troubleshooting"),
+            (
+                "docs/runbook/release.md",
+                "\n".join(
+                    [
+                        "sudo ln -sfnT -- /opt/m80/versions/<previous-tag> /opt/m80/active",
+                        "m80 install-status",
+                        "sudo m80 install-cleanup --release-tag <old-tag>",
+                    ]
+                ),
+                "troubleshooting",
+            ),
             ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
             ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),
             ("docs/runbook/release.md", expected_snippets["verified-install-handoff"], "verified/operator"),
@@ -328,6 +339,30 @@ class ReleaseUrlContractTest(unittest.TestCase):
                         "",
                         "```sh",
                         "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
+                        "```",
+                    ]
+                )
+            )
+
+            inventory = public_command_inventory(root)
+            self.assertEqual(len(inventory), 1)
+            self.assertEqual(inventory[0].classification, "troubleshooting")
+
+    def test_public_command_inventory_allows_rollback_cleanup_troubleshooting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc_dir = root / "docs" / "runbook"
+            doc_dir.mkdir(parents=True)
+            doc = doc_dir / "release.md"
+            doc.write_text(
+                "\n".join(
+                    [
+                        "Rollback and cleanup a broken active install:",
+                        "",
+                        "```sh",
+                        "sudo ln -sfnT -- /opt/m80/versions/<previous-tag> /opt/m80/active",
+                        "m80 install-status",
+                        "sudo m80 install-cleanup --release-tag <old-tag>",
                         "```",
                     ]
                 )

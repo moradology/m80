@@ -73,6 +73,9 @@ pub(crate) enum FreshnessMetadataError {
         expected: u32,
         actual: u32,
     },
+    UnsupportedStatus {
+        status: String,
+    },
     NotBounded,
     WrongRepository {
         expected: String,
@@ -145,6 +148,9 @@ impl fmt::Display for FreshnessMetadataError {
                 f,
                 "unsupported freshness status schema_version: expected {expected}, got {actual}"
             ),
+            Self::UnsupportedStatus { status } => {
+                write!(f, "freshness status must be success, got {status}")
+            }
             Self::NotBounded => write!(
                 f,
                 "freshness status was not produced by the bounded verifier"
@@ -308,10 +314,21 @@ impl UnixSeconds {
 #[serde(deny_unknown_fields)]
 struct FreshnessStatusArtifact {
     schema_version: u32,
+    status: Option<String>,
+    generated_at: Option<String>,
+    workflow_run_id: Option<String>,
+    workflow: Option<serde_json::Value>,
+    resolved_latest_tag: Option<String>,
     freshness_network_bounded: bool,
     repository: String,
     resolved_tag: Option<String>,
     published_at: Option<String>,
+    public_command_inventory: Option<serde_json::Value>,
+    tag_agreement: Option<serde_json::Value>,
+    integrity_result: Option<serde_json::Value>,
+    fixture_install_result: Option<serde_json::Value>,
+    failure_taxonomy: Option<serde_json::Value>,
+    substrate: Option<serde_json::Value>,
     fetch_policy: FreshnessFetchPolicy,
     checked_urls: Vec<CheckedFreshnessUrl>,
     public_assets: Vec<PublicFreshnessAsset>,
@@ -326,9 +343,28 @@ impl FreshnessStatusArtifact {
                 actual: self.schema_version,
             });
         }
+        if let Some(status) = self.status.as_deref() {
+            if status != "success" {
+                return Err(FreshnessMetadataError::UnsupportedStatus {
+                    status: status.to_owned(),
+                });
+            }
+        }
         if !self.freshness_network_bounded {
             return Err(FreshnessMetadataError::NotBounded);
         }
+        let _ = (
+            self.generated_at,
+            self.workflow_run_id,
+            self.workflow,
+            self.resolved_latest_tag,
+            self.public_command_inventory,
+            self.tag_agreement,
+            self.integrity_result,
+            self.fixture_install_result,
+            self.failure_taxonomy,
+            self.substrate,
+        );
         let expected_repository = crate::release_urls::release_repository();
         if self.repository != expected_repository {
             return Err(FreshnessMetadataError::WrongRepository {
@@ -428,6 +464,7 @@ struct PublicFreshnessAsset {
     release_tag: String,
     size_bytes: Option<u64>,
     sha256: String,
+    checksum_sources: Option<Vec<String>>,
 }
 
 impl PublicFreshnessAsset {
@@ -438,6 +475,9 @@ impl PublicFreshnessAsset {
         require_nonempty("public_assets.release_tag", &self.release_tag)?;
         if let Some(size) = self.size_bytes {
             require_nonzero("public_assets.size_bytes", size)?;
+        }
+        if let Some(sources) = &self.checksum_sources {
+            require_nonempty_collection("public_assets.checksum_sources", sources)?;
         }
         require_sha256("public_assets.sha256", &self.sha256)
     }

@@ -154,6 +154,16 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("freshness workflow must upload proof/log artifacts with if: always()", result.stderr)
 
+    def test_freshness_workflow_requires_public_latest_proof_publish(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(publish_latest_proof=False),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must publish m80-latest-freshness-proof.json", result.stderr)
+
     def test_freshness_workflow_rejects_mutation_commands_and_privileged_runner(self) -> None:
         with workflow_dir(
             "latest-freshness.yml",
@@ -1233,6 +1243,7 @@ def latest_freshness_workflow(
     upload_artifact: bool = True,
     upload_drift_artifact: bool = True,
     upload_stderr_artifact: bool = True,
+    publish_latest_proof: bool = True,
 ) -> str:
     events_block = textwrap.indent(textwrap.dedent(events).strip(), "  ")
     stderr_artifact = (
@@ -1264,6 +1275,43 @@ def latest_freshness_workflow(
         if upload_artifact
         else ""
     )
+    publish_job = (
+        textwrap.indent(
+            textwrap.dedent(
+                """
+                publish-latest-freshness:
+                  needs: hostless-public-freshness
+                  if: ${{ needs.hostless-public-freshness.result == 'success' }}
+                  runs-on: ubuntu-latest
+                  timeout-minutes: 5
+                  permissions:
+                    contents: write
+                  steps:
+                    - uses: actions/download-artifact@v6
+                      with:
+                        name: m80-latest-freshness-${{ github.run_id }}
+                        path: /tmp/m80-latest-freshness-publish
+                    - name: Publish latest freshness proof release asset
+                      env:
+                        GH_TOKEN: ${{ github.token }}
+                      run: |
+                        set -euo pipefail
+                        proof=/tmp/m80-latest-freshness-publish/m80-latest-freshness-proof.json
+                        tag="$(python3 - "$proof" <<'PY'
+                        import json
+                        import sys
+                        proof = json.load(open(sys.argv[1], encoding="utf-8"))
+                        print(proof["resolved_tag"])
+                        PY
+                        )"
+                        gh release upload "$tag" "$proof#m80-latest-freshness-proof.json" --clobber --repo "$GITHUB_REPOSITORY"
+                """
+            ).strip(),
+            "  ",
+        )
+        if publish_latest_proof
+        else ""
+    )
     return f"""
 name: Latest freshness
 on:
@@ -1287,6 +1335,7 @@ jobs:
           mkdir -p /tmp/m80-latest-freshness
           {command}
 {upload_step}
+{publish_job}
 """
 
 

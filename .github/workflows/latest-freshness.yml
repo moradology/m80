@@ -269,3 +269,39 @@ jobs:
             /tmp/m80-latest-freshness/m80-latest-freshness.stdout
             /tmp/m80-latest-freshness/m80-latest-freshness.stderr
           if-no-files-found: error
+
+  publish-latest-freshness:
+    needs: hostless-public-freshness
+    if: ${{ needs.hostless-public-freshness.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download latest freshness evidence
+        uses: actions/download-artifact@v6
+        with:
+          name: m80-latest-freshness-${{ github.run_id }}
+          path: /tmp/m80-latest-freshness-publish
+
+      - name: Publish latest freshness proof release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          proof=/tmp/m80-latest-freshness-publish/m80-latest-freshness-proof.json
+          tag="$(python3 - "$proof" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], "r", encoding="utf-8") as fh:
+              proof = json.load(fh)
+          tag = proof.get("resolved_tag")
+          if not isinstance(tag, str) or not tag.startswith("v"):
+              raise SystemExit("freshness proof missing stable resolved_tag")
+          print(tag)
+          PY
+          )"
+          gh release upload "$tag" "$proof#m80-latest-freshness-proof.json" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
