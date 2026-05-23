@@ -223,7 +223,7 @@
       "id": "unknown-report",
       "proof_artifacts": [],
       "source_refs": [
-        "doc:docs/behaviors/cli/env-dump.md",
+        "doc:docs/behaviors/cli/bug-report.md",
         "doc:README.md"
       ],
       "verifier_code_families": [
