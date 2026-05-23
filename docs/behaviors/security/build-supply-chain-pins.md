@@ -26,10 +26,10 @@ name. The default commit is the peeled `v6.1.134` commit.
 
 Verification:
 
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_no_run_installs_verified_artifacts`
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rejects_tarball_when_external_checksum_mismatches`
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rejects_bundled_host_binaries_manifest`
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rejects_nested_bundled_host_binaries_manifest`
+- `crates/m80-cli/tests/quickstart_smoke/artifact_integrity.rs::quickstart_no_run_installs_verified_artifacts`
+- `crates/m80-cli/tests/quickstart_smoke/artifact_integrity.rs::quickstart_rejects_tarball_when_external_checksum_mismatches`
+- `crates/m80-cli/tests/quickstart_smoke/host_manifest.rs::quickstart_rejects_bundled_host_binaries_manifest`
+- `crates/m80-cli/tests/quickstart_smoke/host_manifest.rs::quickstart_rejects_nested_bundled_host_binaries_manifest`
 - `crates/m80-image-build/tests/kernel_build_pipeline.rs::kernel_builder_fetches_pinned_commit_not_mutable_tag`
 - `crates/m80-image-build/tests/kernel_build_pipeline.rs::kernel_builder_uses_snapshot_apt_sources`
 - `cargo check -p m80-proto`

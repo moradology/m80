@@ -139,19 +139,19 @@ and config contents where they existed. Missing files are removed again.
 
 ## Evidence
 
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_no_run_installs_verified_artifacts`
+- `crates/m80-cli/tests/quickstart_smoke/artifact_integrity.rs::quickstart_no_run_installs_verified_artifacts`
   proves install-root profile/config creation and generated fields.
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_no_run_prints_host_manifest_status_and_next_check`
+- `crates/m80-cli/tests/quickstart_smoke/host_manifest.rs::quickstart_no_run_prints_host_manifest_status_and_next_check`
   proves the `--no-run` human diagnostic names the absent host manifest and
   `m80 preflight` next check.
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_json_no_run_keeps_stdout_machine_readable`
+- `crates/m80-cli/tests/quickstart_smoke/installed_profile.rs::quickstart_json_no_run_keeps_stdout_machine_readable`
   proves the JSON summary reports the host manifest path, generated status,
   and next check without using stdout for human logs.
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_profile_records_release_tag_from_download_url`
+- `crates/m80-cli/tests/quickstart_smoke/installed_profile.rs::quickstart_profile_records_release_tag_from_download_url`
   proves release tag capture.
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_overwrites_stale_profile_and_config`
+- `crates/m80-cli/tests/quickstart_smoke/installed_profile.rs::quickstart_overwrites_stale_profile_and_config`
   proves stale file overwrite.
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rolls_back_previous_profile_when_config_write_fails`
+- `crates/m80-cli/tests/quickstart_smoke/rollback.rs::quickstart_rolls_back_previous_profile_when_config_write_fails`
   proves rollback after a failed second write.
 - `crates/m80-cli/src/profile.rs` and `crates/m80-cli/src/profile/report.rs`
   tests prove profile path validation, search precedence, fail-closed parsing,

@@ -165,7 +165,7 @@ struct HealthyInstallFixture {
 
 impl HealthyInstallFixture {
     fn new() -> Self {
-        let env_lock = m80_test_helpers::env::env_lock().lock().unwrap();
+        let env_lock = crate::test_support::PROCESS_ENV_LOCK.lock().unwrap();
         let env_restore = m80_test_helpers::env::EnvRestore::capture(&[
             "M80_DEFAULT_PROFILE",
             "M80_RUN_ROOT",

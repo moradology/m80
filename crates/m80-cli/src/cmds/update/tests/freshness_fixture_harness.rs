@@ -309,7 +309,7 @@ struct LoopbackCurlGuard {
 
 impl LoopbackCurlGuard {
     fn new() -> Self {
-        let env_lock = m80_test_helpers::env::env_lock().lock().unwrap();
+        let env_lock = crate::test_support::PROCESS_ENV_LOCK.lock().unwrap();
         let env_restore = m80_test_helpers::env::EnvRestore::capture(&["PATH", "M80_REAL_CURL"]);
         let real_curl = real_curl_path();
         let temp = tempfile::tempdir().expect("create fake curl tempdir");

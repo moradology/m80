@@ -35,7 +35,7 @@ that marker exists, `install-provenance.json` must also exist and verify.
 
 ## Regression Coverage
 
-- `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_no_run_installs_verified_artifacts`
+- `crates/m80-cli/tests/quickstart_smoke/artifact_integrity.rs::quickstart_no_run_installs_verified_artifacts`
   proves quickstart emits both transforms and that their installed hashes match
   the installed files.
 - `crates/m80-cli/tests/release/installer_layout.rs::install_bundle_layout_copies_verified_bundle_into_version_dir`
