@@ -184,6 +184,15 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("freshness job hostless-public-freshness must stay hostless", result.stderr)
 
+    def test_freshness_publish_write_requires_readiness_needs(self) -> None:
+        workflow = latest_freshness_workflow().replace("  publish-latest-freshness:\n    needs: hostless-public-freshness\n", "  publish-latest-freshness:\n")
+        with workflow_dir("latest-freshness.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job publish-latest-freshness grants contents: write", result.stderr)
+        self.assertIn("requires freshness readiness needs", result.stderr)
+
     def test_release_write_token_is_publish_only(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",
@@ -209,6 +218,28 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("job build must not grant contents: write", result.stderr)
+
+    def test_release_workflow_rejects_workflow_level_write_permission(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            release_artifact_origin_workflow().replace(
+                "permissions:\n  contents: read",
+                "permissions:\n  contents: write",
+            ),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("top-level permissions must not grant contents: write", result.stderr)
+
+    def test_release_publish_write_requires_build_needs(self) -> None:
+        workflow = release_artifact_origin_workflow().replace("    needs: build-release-artifacts\n", "")
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job publish-release-artifacts grants contents: write", result.stderr)
+        self.assertIn("requires needs: build-release-artifacts", result.stderr)
 
     def test_release_build_attestation_permissions_are_allowed(self) -> None:
         with workflow_dir(

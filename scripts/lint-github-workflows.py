@@ -147,6 +147,14 @@ def lint_job_permissions(
             if not is_write_permission(level):
                 continue
             if scope == "contents" and is_publish_job(job_id):
+                errors.extend(
+                    publish_write_authority_errors(
+                        path,
+                        job_id=job_id,
+                        line_no=start + 1,
+                        block=lines[start:end],
+                    )
+                )
                 continue
             if release_workflow and is_attestation_build_permission(job_id, scope):
                 continue
@@ -154,6 +162,40 @@ def lint_job_permissions(
                 f"{path}:{start + 1}: job {job_id} must not grant {scope}: {level}"
             )
     return errors
+
+
+def publish_write_authority_errors(
+    path: Path,
+    *,
+    job_id: str,
+    line_no: int,
+    block: list[str],
+) -> list[str]:
+    block_text = "\n".join(block)
+    if path.name == "release-artifacts.yml":
+        required = "needs: build-release-artifacts"
+        if required in block_text:
+            return []
+        return [
+            f"{path}:{line_no}: job {job_id} grants contents: write but policy "
+            "requires needs: build-release-artifacts before release mutation"
+        ]
+    if path.name == "latest-freshness.yml":
+        required = [
+            "needs: hostless-public-freshness",
+            "needs.hostless-public-freshness.result == 'success'",
+        ]
+        missing = [token for token in required if token not in block_text]
+        if not missing:
+            return []
+        return [
+            f"{path}:{line_no}: job {job_id} grants contents: write but policy "
+            f"requires freshness readiness needs before release mutation: {', '.join(missing)}"
+        ]
+    return [
+        f"{path}:{line_no}: job {job_id} grants contents: write but no "
+        "release mutation authority policy names its required needs graph"
+    ]
 
 
 def lint_attestation_permissions(

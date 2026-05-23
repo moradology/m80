@@ -10,7 +10,8 @@ public release state.
 - Top-level workflow permissions stay read-only.
 - Build and verification jobs use `contents: read`.
 - The only release workflow job allowed to request `contents: write` is a
-  tag-gated publish job.
+  tag-gated publish job whose `needs` graph includes the required verification
+  or readiness job for that workflow.
 - Release/latest workflows declare a concurrency group keyed by the release tag,
   GitHub ref, or latest-promotion target.
 - Pull-request workflows do not reference `secrets.*`.
@@ -77,7 +78,9 @@ consuming release bytes.
   artifact id handoff, and the accepted build-to-publish workflow artifact
   handoff. The same suite covers fixed `/tmp` literals, preexisting scratch
   path reuse, symlink staging roots, unsafe mode/owner checks, and clean
-  `$RUNNER_TEMP` usage.
+  `$RUNNER_TEMP` usage. For publish authority, it covers unexpected write
+  permission in non-publish jobs, workflow-level write permissions, publish jobs
+  missing their required `needs` graph, and the clean least-privilege layout.
 - `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports
