@@ -110,6 +110,16 @@ SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 DIST_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 LANE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DIAGNOSTIC_VALUE_LIMIT = 160
+SECRET_VALUE_RE = re.compile(
+    r"github_pat_[A-Za-z0-9_]+"
+    r"|gh[pousr]_[A-Za-z0-9_]{16,}"
+    r"|(?i:(token|secret|password|authorization)[=:][^\s,;]+)"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+)
+ABSOLUTE_HOST_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])/(?:home|root|tmp|var|run|workspace|tank|Users|opt)(?:/[^\s,;:\"']*)?"
+)
 VERSION_TAG_RE = re.compile(r"^v[A-Za-z0-9][A-Za-z0-9._+-]*$")
 PROOF_SUBSTRATES_BY_LANE = {
     "hostless-quickstart": "hostless",
@@ -371,19 +381,79 @@ def verify_bundle(
     real_kvm_proof: Path | None,
 ) -> None:
     require_exact_fields(bundle, TOP_LEVEL_FIELDS, "release evidence bundle")
-    require(bundle["schema_version"] == SCHEMA_VERSION, "unsupported release evidence bundle schema_version")
-    require(bundle["kind"] == KIND, "release evidence bundle kind mismatch")
-    require(bundle["release_tag"] == release_tag, "release evidence bundle release_tag mismatch")
+    require(
+        bundle["schema_version"] == SCHEMA_VERSION,
+        diagnostic_mismatch(
+            "schema_version",
+            EVIDENCE_BUNDLE_NAME,
+            SCHEMA_VERSION,
+            bundle["schema_version"],
+            "rerun scripts/release_evidence_bundle.py --write with the current verifier",
+        ),
+    )
+    require(
+        bundle["kind"] == KIND,
+        diagnostic_mismatch(
+            "kind",
+            EVIDENCE_BUNDLE_NAME,
+            KIND,
+            bundle["kind"],
+            "rerun scripts/release_evidence_bundle.py --write",
+        ),
+    )
+    require(
+        bundle["release_tag"] == release_tag,
+        diagnostic_mismatch(
+            "release_tag",
+            EVIDENCE_BUNDLE_NAME,
+            release_tag,
+            bundle["release_tag"],
+            "rerun scripts/release_evidence_bundle.py --write with the release tag being published",
+        ),
+    )
     require(COMMIT_RE.fullmatch(commit_sha) is not None, "commit-sha must be a 40-character lowercase hex commit")
-    require(bundle["commit_sha"] == commit_sha, "release evidence bundle commit_sha mismatch")
+    require(
+        bundle["commit_sha"] == commit_sha,
+        diagnostic_mismatch(
+            "commit_sha",
+            EVIDENCE_BUNDLE_NAME,
+            commit_sha,
+            bundle["commit_sha"],
+            "rerun scripts/release_evidence_bundle.py --write for the source commit being published",
+        ),
+    )
     require_positive_int_string(workflow_run_id, "workflow-run-id")
-    require(bundle["workflow_run_id"] == workflow_run_id, "release evidence bundle workflow_run_id mismatch")
+    require(
+        bundle["workflow_run_id"] == workflow_run_id,
+        diagnostic_mismatch(
+            "workflow_run_id",
+            EVIDENCE_BUNDLE_NAME,
+            workflow_run_id,
+            bundle["workflow_run_id"],
+            "rerun scripts/release_evidence_bundle.py --write in the current release workflow run",
+        ),
+    )
     require_nonempty_string(bundle["m80_version"], "release evidence bundle m80_version")
-    require(bundle["m80_version"] == m80_version, "release evidence bundle m80_version mismatch")
+    require(
+        bundle["m80_version"] == m80_version,
+        diagnostic_mismatch(
+            "m80_version",
+            EVIDENCE_BUNDLE_NAME,
+            m80_version,
+            bundle["m80_version"],
+            "rebuild the release bundle, then rerun scripts/release_evidence_bundle.py --write",
+        ),
+    )
     require(VERSION_TAG_RE.fullmatch(resolved_install_tag) is not None, "resolved-install-tag must be a concrete v* tag")
     require(
         bundle["resolved_install_tag"] == resolved_install_tag,
-        "release evidence bundle resolved_install_tag mismatch",
+        diagnostic_mismatch(
+            "resolved_install_tag",
+            EVIDENCE_BUNDLE_NAME,
+            resolved_install_tag,
+            bundle["resolved_install_tag"],
+            "resolve latest once, then rerun scripts/release_evidence_bundle.py --write",
+        ),
     )
     require(parse_timestamp(bundle["generated_at"]) is not None, "release evidence bundle generated_at invalid")
 
@@ -424,7 +494,16 @@ def verify_bundle(
     manifest = read_json(upload_manifest, "release upload manifest")
     expected_public = normalized_public_assets(manifest.get("public_assets"))
     observed_public = normalized_public_assets(bundle["public_assets"])
-    require(observed_public == expected_public, "release evidence bundle public_assets mismatch")
+    require(
+        observed_public == expected_public,
+        diagnostic_mismatch(
+            "public_assets",
+            EVIDENCE_BUNDLE_NAME,
+            expected_public,
+            observed_public,
+            "rerun scripts/release_upload_manifest.py --write, then scripts/release_evidence_bundle.py --write",
+        ),
+    )
 
     observed_workflow = normalized_workflow_artifacts(bundle["workflow_only_artifacts"])
     expected_receipts = receipt_ref_rows(
@@ -441,7 +520,16 @@ def verify_bundle(
         commit_sha=commit_sha,
         workflow_run_id=workflow_run_id,
     )
-    require(observed_receipts == expected_receipts, "release evidence bundle receipt_refs mismatch")
+    require(
+        observed_receipts == expected_receipts,
+        diagnostic_mismatch(
+            "receipt_refs",
+            EVIDENCE_BUNDLE_NAME,
+            expected_receipts,
+            observed_receipts,
+            "rerun the receipt producers then scripts/release_evidence_bundle.py --write",
+        ),
+    )
 
     public_names = {row["name"] for row in observed_public}
     workflow_names = {row["name"] for row in observed_workflow}
@@ -449,7 +537,16 @@ def verify_bundle(
     require(not overlap, f"release evidence bundle public/workflow artifact confusion: {comma_or_none(overlap)}")
 
     expected_workflow = workflow_only_artifacts(manifest, dist_dir)
-    require(observed_workflow == expected_workflow, "release evidence bundle workflow_only_artifacts mismatch")
+    require(
+        observed_workflow == expected_workflow,
+        diagnostic_mismatch(
+            "workflow_only_artifacts",
+            EVIDENCE_BUNDLE_NAME,
+            expected_workflow,
+            observed_workflow,
+            "rerun scripts/release_upload_manifest.py --write after regenerating workflow-only artifacts",
+        ),
+    )
     workflow_by_name = {row["name"]: row for row in expected_workflow}
     readiness = read_json(readiness_config, "release readiness config")
     lane_policy_by_id = readiness_lanes_by_id(readiness)
@@ -484,7 +581,13 @@ def verify_bundle(
     observed_host_binaries = normalized_host_binaries(bundle["host_binaries"])
     require(
         observed_host_binaries == expected_host_binaries,
-        "release evidence bundle host_binaries mismatch",
+        diagnostic_mismatch(
+            "host_binaries",
+            EVIDENCE_BUNDLE_NAME,
+            expected_host_binaries,
+            observed_host_binaries,
+            "rerun the quickstart proof lane, then scripts/release_evidence_bundle.py --write",
+        ),
     )
     expected_release_identity = release_identity_summaries(
         dist_dir=dist_dir,
@@ -496,7 +599,13 @@ def verify_bundle(
     observed_release_identity = normalized_release_identity(bundle["release_identity"])
     require(
         observed_release_identity == expected_release_identity,
-        "release evidence bundle release_identity mismatch",
+        diagnostic_mismatch(
+            "release_identity",
+            EVIDENCE_BUNDLE_NAME,
+            expected_release_identity,
+            observed_release_identity,
+            "rerun the quickstart proof lane or rebuild the release bundle, then scripts/release_evidence_bundle.py --write",
+        ),
     )
     expected_substrate_policy = substrate_policy_summaries(
         dist_dir=dist_dir,
@@ -508,7 +617,13 @@ def verify_bundle(
     observed_substrate_policy = normalized_substrate_policy(bundle["substrate_policy"])
     require(
         observed_substrate_policy == expected_substrate_policy,
-        "release evidence bundle substrate_policy mismatch",
+        diagnostic_mismatch(
+            "substrate_policy",
+            EVIDENCE_BUNDLE_NAME,
+            expected_substrate_policy,
+            observed_substrate_policy,
+            "rerun the proof lane on the configured substrate, then scripts/release_evidence_bundle.py --write",
+        ),
     )
     required = set(required_lane_ids)
     missing = set(missing_lane_ids)
@@ -562,11 +677,38 @@ def workflow_only_artifacts(manifest: dict[str, Any], dist_dir: Path) -> list[di
         require_raw_sha256(row["sha256"], f"release upload manifest workflow artifact inventory {name} sha256")
         require_non_negative_int(row["size_bytes"], f"release upload manifest workflow artifact inventory {name} size_bytes")
         path = dist_dir / name
-        require(path.is_file(), f"release evidence workflow-only artifact missing: {name}")
+        require(
+            path.is_file(),
+            diagnostic_mismatch(
+                f"workflow_only_artifacts[{name}].file",
+                name,
+                "present file",
+                "missing",
+                "regenerate the workflow-only artifact, then rerun scripts/release_upload_manifest.py --write and scripts/release_evidence_bundle.py --write",
+            ),
+        )
         actual_sha = sha256_file(path)
         actual_size = path.stat().st_size
-        require(row["sha256"] == actual_sha, f"release evidence workflow-only artifact {name} sha256 mismatch")
-        require(row["size_bytes"] == actual_size, f"release evidence workflow-only artifact {name} size_bytes mismatch")
+        require(
+            row["sha256"] == actual_sha,
+            diagnostic_mismatch(
+                f"workflow_only_artifacts[{name}].sha256",
+                name,
+                actual_sha,
+                row["sha256"],
+                "rerun scripts/release_upload_manifest.py --write, then scripts/release_evidence_bundle.py --write",
+            ),
+        )
+        require(
+            row["size_bytes"] == actual_size,
+            diagnostic_mismatch(
+                f"workflow_only_artifacts[{name}].size_bytes",
+                name,
+                actual_size,
+                row["size_bytes"],
+                "rerun scripts/release_upload_manifest.py --write, then scripts/release_evidence_bundle.py --write",
+            ),
+        )
         result.append(
             {
                 "name": name,
@@ -669,27 +811,63 @@ def normalized_receipt_refs(
         definition = receipt_definition(receipt_id)
         require(
             row["artifact_class"] == definition["artifact_class"],
-            f"release evidence bundle receipt_refs[{receipt_id}] artifact_class mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].artifact_class",
+                EVIDENCE_BUNDLE_NAME,
+                definition["artifact_class"],
+                row["artifact_class"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             row["schema_version"] == definition["schema_version"],
-            f"release evidence bundle receipt_refs[{receipt_id}] schema_version mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].schema_version",
+                EVIDENCE_BUNDLE_NAME,
+                definition["schema_version"],
+                row["schema_version"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             row["kind"] == definition["kind"],
-            f"release evidence bundle receipt_refs[{receipt_id}] kind mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].kind",
+                EVIDENCE_BUNDLE_NAME,
+                definition["kind"],
+                row["kind"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             row["release_tag"] == release_tag,
-            f"release evidence bundle receipt_refs[{receipt_id}] release_tag mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].release_tag",
+                EVIDENCE_BUNDLE_NAME,
+                release_tag,
+                row["release_tag"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             row["commit_sha"] == commit_sha,
-            f"release evidence bundle receipt_refs[{receipt_id}] commit_sha mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].commit_sha",
+                EVIDENCE_BUNDLE_NAME,
+                commit_sha,
+                row["commit_sha"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             row["workflow_run_id"] == workflow_run_id,
-            f"release evidence bundle receipt_refs[{receipt_id}] workflow_run_id mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].workflow_run_id",
+                EVIDENCE_BUNDLE_NAME,
+                workflow_run_id,
+                row["workflow_run_id"],
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
         expected_path = dist_dir / definition["name"]
         file = verify_file_ref(
@@ -739,27 +917,57 @@ def validate_receipt_payload(
     definition = receipt_definition(receipt_id)
     require(
         payload.get("schema_version") == definition["schema_version"],
-        f"release evidence bundle receipt_refs[{receipt_id}] payload schema_version mismatch",
+        diagnostic_mismatch(
+            f"receipt_refs[{receipt_id}].payload.schema_version",
+            definition["name"],
+            definition["schema_version"],
+            payload.get("schema_version"),
+            "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+        ),
     )
     require(
         payload.get("kind") == definition["kind"],
-        f"release evidence bundle receipt_refs[{receipt_id}] payload kind mismatch",
+        diagnostic_mismatch(
+            f"receipt_refs[{receipt_id}].payload.kind",
+            definition["name"],
+            definition["kind"],
+            payload.get("kind"),
+            "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+        ),
     )
     require(
         payload.get("release_tag") == release_tag,
-        f"release evidence bundle receipt_refs[{receipt_id}] payload release_tag mismatch",
+        diagnostic_mismatch(
+            f"receipt_refs[{receipt_id}].payload.release_tag",
+            definition["name"],
+            release_tag,
+            payload.get("release_tag"),
+            "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+        ),
     )
     commit_field = definition["commit_field"]
     if commit_field is not None:
         require(
             payload.get(commit_field) == commit_sha,
-            f"release evidence bundle receipt_refs[{receipt_id}] payload commit_sha mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].payload.{commit_field}",
+                definition["name"],
+                commit_sha,
+                payload.get(commit_field),
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
     workflow_field = definition["workflow_field"]
     if workflow_field is not None:
         require(
             payload.get(workflow_field) == workflow_run_id,
-            f"release evidence bundle receipt_refs[{receipt_id}] payload workflow_run_id mismatch",
+            diagnostic_mismatch(
+                f"receipt_refs[{receipt_id}].payload.{workflow_field}",
+                definition["name"],
+                workflow_run_id,
+                payload.get(workflow_field),
+                "rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+            ),
         )
 
 
@@ -793,10 +1001,28 @@ def require_proofs(
         seen_lane_ids.add(lane_id)
         expected_substrate = PROOF_SUBSTRATES_BY_LANE.get(lane_id)
         if expected_substrate is not None:
-            require(proof["substrate"] == expected_substrate, f"release evidence bundle proof {lane_id} substrate mismatch")
+            require(
+                proof["substrate"] == expected_substrate,
+                diagnostic_mismatch(
+                    f"proofs[{lane_id}].substrate",
+                    EVIDENCE_BUNDLE_NAME,
+                    expected_substrate,
+                    proof["substrate"],
+                    "rerun the proof lane on the expected substrate, then scripts/release_evidence_bundle.py --write",
+                ),
+            )
         expected_kind = PROOF_KINDS_BY_LANE.get(lane_id)
         if expected_kind is not None:
-            require(proof["proof_kind"] == expected_kind, f"release evidence bundle proof {lane_id} proof_kind mismatch")
+            require(
+                proof["proof_kind"] == expected_kind,
+                diagnostic_mismatch(
+                    f"proofs[{lane_id}].proof_kind",
+                    EVIDENCE_BUNDLE_NAME,
+                    expected_kind,
+                    proof["proof_kind"],
+                    "rerun the proof lane, then scripts/release_evidence_bundle.py --write",
+                ),
+            )
         require(proof["artifact_class"] in ARTIFACT_CLASSES, f"release evidence bundle proof {lane_id} artifact_class invalid")
         file = normalized_file_ref(proof["file"], f"release evidence bundle proof {lane_id} file")
         if proof["artifact_class"] == "public":
@@ -864,11 +1090,23 @@ def host_binaries_summaries(
         )
         require(
             manifest_ref["sha256"] == f"sha256:{inventory_row['sha256']}",
-            f"release evidence host-binaries manifest {manifest_ref['name']} sha256 mismatch",
+            diagnostic_mismatch(
+                f"host_binaries[{lane_id}].manifest.sha256",
+                manifest_ref["name"],
+                f"sha256:{inventory_row['sha256']}",
+                manifest_ref["sha256"],
+                "rerun the quickstart proof lane, then scripts/release_upload_manifest.py --write and scripts/release_evidence_bundle.py --write",
+            ),
         )
         require(
             manifest_ref["size_bytes"] == inventory_row["size_bytes"],
-            f"release evidence host-binaries manifest {manifest_ref['name']} size_bytes mismatch",
+            diagnostic_mismatch(
+                f"host_binaries[{lane_id}].manifest.size_bytes",
+                manifest_ref["name"],
+                inventory_row["size_bytes"],
+                manifest_ref["size_bytes"],
+                "rerun the quickstart proof lane, then scripts/release_upload_manifest.py --write and scripts/release_evidence_bundle.py --write",
+            ),
         )
         manifest = read_json(manifest_path, f"{lane_id} host-binaries manifest")
         firecracker_version = require_nonempty_string(
@@ -881,11 +1119,23 @@ def host_binaries_summaries(
         )
         require(
             manifest.get("firecracker_version") == firecracker_version,
-            f"{lane_id} host-binaries manifest firecracker_version mismatch",
+            diagnostic_mismatch(
+                f"host_binaries[{lane_id}].manifest.firecracker_version",
+                manifest_ref["name"],
+                firecracker_version,
+                manifest.get("firecracker_version"),
+                "rerun the quickstart proof lane so proof and host-binaries manifest agree",
+            ),
         )
         require(
             manifest.get("jailer_version") == jailer_version,
-            f"{lane_id} host-binaries manifest jailer_version mismatch",
+            diagnostic_mismatch(
+                f"host_binaries[{lane_id}].manifest.jailer_version",
+                manifest_ref["name"],
+                jailer_version,
+                manifest.get("jailer_version"),
+                "rerun the quickstart proof lane so proof and host-binaries manifest agree",
+            ),
         )
         rows.append(
             {
@@ -1406,7 +1656,16 @@ def verify_file_ref(
         path.relative_to(dist_dir)
     except ValueError as exc:
         raise SystemExit(
-            f"release evidence bundle {field_path} path outside artifact root: {path} repair={repair_command}"
+            (
+                f"release evidence bundle {field_path} path outside artifact root: "
+                + diagnostic_mismatch(
+                    f"{field_path}.path",
+                    path.name,
+                    "artifact-root-relative file",
+                    path.as_posix(),
+                    repair_command,
+                )
+            )
         ) from exc
     expected = file_ref(dist_dir, path, label)
     for key, noun in (("name", "name"), ("sha256", "digest"), ("size_bytes", "size")):
@@ -1421,6 +1680,35 @@ def verify_file_ref(
             ),
         )
     return expected
+
+
+def diagnostic_mismatch(
+    field_path: str,
+    source: str,
+    expected: object,
+    observed: object,
+    repair_command: str,
+) -> str:
+    return (
+        f"release evidence bundle {field_path} mismatch: "
+        f"field={field_path} source={source} "
+        f"expected={diagnostic_value(expected)} observed={diagnostic_value(observed)} "
+        f"repair={repair_command}"
+    )
+
+
+def diagnostic_value(value: object) -> str:
+    if value is None:
+        text = "null"
+    elif isinstance(value, (dict, list)):
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    else:
+        text = str(value)
+    if SECRET_VALUE_RE.search(text) or ABSOLUTE_HOST_PATH_RE.search(text):
+        return "<redacted>"
+    if len(text) > DIAGNOSTIC_VALUE_LIMIT:
+        return f"{text[:DIAGNOSTIC_VALUE_LIMIT]}...<truncated {len(text)} chars>"
+    return text
 
 
 def verify_bundle_path(bundle_path: Path, dist_dir: Path) -> None:

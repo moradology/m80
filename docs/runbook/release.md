@@ -788,15 +788,40 @@ diff against `github.event.before`, with branch-creation pushes falling back to
 the repository root commit.
 
 The durable publish-proof schema entrypoint is `m80-release-evidence.json`,
-validated by `scripts/release_evidence_bundle.py`. Schema version 2 records
+validated by `scripts/release_evidence_bundle.py`. Schema version 6 records
 release tag, commit, workflow run id, m80 version, resolved install tag,
-required and missing readiness lane ids, and digests for the upload manifest,
-build handoff, publish decision receipt, proof ledger, public assets, and
-workflow-only artifacts without embedding host paths or token material. The
-top-level proof ledger ref points at `m80-release-proof-ledger.jsonl`; the
-hostless proof row points at `m80-quickstart-proof-hostless.json`. Release
-workflow emission and upload are handled by the evidence collector/verifier
-leaves in the `m80-o3uh9.13.39` family.
+required and missing readiness lane ids, digest-bound refs for the upload
+manifest, build handoff, publish decision receipt, proof ledger, public assets,
+workflow-only artifacts, proof rows, host-binaries summaries, release identity,
+substrate policy, and optional publish/latest-time receipt refs. The top-level
+proof ledger ref points at `m80-release-proof-ledger.jsonl`; the hostless proof
+row points at `m80-quickstart-proof-hostless.json`. Release workflow emission
+and upload are handled by the evidence collector/verifier leaves in the
+`m80-o3uh9.13.39` family.
+
+Repair stale evidence by regenerating the owner artifact named in the diagnostic
+and then rewriting the bundle:
+
+```sh
+python3 scripts/release_evidence_bundle.py \
+  --dist-dir "$M80_RELEASE_DIST" \
+  --release-tag "$M80_RELEASE_TAG" \
+  --commit-sha "$GITHUB_SHA" \
+  --workflow-run-id "$GITHUB_RUN_ID" \
+  --m80-version "$M80_RELEASE_TAG" \
+  --resolved-install-tag "$M80_RELEASE_TAG" \
+  --write
+```
+
+Every verifier mismatch prints `field=`, `source=`, `expected=`, `observed=`
+when safe, and `repair=`. Common stale fields are `upload_manifest`,
+`build_handoff`, `publish_decision_receipt`, `proof_ledger`,
+`proofs[hostless-quickstart].file`, `workflow_only_artifacts[...]`,
+`host_binaries[...]`, `release_identity[...]`, `substrate_policy[...]`, and
+`receipt_refs[...]`. If `observed=<redacted>` appears, the verifier found a
+host path, token-like value, or oversized excerpt and intentionally withheld the
+raw value; use the `field` and `source` names to regenerate the artifact instead
+of copying the raw CI log into release evidence.
 
 | Workflow | Job | Timeout |
 | --- | --- | --- |

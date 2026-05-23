@@ -2431,6 +2431,9 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("receipt_refs[publish-decision].file digest mismatch", result.stderr)
+            self.assertIn("expected_sha256=sha256:", result.stderr)
+            self.assertIn("actual_sha256=sha256:000000", result.stderr)
+            self.assertIn("repair=rerun the receipt producer", result.stderr)
 
     def test_release_evidence_bundle_rejects_stale_token_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2466,7 +2469,11 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("receipt_refs[readiness-decision] payload release_tag mismatch", result.stderr)
+            self.assertIn("receipt_refs[readiness-decision].payload.release_tag mismatch", result.stderr)
+            self.assertIn(f"source={READINESS_DECISION_NAME}", result.stderr)
+            self.assertIn("expected=v0.2.11", result.stderr)
+            self.assertIn("observed=v9.9.9", result.stderr)
+            self.assertIn("repair=rerun the receipt producer", result.stderr)
 
     def test_release_evidence_bundle_rejects_receipt_commit_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2477,7 +2484,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("receipt_refs[token-authority] payload commit_sha mismatch", result.stderr)
+            self.assertIn("receipt_refs[token-authority].payload.commit_sha mismatch", result.stderr)
 
     def test_release_evidence_bundle_rejects_receipt_workflow_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2488,7 +2495,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("receipt_refs[readiness-decision] payload workflow_run_id mismatch", result.stderr)
+            self.assertIn("receipt_refs[readiness-decision].payload.workflow_run_id mismatch", result.stderr)
 
     def test_release_evidence_bundle_rejects_unknown_receipt_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2499,7 +2506,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("receipt_refs[token-authority] payload schema_version mismatch", result.stderr)
+            self.assertIn("receipt_refs[token-authority].payload.schema_version mismatch", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_optional_receipt_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2691,7 +2698,11 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("workflow-only artifact missing: m80-quickstart-proof-hostless.json", result.stderr)
+            self.assertIn(
+                "workflow_only_artifacts[m80-quickstart-proof-hostless.json].file mismatch",
+                result.stderr,
+            )
+            self.assertIn("observed=missing", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_stderr_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2701,7 +2712,8 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"workflow-only artifact missing: {HOSTLESS_QUICKSTART_STDERR_NAME}", result.stderr)
+            self.assertIn(f"workflow_only_artifacts[{HOSTLESS_QUICKSTART_STDERR_NAME}].file mismatch", result.stderr)
+            self.assertIn("observed=missing", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_host_binaries_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2711,7 +2723,11 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"workflow-only artifact missing: {HOSTLESS_QUICKSTART_HOST_BINARIES_NAME}", result.stderr)
+            self.assertIn(
+                f"workflow_only_artifacts[{HOSTLESS_QUICKSTART_HOST_BINARIES_NAME}].file mismatch",
+                result.stderr,
+            )
+            self.assertIn("observed=missing", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_host_binaries_manifest_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2739,7 +2755,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
-                "workflow-only artifact m80-quickstart-host-binaries.manifest.json sha256 mismatch",
+                "workflow_only_artifacts[m80-quickstart-host-binaries.manifest.json].sha256 mismatch",
                 result.stderr,
             )
 
@@ -2798,6 +2814,67 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("resolved install tag mismatch: expected v0.2.11, got v9.9.9", result.stderr)
             self.assertIn("source=m80-quickstart-proof-hostless.json", result.stderr)
+
+    def test_release_evidence_bundle_diagnostic_rejects_wrong_bundle_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["release_tag"] = "v9.9.9"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release_tag mismatch", result.stderr)
+            self.assertIn(f"source={EVIDENCE_BUNDLE_NAME}", result.stderr)
+            self.assertIn("expected=v0.2.11", result.stderr)
+            self.assertIn("observed=v9.9.9", result.stderr)
+            self.assertIn("repair=rerun scripts/release_evidence_bundle.py --write", result.stderr)
+
+    def test_release_evidence_bundle_diagnostic_rejects_wrong_proof_substrate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["proofs"][0]["substrate"] = "real-kvm"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proofs[hostless-quickstart].substrate mismatch", result.stderr)
+            self.assertIn("expected=hostless", result.stderr)
+            self.assertIn("observed=real-kvm", result.stderr)
+            self.assertIn("repair=rerun the proof lane on the expected substrate", result.stderr)
+
+    def test_release_evidence_bundle_diagnostic_redacts_secret_like_observed_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            secret = "token=ghp_abcdefghijklmnopqrstuvwxyz123456"
+            payload["m80_version"] = secret
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80_version mismatch", result.stderr)
+            self.assertIn("observed=<redacted>", result.stderr)
+            self.assertNotIn(secret, result.stderr)
+
+    def test_release_evidence_bundle_diagnostic_truncates_large_stderr_excerpt_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            large_excerpt = "stderr:" + ("x" * 600)
+            payload["m80_version"] = large_excerpt
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80_version mismatch", result.stderr)
+            self.assertIn("<truncated ", result.stderr)
+            self.assertNotIn("x" * 300, result.stderr)
 
     def test_release_evidence_bundle_rejects_mutable_latest_as_resolved_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2949,7 +3026,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
-                f"workflow-only artifact {HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME} sha256 mismatch",
+                f"workflow_only_artifacts[{HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME}].sha256 mismatch",
                 result.stderr,
             )
 
@@ -3069,7 +3146,10 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("unsupported release evidence bundle schema_version", result.stderr)
+            self.assertIn("schema_version mismatch", result.stderr)
+            self.assertIn(f"source={EVIDENCE_BUNDLE_NAME}", result.stderr)
+            self.assertIn("expected=6", result.stderr)
+            self.assertIn("observed=999", result.stderr)
 
     def test_release_evidence_bundle_rejects_duplicate_lane_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3140,7 +3220,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("proof real-kvm-quickstart substrate mismatch", result.stderr)
+            self.assertIn("proofs[real-kvm-quickstart].substrate mismatch", result.stderr)
 
     def test_remote_release_asset_inventory_writes_remote_byte_digests(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_diagnostics_proof",
+  "bead_id": "m80-o3uh9.13.39.3.3",
+  "generated_at": "2026-05-23T18:15:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures validated repairable verifier diagnostics without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.3.3 && br dep cycles && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 289 tests in 68.791s OK; workflow policy ok; python3 scripts/test-workflow-policy.py: Ran 80 tests in 3.046s OK; actionlint wrapper ok; python3 scripts/test-release-tracker-policy.py: Ran 47 tests in 3.082s OK; verify-release-tracker-policy ok; br lint m80-o3uh9.13.39.3.3 ok; br dep cycles ok; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 289 tests in 68.791s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 3.046s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.3.3 && br dep cycles && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 47 tests in 3.082s\\n\\nOK\\nrelease tracker policy ok: docs/behaviors/release/release-tracker-policy.json\\nNo template warnings found (1 issues checked)\\nNo dependency cycles detected.\\ngit diff --check ok",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "top-level bundle context mismatches include field, source, expected value, observed value, and repair command",
+    "receipt payload mismatches include receipt_refs[...].payload field paths, source receipt file names, expected value, observed value, and repair command",
+    "workflow-only artifact missing and stale-digest diagnostics include workflow_only_artifacts[...] field paths, stable source names, expected value, observed value, and repair command",
+    "wrong proof substrate diagnostics include proofs[...].substrate field paths, expected substrate, observed substrate, and repair command",
+    "secret-like observed values are redacted from diagnostics",
+    "oversized stderr-like observed values are truncated from diagnostics",
+    "artifact-root escape diagnostics redact the absolute observed host path while preserving the field and source file name",
+    "docs/runbook/release.md documents the repair stale evidence command and common field names",
+    "docs/behaviors/release/evidence-bundle.md records the diagnostic shape and redaction behavior"
+  ],
+  "review": {
+    "agent": "review_evidence_diagnostics_3_3_round2",
+    "result": "No findings after aggregate diagnostic fixes; schema_version, public_assets, host_binaries, release_identity, substrate_policy, receipt payload, workflow-only artifact, proof substrate, file-ref, redaction, and truncation diagnostics were rechecked."
+  }
+}

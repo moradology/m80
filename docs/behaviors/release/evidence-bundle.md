@@ -144,6 +144,17 @@ schema/kind/tag/commit/workflow context disagrees with the bundle, or the
 payload's schema, kind, release tag, commit SHA, or workflow run id disagrees
 with the bundle context.
 
+Verifier diagnostics are repairable by construction. Evidence mismatches name
+the bundle field path, the flat source artifact name, the expected value, the
+observed value when it is safe to print, and one repair command. File-ref
+diagnostics include expected and actual name, SHA256, and size. Structured
+context mismatches use `field=`, `source=`, `expected=`, `observed=`, and
+`repair=` keys so CI log assertions can pin the message shape. Observed values
+that contain token-looking strings, common absolute host path prefixes, or very
+large excerpts are replaced with `<redacted>` or a bounded `<truncated ...>`
+marker; the diagnostic still keeps the field path and stable artifact name
+needed to regenerate the owner file.
+
 Every evidence bundle schema version must verify these core refs before publish
 can move mutable release state:
 
