@@ -6,13 +6,15 @@ public GitHub Release asset. It separates public release assets from files that
 exist only inside the Actions artifact so upload and re-download lists cannot
 drift from the signed release-integrity material.
 
-Schema version 1 contains:
+Schema version 2 contains:
 
-- `schema_version`: `1`;
+- `schema_version`: `2`;
 - `release_tag`: the concrete tag being published;
 - `public_assets`: rows with `name`, `kind`, `sha256`, `size_bytes`, and
   `integrity_subject`;
-- `non_public_workflow_artifacts`: rows with `name` and `reason`.
+- `non_public_workflow_artifacts`: rows with `name` and `reason`;
+- `workflow_artifact_inventory`: workflow-only proof sidecar rows with
+  `name`, `reason`, `sha256`, and `size_bytes`.
 
 Public rows are derived from `m80-release-integrity.json`. Every integrity
 subject becomes a public asset with `integrity_subject: true`, and its name,
@@ -28,18 +30,30 @@ The integrity predicate itself is also public as
 `m80-release-integrity.json` with kind `release-integrity-predicate` and
 `integrity_subject: false`.
 
-Workflow-only artifacts are listed explicitly with reasons. Version 1 names
+Workflow-only artifacts are listed explicitly with reasons. Version 2 names
 `m80-release-upload-manifest.json` as the workflow-only source of upload and
 redownload truth, `m80-release-proof-ledger.jsonl` as the workflow-only proof
 index, and `m80-quickstart-proof-hostless.json` as hostless workflow evidence
 whose public proof is the signed release-integrity predicate plus attestation
-material.
+material. It also names the hostless verifier result, stderr/log sidecar, and
+host-binaries manifest as workflow-only proof sidecars.
+
+`workflow_artifact_inventory` digest-binds every proof sidecar except the
+manifest itself, whose digest is carried by the evidence bundle top-level
+`upload_manifest` ref. The inventoried files are:
+
+- `m80-release-proof-ledger.jsonl`;
+- `m80-quickstart-proof-hostless.json`;
+- `m80-quickstart-proof-hostless.verifier-result.json`;
+- `m80-quickstart-stderr.txt`;
+- `m80-quickstart-host-binaries.manifest.json`.
 
 `scripts/release_upload_manifest.py --write` writes the manifest and then
 verifies it. Verification fails closed on duplicate names, path traversal,
 missing public files, stale `sha256`, stale `size_bytes`, unknown top-level
 fields, public asset set drift, post-predicate proof asset drift, and
-non-public workflow artifact drift.
+non-public workflow artifact drift. It also rejects missing or stale
+workflow-only proof sidecars before publish evidence can consume them.
 
 The publish workflow also runs the verifier with
 `--require-exact-dist-public-assets` immediately after `gh release download`.

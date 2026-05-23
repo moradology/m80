@@ -45,6 +45,7 @@ TOP_LEVEL_FIELDS = {
 FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
 PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subject"}
 WORKFLOW_ARTIFACT_FIELDS = {"name", "reason", "sha256", "size_bytes"}
+WORKFLOW_INVENTORY_FIELDS = {"name", "reason", "sha256", "size_bytes"}
 PROOF_FIELDS = {"lane_id", "proof_kind", "substrate", "artifact_class", "file"}
 REDACTION_FIELDS = {"policy", "forbidden"}
 REDACTION_FORBIDDEN = ["absolute-host-paths", "secrets", "tokens", "environment-dumps"]
@@ -302,21 +303,27 @@ def normalized_public_assets(value: object) -> list[dict[str, Any]]:
 
 
 def workflow_only_artifacts(manifest: dict[str, Any], dist_dir: Path) -> list[dict[str, Any]]:
-    rows = require_list(manifest.get("non_public_workflow_artifacts"), "release upload manifest non_public_workflow_artifacts")
+    rows = require_list(manifest.get("workflow_artifact_inventory"), "release upload manifest workflow_artifact_inventory")
     result = []
     for row in rows:
-        require(isinstance(row, dict), "release upload manifest non-public workflow artifact must be an object")
-        require_exact_fields(row, {"name", "reason"}, "release upload manifest non-public workflow artifact")
-        name = require_dist_name(row["name"], "release upload manifest non-public workflow artifact name")
-        require_nonempty_string(row["reason"], f"release upload manifest non-public workflow artifact {name} reason")
+        require(isinstance(row, dict), "release upload manifest workflow artifact inventory must be an object")
+        require_exact_fields(row, WORKFLOW_INVENTORY_FIELDS, "release upload manifest workflow artifact inventory")
+        name = require_dist_name(row["name"], "release upload manifest workflow artifact inventory name")
+        require_nonempty_string(row["reason"], f"release upload manifest workflow artifact inventory {name} reason")
+        require_raw_sha256(row["sha256"], f"release upload manifest workflow artifact inventory {name} sha256")
+        require_non_negative_int(row["size_bytes"], f"release upload manifest workflow artifact inventory {name} size_bytes")
         path = dist_dir / name
         require(path.is_file(), f"release evidence workflow-only artifact missing: {name}")
+        actual_sha = sha256_file(path)
+        actual_size = path.stat().st_size
+        require(row["sha256"] == actual_sha, f"release evidence workflow-only artifact {name} sha256 mismatch")
+        require(row["size_bytes"] == actual_size, f"release evidence workflow-only artifact {name} size_bytes mismatch")
         result.append(
             {
                 "name": name,
                 "reason": row["reason"],
-                "sha256": sha256_file(path),
-                "size_bytes": path.stat().st_size,
+                "sha256": actual_sha,
+                "size_bytes": actual_size,
             }
         )
     names = [row["name"] for row in result]

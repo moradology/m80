@@ -958,6 +958,12 @@ the same proof again after `actions/download-artifact`. The hostless proof uses
 the same schema as future `real-kvm` and freshness proofs, but its substrate
 summary must say it is not a real-KVM run-smoke proof.
 
+The release upload manifest also inventories the workflow-only proof sidecars
+with digests: the proof ledger, hostless proof JSON, verifier result, stderr/log
+sidecar, and host-binaries manifest. These files are not public release assets;
+the evidence bundle rejects missing or stale sidecars before publish evidence is
+accepted.
+
 Inspect a downloaded proof with:
 
 ```sh

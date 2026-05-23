@@ -11,12 +11,15 @@ import re
 import sys
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME = "m80-quickstart-proof-hostless.verifier-result.json"
+HOSTLESS_QUICKSTART_STDERR_NAME = "m80-quickstart-stderr.txt"
+HOSTLESS_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries.manifest.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 SHA256SUMS_NAME = "SHA256SUMS"
 
@@ -28,6 +31,7 @@ TOP_LEVEL_FIELDS = {
     "release_tag",
     "public_assets",
     "non_public_workflow_artifacts",
+    "workflow_artifact_inventory",
 }
 PUBLIC_ASSET_FIELDS = {
     "name",
@@ -37,6 +41,7 @@ PUBLIC_ASSET_FIELDS = {
     "integrity_subject",
 }
 NON_PUBLIC_FIELDS = {"name", "reason"}
+WORKFLOW_INVENTORY_FIELDS = {"name", "reason", "sha256", "size_bytes"}
 INTEGRITY_SUBJECT_FIELDS = {"name", "kind", "sha256", "size_bytes"}
 
 POST_PREDICATE_PUBLIC_PROOF_KINDS = {
@@ -53,6 +58,14 @@ NON_PUBLIC_WORKFLOW_ARTIFACTS = {
         "quickstart proof ledger is workflow-only audit evidence; public release proof "
         "is the release-integrity predicate plus attestation material"
     ),
+    HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME: "quickstart proof verifier result is workflow-only audit evidence",
+    HOSTLESS_QUICKSTART_STDERR_NAME: "quickstart proof stderr/log sidecar is workflow-only audit evidence",
+    HOSTLESS_QUICKSTART_HOST_BINARIES_NAME: "quickstart proof host-binaries manifest is workflow-only audit evidence",
+}
+WORKFLOW_ARTIFACT_INVENTORY = {
+    name: reason
+    for name, reason in NON_PUBLIC_WORKFLOW_ARTIFACTS.items()
+    if name != UPLOAD_MANIFEST_NAME
 }
 
 
@@ -97,7 +110,12 @@ def main() -> int:
         write_json(manifest_path, build_manifest(dist_dir, args.release_tag))
 
     manifest = read_json(manifest_path, "release upload manifest")
-    verify_manifest(manifest, dist_dir, args.release_tag)
+    verify_manifest(
+        manifest,
+        dist_dir,
+        args.release_tag,
+        verify_workflow_artifact_inventory=not args.require_exact_dist_public_assets,
+    )
     if args.require_exact_dist_public_assets:
         verify_exact_dist_public_assets(manifest, dist_dir)
 
@@ -120,10 +138,20 @@ def build_manifest(dist_dir: Path, release_tag: str) -> dict:
             {"name": name, "reason": reason}
             for name, reason in NON_PUBLIC_WORKFLOW_ARTIFACTS.items()
         ],
+        "workflow_artifact_inventory": [
+            workflow_artifact_inventory_row(dist_dir / name, name, reason)
+            for name, reason in WORKFLOW_ARTIFACT_INVENTORY.items()
+        ],
     }
 
 
-def verify_manifest(manifest: dict, dist_dir: Path, release_tag: str) -> None:
+def verify_manifest(
+    manifest: dict,
+    dist_dir: Path,
+    release_tag: str,
+    *,
+    verify_workflow_artifact_inventory: bool,
+) -> None:
     require_exact_fields(manifest, TOP_LEVEL_FIELDS, "release upload manifest")
     require(
         manifest["schema_version"] == SCHEMA_VERSION,
@@ -189,6 +217,39 @@ def verify_manifest(manifest: dict, dist_dir: Path, release_tag: str) -> None:
         require(
             observed_non_public[name]["reason"] == reason,
             f"release upload manifest non-public workflow artifact {name} reason mismatch",
+        )
+
+    inventory = require_list(
+        manifest["workflow_artifact_inventory"],
+        "release upload manifest workflow_artifact_inventory",
+    )
+    observed_inventory = unique_rows_by_name(
+        inventory,
+        WORKFLOW_INVENTORY_FIELDS,
+        "release upload manifest workflow artifact inventory",
+    )
+    require_name_set(
+        set(observed_inventory),
+        set(WORKFLOW_ARTIFACT_INVENTORY),
+        "release upload manifest workflow artifact inventory set",
+    )
+    for name, reason in WORKFLOW_ARTIFACT_INVENTORY.items():
+        observed = observed_inventory[name]
+        require(
+            observed["reason"] == reason,
+            f"release upload manifest workflow artifact inventory {name} reason mismatch",
+        )
+        if not verify_workflow_artifact_inventory:
+            continue
+        path = dist_dir / name
+        require(path.is_file(), f"release upload workflow artifact missing: {name}")
+        require(
+            observed["sha256"] == sha256_file(path),
+            f"release upload manifest workflow artifact inventory {name} sha256 mismatch",
+        )
+        require(
+            observed["size_bytes"] == path.stat().st_size,
+            f"release upload manifest workflow artifact inventory {name} size_bytes mismatch",
         )
 
 
@@ -275,6 +336,18 @@ def public_asset_row(path: Path, name: str, kind: str, *, integrity_subject: boo
         "sha256": sha256_file(path),
         "size_bytes": path.stat().st_size,
         "integrity_subject": integrity_subject,
+    }
+
+
+def workflow_artifact_inventory_row(path: Path, name: str, reason: str) -> dict:
+    require_dist_asset_name(name, "release upload workflow artifact inventory name")
+    require(isinstance(reason, str) and reason, f"release upload workflow artifact inventory {name} reason must not be empty")
+    require(path.is_file(), f"release upload workflow artifact missing: {name}")
+    return {
+        "name": name,
+        "reason": reason,
+        "sha256": sha256_file(path),
+        "size_bytes": path.stat().st_size,
     }
 
 

@@ -1,0 +1,18 @@
+{
+  "bead": "m80-o3uh9.6.3.5",
+  "command": "python3 -m py_compile scripts/release_upload_manifest.py scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && python3 scripts/test-release-tracker-policy.py && git diff --check && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+  "exit_status": 0,
+  "generated_at": "2026-05-23T13:58:00Z",
+  "proof_kind": "hostless-release-proof-ledger-workflow-artifact-inventory",
+  "substrate": "local-hostless",
+  "stdout": "test-release-bundle.py: Ran 246 tests OK; lint-github-workflows.py: workflow policy ok; test-workflow-policy.py: Ran 80 tests OK; verify-release-tracker-policy.py: release tracker policy ok; test-release-tracker-policy.py: Ran 45 tests OK; git diff --check OK; run-actionlint.py OK",
+  "stderr": "",
+  "verified_observables": {
+    "evidence_bundle_rejects_missing_host_binaries_manifest": true,
+    "evidence_bundle_rejects_missing_stderr_sidecar": true,
+    "evidence_bundle_rejects_public_workflow_artifact_confusion": true,
+    "evidence_bundle_rejects_stale_verifier_result": true,
+    "upload_manifest_lists_digest_bound_proof_sidecars": true,
+    "workflow_sidecars_excluded_from_public_assets": true
+  }
+}

@@ -50,10 +50,13 @@ lane can trust it. The downloaded-assets mode still checks tar-internal POSIX
 modes, but it does not treat local filesystem modes on HTTP release downloads as
 part of the release contract.
 
-The upload manifest itself, `m80-release-proof-ledger.jsonl`, and
-`m80-quickstart-proof-hostless.json` stay workflow-only artifacts. Public proof
-is the release-integrity predicate, attestation bundle, and normalized
-attestation metadata listed in the manifest.
+The upload manifest itself, `m80-release-proof-ledger.jsonl`,
+`m80-quickstart-proof-hostless.json`,
+`m80-quickstart-proof-hostless.verifier-result.json`,
+`m80-quickstart-stderr.txt`, and
+`m80-quickstart-host-binaries.manifest.json` stay workflow-only artifacts.
+Public proof is the release-integrity predicate, attestation bundle, and
+normalized attestation metadata listed in the manifest.
 
 ## Build Manifest
 

@@ -19,10 +19,14 @@ The schema keeps three artifact classes distinct:
 
 - `public_assets`: files expected on the GitHub Release, copied from
   `m80-release-upload-manifest.json`.
-- `workflow_only_artifacts`: workflow artifacts that support release decisions
-  but are not public release downloads, such as
-  `m80-release-upload-manifest.json`, `m80-release-proof-ledger.jsonl`, and
-  `m80-quickstart-proof-hostless.json`.
+- `workflow_only_artifacts`: digest-bound workflow artifacts that support
+  release decisions but are not public release downloads. They are derived
+  from the upload manifest's `workflow_artifact_inventory` and include
+  `m80-release-proof-ledger.jsonl`,
+  `m80-quickstart-proof-hostless.json`,
+  `m80-quickstart-proof-hostless.verifier-result.json`,
+  `m80-quickstart-stderr.txt`, and
+  `m80-quickstart-host-binaries.manifest.json`.
 - `proofs`: lane-specific evidence entries that name their substrate and point
   to either a public or workflow-only artifact.
 
@@ -42,8 +46,9 @@ redaction leaves may add stronger scanners, but schema version 2 already names
 these forbidden categories.
 
 The validator rejects missing required keys, unknown schema versions, duplicate
-lane ids, malformed digests, stale file refs, public/workflow artifact overlap,
-unaccounted required lanes, and proof entries whose artifact class points at the
-wrong artifact set. It also rejects proof rows that point at the proof ledger,
-swapped or duplicated proof file refs, missing proof JSON, and stale proof JSON
-or proof-ledger digests.
+lane ids, malformed digests, stale file refs, missing or stale workflow-only
+proof sidecars, public/workflow artifact overlap, unaccounted required lanes,
+and proof entries whose artifact class points at the wrong artifact set. It
+also rejects proof rows that point at the proof ledger, swapped or duplicated
+proof file refs, missing proof JSON, and stale proof JSON or proof-ledger
+digests.

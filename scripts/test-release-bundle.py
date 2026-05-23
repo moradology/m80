@@ -48,6 +48,9 @@ TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME = "m80-quickstart-proof-hostless.verifier-result.json"
+HOSTLESS_QUICKSTART_STDERR_NAME = "m80-quickstart-stderr.txt"
+HOSTLESS_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries.manifest.json"
 REAL_KVM_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
@@ -1562,8 +1565,9 @@ class ReleaseBundleTest(unittest.TestCase):
             non_public_names = {
                 artifact["name"] for artifact in manifest["non_public_workflow_artifacts"]
             }
+            inventory = {artifact["name"]: artifact for artifact in manifest["workflow_artifact_inventory"]}
 
-            self.assertEqual(manifest["schema_version"], 1)
+            self.assertEqual(manifest["schema_version"], 2)
             self.assertEqual(manifest["release_tag"], "v0.2.11")
             self.assertEqual(
                 {name for name, asset in public_assets.items() if asset["integrity_subject"]},
@@ -1590,9 +1594,25 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn(UPLOAD_MANIFEST_NAME, non_public_names)
             self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, non_public_names)
             self.assertIn(RELEASE_PROOF_LEDGER_NAME, non_public_names)
+            self.assertIn(HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME, non_public_names)
+            self.assertIn(HOSTLESS_QUICKSTART_STDERR_NAME, non_public_names)
+            self.assertIn(HOSTLESS_QUICKSTART_HOST_BINARIES_NAME, non_public_names)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_PROOF_NAME, public_assets)
             self.assertNotIn(RELEASE_PROOF_LEDGER_NAME, public_assets)
+            self.assertNotIn(HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME, public_assets)
+            self.assertNotIn(HOSTLESS_QUICKSTART_STDERR_NAME, public_assets)
+            self.assertNotIn(HOSTLESS_QUICKSTART_HOST_BINARIES_NAME, public_assets)
+            self.assertNotIn(UPLOAD_MANIFEST_NAME, inventory)
+            for name in [
+                HOSTLESS_QUICKSTART_PROOF_NAME,
+                RELEASE_PROOF_LEDGER_NAME,
+                HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME,
+                HOSTLESS_QUICKSTART_STDERR_NAME,
+                HOSTLESS_QUICKSTART_HOST_BINARIES_NAME,
+            ]:
+                self.assertEqual(inventory[name]["sha256"], sha256(out_dir / name))
+                self.assertEqual(inventory[name]["size_bytes"], (out_dir / name).stat().st_size)
             for name, asset in public_assets.items():
                 self.assertEqual(asset["sha256"], sha256(out_dir / name))
                 self.assertEqual(asset["size_bytes"], (out_dir / name).stat().st_size)
@@ -1801,6 +1821,39 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("non-public workflow artifact set mismatch", result.stderr)
             self.assertIn("local-debug.json", result.stderr)
+
+    def test_release_upload_manifest_rejects_missing_stderr_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_STDERR_NAME).unlink()
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn(f"release upload workflow artifact missing: {HOSTLESS_QUICKSTART_STDERR_NAME}", result.stderr)
+
+    def test_release_upload_manifest_rejects_missing_host_binaries_manifest_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME).unlink()
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn(
+                f"release upload workflow artifact missing: {HOSTLESS_QUICKSTART_HOST_BINARIES_NAME}",
+                result.stderr,
+            )
+
+    def test_release_upload_manifest_rejects_stale_verifier_result_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME).write_text("{\"tampered\": true}\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn(
+                f"workflow artifact inventory {HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME} sha256 mismatch",
+                result.stderr,
+            )
 
     def test_release_publish_receipt_writes_and_validates_publish_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2064,9 +2117,11 @@ class ReleaseBundleTest(unittest.TestCase):
                 {asset["name"] for asset in manifest["public_assets"]},
             )
             workflow_only_names = {artifact["name"] for artifact in bundle["workflow_only_artifacts"]}
-            self.assertIn(UPLOAD_MANIFEST_NAME, workflow_only_names)
             self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, workflow_only_names)
             self.assertIn(RELEASE_PROOF_LEDGER_NAME, workflow_only_names)
+            self.assertIn(HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME, workflow_only_names)
+            self.assertIn(HOSTLESS_QUICKSTART_STDERR_NAME, workflow_only_names)
+            self.assertIn(HOSTLESS_QUICKSTART_HOST_BINARIES_NAME, workflow_only_names)
             hostless_proof_ref = {
                 "name": HOSTLESS_QUICKSTART_PROOF_NAME,
                 "sha256": f"sha256:{sha256(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME)}",
@@ -2108,6 +2163,26 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("workflow-only artifact missing: m80-quickstart-proof-hostless.json", result.stderr)
 
+    def test_release_evidence_bundle_rejects_missing_stderr_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_STDERR_NAME).unlink()
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"workflow-only artifact missing: {HOSTLESS_QUICKSTART_STDERR_NAME}", result.stderr)
+
+    def test_release_evidence_bundle_rejects_missing_host_binaries_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME).unlink()
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"workflow-only artifact missing: {HOSTLESS_QUICKSTART_HOST_BINARIES_NAME}", result.stderr)
+
     def test_release_evidence_bundle_rejects_stale_quickstart_proof_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = evidence_bundle_fixture(Path(tmp))
@@ -2123,7 +2198,23 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("proof hostless-quickstart file mismatch", result.stderr)
+            self.assertIn(
+                f"workflow-only artifact {HOSTLESS_QUICKSTART_PROOF_NAME} sha256 mismatch",
+                result.stderr,
+            )
+
+    def test_release_evidence_bundle_rejects_stale_verifier_result_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME).write_text("{\"tampered\": true}\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                f"workflow-only artifact {HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME} sha256 mismatch",
+                result.stderr,
+            )
 
     def test_release_evidence_bundle_rejects_duplicate_proof_file_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5584,6 +5675,7 @@ def release_upload_manifest_fixture(root: Path) -> Path:
     tarball = package_fixture(root)
     out_dir = tarball.parent
     write_integrity_material(out_dir)
+    write_workflow_only_proof_sidecars(out_dir)
     write_release_proof_ledger_placeholder(out_dir)
     run_release_upload_manifest(out_dir, "--write")
     return out_dir
@@ -5598,9 +5690,26 @@ def evidence_bundle_fixture(root: Path) -> Path:
 
 
 def write_publish_proof_ledger(out_dir: Path) -> Path:
-    write_hostless_quickstart_proof_placeholder(out_dir)
+    write_workflow_only_proof_sidecars(out_dir)
     write_token_authority_receipt(out_dir)
     return write_release_proof_ledger_placeholder(out_dir)
+
+
+def write_workflow_only_proof_sidecars(out_dir: Path) -> None:
+    write_hostless_quickstart_proof_placeholder(out_dir)
+    (out_dir / HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "passed": True,
+                "summary": "quickstart proof validated",
+                "proof_artifact": HOSTLESS_QUICKSTART_PROOF_NAME,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def write_token_authority_receipt(
@@ -5654,6 +5763,20 @@ def write_token_authority_receipt(
 
 
 def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:
+    (out_dir / HOSTLESS_QUICKSTART_STDERR_NAME).write_text("")
+    (out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "proof_kind": "hostless-fixture",
+                "firecracker_version": "hostless-fixture",
+                "jailer_version": "hostless-fixture",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
     proof = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
     proof.write_text(
         json.dumps(
