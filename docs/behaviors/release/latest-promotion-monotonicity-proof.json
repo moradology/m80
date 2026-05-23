@@ -1,0 +1,11 @@
+{
+  "command": "python3 scripts/test-release-latest-promotion.py && python3 scripts/test-release-bundle.py && python3 scripts/test-workflow-policy.py && python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/render-freshness-status.py --check && python3 scripts/test-freshness-status-render.py && python3 -m py_compile scripts/release_latest_promotion.py scripts/test-release-latest-promotion.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/test-release-bundle.py && git diff --check",
+  "exit_status": 0,
+  "resolved_tag": "not_applicable_latest_promotion_policy",
+  "stdout": "scripts/test-release-latest-promotion.py: 13 tests OK; scripts/test-release-bundle.py: 240 tests OK; scripts/test-workflow-policy.py: 80 tests OK; scripts/lint-github-workflows.py: workflow policy ok; scripts/run-actionlint.py --workflow-dir .github/workflows: OK; scripts/render-freshness-status.py --check: checked freshness status markers; scripts/test-freshness-status-render.py: 9 tests OK; py_compile OK; git diff --check OK",
+  "stderr": "",
+  "substrate": {
+    "kind": "local-linux-hostless",
+    "summary": "Hostless release workflow policy, artifact, freshness, and latest-promotion tests validated the monotonic latest and rollback receipt contract without mutating GitHub releases."
+  }
+}
