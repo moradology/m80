@@ -90,6 +90,7 @@ QUICKSTART_SNIPPET_DOCS = [
     "docs/runbook/release.md",
 ]
 README_QUICKSTART_LINKS = {
+    "docs/runbook/release.md",
     "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
     "docs/behaviors/release/quickstart-troubleshooting-matrix.md",
     "docs/behaviors/release/host-prerequisite-policy.md",

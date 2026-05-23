@@ -70,7 +70,7 @@ tag=<version>
 repo=moradology/m80
 tmp="$(mktemp -d)"
 base="https://github.com/${repo}/releases/download/${tag}"
-for asset in install.sh install.sh.sha256 m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
+for asset in install.sh install.sh.sha256 SHA256SUMS m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
   curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"
 done
 python3 scripts/verify-install-handoff.py "${tmp}" \

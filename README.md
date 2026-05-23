@@ -67,6 +67,8 @@ curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install
 <!-- m80:quickstart-snippet pinned-install end -->
 
 Use a stable tag such as `v0.2.11`.
+Automation that must verify `install.sh` before `sudo` should use the
+[verified handoff block](docs/runbook/release.md#public-install-urls).
 
 If something fails, start with:
 
