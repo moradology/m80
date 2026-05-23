@@ -327,6 +327,7 @@ fn parse_install_release_tag_source() {
             bundle_url,
             bootstrap_tag,
             install_root,
+            bin_dir,
             dry_run,
             repair_stale_install_lock,
         }) => {
@@ -334,6 +335,7 @@ fn parse_install_release_tag_source() {
             assert!(bundle_url.is_none());
             assert!(bootstrap_tag.is_none());
             assert_eq!(install_root, std::path::PathBuf::from("/opt/m80"));
+            assert!(bin_dir.is_none());
             assert!(!dry_run);
             assert!(!repair_stale_install_lock);
         }
@@ -365,7 +367,27 @@ fn parse_install_bundle_url_source_with_root_and_dry_run() {
                 args.install_root,
                 std::path::PathBuf::from("/tmp/m80-install")
             );
+            assert!(args.bin_dir.is_none());
             assert!(args.dry_run);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_bin_dir_override() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "install",
+        "--bundle-url",
+        "file:///tmp/m80-linux-x86_64.tar.gz",
+        "--bin-dir",
+        "/tmp/m80-bin",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert_eq!(args.bin_dir, Some(std::path::PathBuf::from("/tmp/m80-bin")));
         }
         _ => panic!("expected Install"),
     }

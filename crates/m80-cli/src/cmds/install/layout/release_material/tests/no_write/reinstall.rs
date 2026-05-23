@@ -631,7 +631,7 @@ fn seed_existing_verified_install_with_m80_version(
     let fixture =
         write_direct_release_materials_with_bundle_bytes(&material_dir, options, bundle_bytes);
 
-    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _path_env = EnvVarGuard::prepend_paths(&[install_root.join("bin"), bin_dir]);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
     let _gh_env = EnvVarGuard::set(
@@ -688,7 +688,7 @@ fn run_install_layout_with_installable_bundle(
     let fixture =
         write_direct_release_materials_with_bundle_bytes(&material_dir, options, bundle_bytes);
 
-    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _path_env = EnvVarGuard::prepend_paths(&[install_root.join("bin"), bin_dir]);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
     let _gh_env = EnvVarGuard::set(

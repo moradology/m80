@@ -17,6 +17,8 @@ use crate::{errors, json, request_id};
 mod layout;
 
 const INSTALL_NEXT_COMMAND: &str = "m80 run -- echo hello";
+const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
+const DEFAULT_BIN_DIR: &str = "/usr/local/bin";
 
 /// `m80 install` — validate installer inputs and render a plan.
 pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<i32> {
@@ -75,6 +77,7 @@ fn install_plan(
     identity: &VersionIdentity,
 ) -> Result<InstallPlan, InstallError> {
     let install_root = layout::normalize_install_root(&args.install_root)?;
+    let bin_dir = normalize_bin_dir(args.bin_dir.as_deref(), &install_root)?;
     let source = selected_source(args)?;
     let source = source_plan(&install_root, source, identity)?;
     Ok(install_plan_from_source(
@@ -82,6 +85,7 @@ fn install_plan(
         identity,
         source,
         install_root,
+        bin_dir,
     ))
 }
 
@@ -101,6 +105,7 @@ where
     >,
 {
     let install_root = layout::normalize_install_root(&args.install_root)?;
+    let bin_dir = normalize_bin_dir(args.bin_dir.as_deref(), &install_root)?;
     let source = selected_source(args)?;
     let source = source_plan_with_index_resolver_for_install(
         &install_root,
@@ -113,6 +118,7 @@ where
         identity,
         source,
         install_root,
+        bin_dir,
     ))
 }
 
@@ -121,6 +127,7 @@ fn install_plan_from_source(
     identity: &VersionIdentity,
     source: SourcePlan,
     install_root: PathBuf,
+    bin_dir: PathBuf,
 ) -> InstallPlan {
     let active_version_dir = source
         .release_tag
@@ -137,6 +144,7 @@ fn install_plan_from_source(
     InstallPlan {
         dry_run: args.dry_run,
         install_root: display_path(&install_root),
+        bin_dir: display_path(&bin_dir),
         active_version_dir,
         active_pointer: display_path(&active_pointer(&install_root)),
         active_pointer_changed: false,
@@ -150,6 +158,31 @@ fn install_plan_from_source(
         binary_version: identity.binary_version.clone(),
         binary_release_tag: identity.release_tag.clone(),
         version_status: identity.version_status.as_str().to_owned(),
+    }
+}
+
+fn normalize_bin_dir(configured: Option<&Path>, install_root: &Path) -> Result<PathBuf, FcError> {
+    let path = configured
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_bin_dir_for_install_root(install_root));
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .map_err(|source| FcError::PathIo {
+                path: PathBuf::from("."),
+                source,
+            })?
+            .join(path)
+    };
+    Ok(absolute)
+}
+
+fn default_bin_dir_for_install_root(install_root: &Path) -> PathBuf {
+    if install_root == Path::new(DEFAULT_INSTALL_ROOT) {
+        PathBuf::from(DEFAULT_BIN_DIR)
+    } else {
+        install_root.join("bin")
     }
 }
 
@@ -467,6 +500,7 @@ fn render_install_plan(plan: &InstallPlan, json_mode: bool) {
             println!("bundle_url={url}");
         }
         println!("install_root={}", plan.install_root);
+        println!("bin_dir={}", plan.bin_dir);
         println!(
             "active_version_dir={}",
             plan.active_version_dir
@@ -515,6 +549,9 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
         format!("active_version_dir={}", summary.active_version_dir),
         format!("version_dir={}", summary.version_dir),
         format!("bundle_url={}", summary.bundle_url),
+        format!("installed_m80_path={}", summary.installed_m80_path),
+        format!("installed_m80_version={}", summary.installed_m80_version),
+        format!("active_bundle_path={}", summary.active_bundle_path),
         format!("files_copied={}", summary.files_copied),
         format!("install_provenance={}", summary.install_provenance),
         format!("host_binaries_manifest={}", summary.host_binaries_manifest),
@@ -800,6 +837,7 @@ enum InstallSource<'a> {
 struct InstallPlan {
     dry_run: bool,
     install_root: String,
+    bin_dir: String,
     active_version_dir: Option<String>,
     active_pointer: String,
     active_pointer_changed: bool,

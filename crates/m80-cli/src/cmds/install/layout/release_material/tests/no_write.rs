@@ -123,7 +123,7 @@ fn install_layout_error_with_curl_log(
     write_fake_curl(&bin_dir);
     let fixture = write_direct_release_materials_with(&material_dir, options);
 
-    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _path_env = EnvVarGuard::prepend_paths(&[install_root.join("bin"), bin_dir]);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
     let _gh_env = EnvVarGuard::set(
@@ -182,7 +182,7 @@ fn install_layout_error_with_installable_bundle_and_env(
         &bundle_bytes,
     );
 
-    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _path_env = EnvVarGuard::prepend_paths(&[install_root.join("bin"), bin_dir]);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
     let _gh_env = EnvVarGuard::set(
@@ -295,6 +295,7 @@ fn write_installable_bundle_bytes(root: &Path) -> Vec<u8> {
     write_build_receipt(&src, &stale_artifacts, &manifest_path);
     write_bundle_metadata(&src, &manifest_path);
     write_sha256s(&src);
+    set_installable_bundle_modes(&src);
 
     let tarball = root.join("m80-linux-x86_64.tar.gz");
     let output = Command::new("tar")
@@ -416,6 +417,28 @@ fn write_sha256s(src: &Path) {
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn set_installable_bundle_modes(src: &Path) {
+    for relpath in [
+        "bin/m80",
+        "bin/m80-jailer-harden",
+        "bin/m80-net-helper",
+        "install.sh",
+    ] {
+        fs::set_permissions(src.join(relpath), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    for relpath in [
+        "artifacts/vmlinux",
+        "artifacts/output.ext4",
+        "artifacts/output.ext4.manifest.json",
+        "artifacts/output.ext4.build-receipt.json",
+        "artifacts/m80-guestd",
+        "bundle.json",
+        "SHA256SUMS",
+    ] {
+        fs::set_permissions(src.join(relpath), fs::Permissions::from_mode(0o644)).unwrap();
+    }
 }
 
 fn sha256_hex(path: &Path) -> String {

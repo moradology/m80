@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
@@ -56,6 +57,9 @@ pub(super) struct LayoutInstallSummary {
     pub(super) active_version_dir: String,
     pub(super) version_dir: String,
     pub(super) bundle_url: String,
+    pub(super) installed_m80_path: String,
+    pub(super) installed_m80_version: String,
+    pub(super) active_bundle_path: String,
     pub(super) files_copied: usize,
     pub(super) install_provenance: String,
     pub(super) host_binaries_manifest: String,
@@ -241,6 +245,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     })?;
     maybe_inject_interruption_after_profile()?;
     let preflight_gate = verify_preflight_gate(bundle_url)?;
+    let handoff = install_path_handoff(&final_dir, Path::new(&plan.bin_dir))?;
 
     let active_pointer = PathBuf::from(&plan.active_pointer);
     flip_active_pointer(&active_pointer, &final_dir)?;
@@ -259,6 +264,9 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         active_version_dir: final_dir.display().to_string(),
         version_dir: final_dir.display().to_string(),
         bundle_url: bundle_url.to_owned(),
+        installed_m80_path: handoff.installed_m80_path,
+        installed_m80_version: handoff.installed_m80_version,
+        active_bundle_path: final_dir.display().to_string(),
         files_copied: REQUIRED_BUNDLE_FILES.len() + 1,
         install_provenance: install_provenance.display().to_string(),
         host_binaries_manifest: host_binaries_manifest.display().to_string(),
@@ -286,6 +294,178 @@ pub(super) fn with_bundle_url_retry_context(
 
 fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
     final_dir.join("artifacts").join("release-proof-cache")
+}
+
+#[derive(Debug)]
+struct PathHandoffSummary {
+    installed_m80_path: String,
+    installed_m80_version: String,
+}
+
+fn install_path_handoff(final_dir: &Path, bin_dir: &Path) -> Result<PathHandoffSummary, FcError> {
+    fs::create_dir_all(bin_dir).map_err(|source| FcError::PathIo {
+        path: bin_dir.to_path_buf(),
+        source,
+    })?;
+    let installed_m80 = final_dir.join("bin/m80");
+    let link_path = bin_dir.join("m80");
+    let temp_link = bin_dir.join(format!(".m80.install.{}", std::process::id()));
+    let backup_link = bin_dir.join(format!(".m80.install.previous.{}", std::process::id()));
+    if temp_link.exists() {
+        fs::remove_file(&temp_link).map_err(|source| FcError::PathIo {
+            path: temp_link.clone(),
+            source,
+        })?;
+    }
+    if backup_link.exists() {
+        fs::remove_file(&backup_link).map_err(|source| FcError::PathIo {
+            path: backup_link.clone(),
+            source,
+        })?;
+    }
+    let previous_link = previous_m80_link_state(&link_path)?;
+    symlink(&installed_m80, &temp_link).map_err(|source| FcError::PathIo {
+        path: temp_link.clone(),
+        source,
+    })?;
+    if previous_link.exists {
+        fs::rename(&link_path, &backup_link).map_err(|source| FcError::PathIo {
+            path: link_path.clone(),
+            source,
+        })?;
+    }
+    fs::rename(&temp_link, &link_path).map_err(|source| FcError::PathIo {
+        path: link_path.clone(),
+        source,
+    })?;
+
+    let handoff = verify_path_handoff(&link_path, bin_dir);
+    if handoff.is_err() {
+        restore_previous_m80_link(&link_path, &backup_link, previous_link.exists)?;
+    }
+    let installed_m80_version = handoff?;
+    if previous_link.exists {
+        fs::remove_file(&backup_link).map_err(|source| FcError::PathIo {
+            path: backup_link.clone(),
+            source,
+        })?;
+    }
+    Ok(PathHandoffSummary {
+        installed_m80_path: link_path.display().to_string(),
+        installed_m80_version,
+    })
+}
+
+#[derive(Debug)]
+struct PreviousM80Link {
+    exists: bool,
+}
+
+fn previous_m80_link_state(link_path: &Path) -> Result<PreviousM80Link, FcError> {
+    match link_path.symlink_metadata() {
+        Ok(metadata) => {
+            let kind = metadata.file_type();
+            if kind.is_file() || kind.is_symlink() {
+                Ok(PreviousM80Link { exists: true })
+            } else {
+                Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "install.bin_dir",
+                    reason: format!(
+                        "{} already exists but is not a file or symlink",
+                        link_path.display()
+                    ),
+                }))
+            }
+        }
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {
+            Ok(PreviousM80Link { exists: false })
+        }
+        Err(source) => Err(FcError::PathIo {
+            path: link_path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn verify_path_handoff(link_path: &Path, bin_dir: &Path) -> Result<String, FcError> {
+    match command_v_m80()? {
+        Some(resolved) if resolved == link_path => installed_m80_version(link_path),
+        Some(resolved) => Err(path_handoff_error(bin_dir, link_path, Some(&resolved))),
+        None => Err(path_handoff_error(bin_dir, link_path, None)),
+    }
+}
+
+fn path_handoff_error(bin_dir: &Path, link_path: &Path, resolved: Option<&Path>) -> FcError {
+    let observed = resolved
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "no m80 on PATH".to_owned());
+    FcError::Config(ConfigError::InvalidValue {
+        field: "install.bin_dir",
+        reason: format!(
+            "PATH handoff failed: command -v m80 resolved {observed} but expected {}; repair with: export PATH={}:$PATH",
+            link_path.display(),
+            bin_dir.display()
+        ),
+    })
+}
+
+fn command_v_m80() -> Result<Option<PathBuf>, FcError> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("command -v m80")
+        .output()
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: "resolve installed m80",
+            source,
+        })?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    Ok(Some(PathBuf::from(
+        String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+    )))
+}
+
+fn installed_m80_version(path: &Path) -> Result<String, FcError> {
+    let output = Command::new(path)
+        .arg("--version")
+        .output()
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: "installed m80 --version",
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(FcError::CommandFailed {
+            command: "installed m80 --version",
+            status: output.status,
+            output: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn restore_previous_m80_link(
+    link_path: &Path,
+    backup_link: &Path,
+    had_previous_link: bool,
+) -> Result<(), FcError> {
+    match fs::remove_file(link_path) {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: link_path.to_path_buf(),
+                source,
+            });
+        }
+    }
+    if had_previous_link {
+        fs::rename(backup_link, link_path).map_err(|source| FcError::PathIo {
+            path: link_path.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -368,6 +548,9 @@ fn idempotent_reinstall_summary(
         active_version_dir: final_dir.display().to_string(),
         version_dir: final_dir.display().to_string(),
         bundle_url: verification.bundle_url.clone(),
+        installed_m80_path: Path::new(&plan.bin_dir).join("m80").display().to_string(),
+        installed_m80_version: format!("m80 {release_tag}"),
+        active_bundle_path: final_dir.display().to_string(),
         files_copied: 0,
         install_provenance: final_dir
             .join("artifacts")
@@ -407,6 +590,9 @@ pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
         bundle_url:
             "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz"
                 .to_owned(),
+        installed_m80_path: "/usr/local/bin/m80".to_owned(),
+        installed_m80_version: "m80 v0.0.0".to_owned(),
+        active_bundle_path: "/opt/m80/versions/v0.0.0".to_owned(),
         files_copied: 0,
         install_provenance: "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json".to_owned(),
         host_binaries_manifest: "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"

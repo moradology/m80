@@ -131,6 +131,23 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         stdout.contains(&format!("bundle_url=file://{}", bundle.tarball.display())),
         "{stdout}"
     );
+    let installed_m80 = install_root.join("bin/m80");
+    assert!(
+        stdout.contains(&format!("installed_m80_path={}", installed_m80.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("installed_m80_version=m80 {}", bundle.release_tag)),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("active_bundle_path={}", version_dir.display())),
+        "{stdout}"
+    );
+    assert_eq!(
+        fs::read_link(&installed_m80).unwrap(),
+        version_dir.join("bin/m80")
+    );
     for relpath in REQUIRED_INSTALLED_FILES {
         assert!(
             version_dir.join(relpath).is_file(),
@@ -284,6 +301,18 @@ fn install_json_success_uses_short_machine_summary_fields() {
         format!("file://{}", bundle.tarball.display())
     );
     assert_eq!(
+        data["installed_m80_path"],
+        install_root.join("bin/m80").display().to_string()
+    );
+    assert_eq!(
+        data["installed_m80_version"],
+        format!("m80 {}", bundle.release_tag)
+    );
+    assert_eq!(
+        data["active_bundle_path"],
+        version_dir.display().to_string()
+    );
+    assert_eq!(
         data["default_profile"],
         default_profile.display().to_string()
     );
@@ -295,6 +324,175 @@ fn install_json_success_uses_short_machine_summary_fields() {
     assert_eq!(data["next_command"], "m80 run -- echo hello");
     assert_eq!(data["active_pointer_flipped"], true);
     assert_eq!(data["profile_written"], true);
+}
+
+#[test]
+fn install_bundle_layout_fails_when_older_m80_shadows_installed_path() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    fs::create_dir_all(install_root.join("bin")).unwrap();
+    symlink(previous.join("bin/m80"), install_root.join("bin/m80")).unwrap();
+    let old_bin = install_temp.path().join("old-bin");
+    fs::create_dir(&old_bin).unwrap();
+    write_executable(
+        &old_bin.join("m80"),
+        "#!/bin/sh\nprintf 'm80 v0.0.OLD\\n'\n",
+    );
+    let path = path_with_dirs([old_bin.clone(), install_root.join("bin")]);
+
+    let output = run_install(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &[("PATH", path.to_str().unwrap())],
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("PATH handoff failed"), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "expected {}",
+            install_root.join("bin/m80").display()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!(
+            "export PATH={}:$PATH",
+            install_root.join("bin").display()
+        )),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("bin/m80")).unwrap(),
+        previous.join("bin/m80")
+    );
+}
+
+#[test]
+fn install_bundle_layout_fails_with_repair_when_m80_is_not_on_path() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+
+    let output = run_install(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &[("PATH", "/usr/bin:/bin")],
+        &[],
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("PATH handoff failed"), "{stderr}");
+    assert!(stderr.contains("no m80 on PATH"), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "export PATH={}:$PATH",
+            install_root.join("bin").display()
+        )),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert!(install_root.join("bin/m80").symlink_metadata().is_err());
+}
+
+#[test]
+fn install_bundle_layout_rejects_existing_command_directory_before_handoff_mutation() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    let bin_dir = install_root.join("bin");
+    fs::create_dir_all(bin_dir.join("m80")).unwrap();
+
+    let output = run_install(&bundle, &install_root, Some(&host), &[], &[]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("already exists but is not a file or symlink"),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+    assert!(bin_dir.join("m80").is_dir());
+    assert!(
+        fs::read_dir(&bin_dir).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".m80.install")),
+        "handoff rejection must not leave temp links"
+    );
+}
+
+#[test]
+fn install_bundle_layout_explicit_bin_dir_override_controls_handoff_path() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let bin_dir = install_temp.path().join("explicit-bin");
+    let path = path_with_dirs([bin_dir.clone()]);
+
+    let mut command = m80();
+    command.args([
+        "install",
+        "--bundle-url",
+        &format!("file://{}", bundle.tarball.display()),
+        "--install-root",
+        install_root.to_str().unwrap(),
+        "--bin-dir",
+        bin_dir.to_str().unwrap(),
+    ]);
+    clear_install_env(&mut command);
+    command.env("PATH", path);
+    host.apply(&mut command);
+    let output = command.output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let installed_m80 = bin_dir.join("m80");
+    let version_dir = install_root.join("versions").join(&bundle.release_tag);
+    assert!(
+        stdout.contains(&format!("installed_m80_path={}", installed_m80.display())),
+        "{stdout}"
+    );
+    assert_eq!(
+        fs::read_link(installed_m80).unwrap(),
+        version_dir.join("bin/m80")
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        version_dir
+    );
 }
 
 #[test]
@@ -619,6 +817,7 @@ fn repair_stale_install_state_lock_ignores_reused_pid() {
         "--repair-stale-install-lock",
     ]);
     clear_install_env(&mut command);
+    command.env("PATH", path_with_install_bin_first(&install_root));
     host.apply(&mut command);
     let output = command.output().unwrap();
 
@@ -656,6 +855,7 @@ fn repair_stale_install_state_lock_then_installs_normally() {
         "--repair-stale-install-lock",
     ]);
     clear_install_env(&mut command);
+    command.env("PATH", path_with_install_bin_first(&install_root));
     host.apply(&mut command);
     let output = command.output().unwrap();
 
@@ -707,6 +907,7 @@ fn run_install_json(
         install_root.to_str().unwrap(),
     ]);
     clear_install_env(&mut command);
+    command.env("PATH", path_with_install_bin_first(install_root));
     if let Some(host) = host {
         host.apply(&mut command);
     }
@@ -729,6 +930,7 @@ fn run_install_url(
         install_root.to_str().unwrap(),
     ]);
     clear_install_env(&mut command);
+    command.env("PATH", path_with_install_bin_first(install_root));
     for key in env_removals {
         command.env_remove(key);
     }
@@ -739,6 +941,18 @@ fn run_install_url(
         command.env(key, value);
     }
     command.output().unwrap()
+}
+
+pub(super) fn path_with_install_bin_first(install_root: &Path) -> std::ffi::OsString {
+    path_with_dirs([install_root.join("bin")])
+}
+
+fn path_with_dirs(leading: impl IntoIterator<Item = PathBuf>) -> std::ffi::OsString {
+    let mut paths = leading.into_iter().collect::<Vec<_>>();
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(paths).unwrap()
 }
 
 fn clear_install_env(command: &mut assert_cmd::Command) {

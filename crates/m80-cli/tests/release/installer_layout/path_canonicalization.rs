@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::fixture::{write_release_bundle, RELEASE_TAG};
-use super::{clear_install_env, m80, HostPrereqFixture};
+use super::{clear_install_env, m80, path_with_install_bin_first, HostPrereqFixture};
 
 #[test]
 fn relative_install_root_is_normalized_before_state_is_written() {
@@ -214,6 +214,12 @@ fn run_install_from(
         install_root.to_str().unwrap(),
     ]);
     clear_install_env(&mut command);
+    let effective_root = if install_root.is_absolute() {
+        install_root.to_path_buf()
+    } else {
+        cwd.join(install_root)
+    };
+    command.env("PATH", path_with_install_bin_first(&effective_root));
     if let Some(host) = host {
         host.apply(&mut command);
     }

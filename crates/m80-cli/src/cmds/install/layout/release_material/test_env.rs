@@ -34,6 +34,7 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
     InstallPlan {
         dry_run: false,
         install_root: install_root.display().to_string(),
+        bin_dir: install_root.join("bin").display().to_string(),
         active_version_dir: Some(install_root.join("versions/v0.0.0").display().to_string()),
         active_pointer: install_root.join("active").display().to_string(),
         active_pointer_changed: false,
@@ -155,6 +156,28 @@ impl EnvVarGuard {
         let mut value = OsString::from(path.as_os_str());
         if let Some(existing) = &previous {
             value.push(":");
+            value.push(existing);
+        }
+        std::env::set_var("PATH", &value);
+        Self {
+            key: "PATH",
+            previous,
+        }
+    }
+
+    pub(super) fn prepend_paths(paths: &[PathBuf]) -> Self {
+        let previous = std::env::var_os("PATH");
+        let mut value = OsString::new();
+        for (index, path) in paths.iter().enumerate() {
+            if index > 0 {
+                value.push(":");
+            }
+            value.push(path.as_os_str());
+        }
+        if let Some(existing) = &previous {
+            if !paths.is_empty() {
+                value.push(":");
+            }
             value.push(existing);
         }
         std::env::set_var("PATH", &value);

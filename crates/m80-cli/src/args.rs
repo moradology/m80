@@ -121,8 +121,8 @@ pub enum Cmd {
     /// Install or plan a release bundle.
     ///
     /// This validates the user-facing installer inputs and release identity.
-    /// `--dry-run` is side-effect-free; non-dry-run currently supports local
-    /// `file://` bundle layout copies without active-pointer finalization.
+    /// `--dry-run` is side-effect-free; non-dry-run installs the verified
+    /// bundle into a versioned tree and flips the active pointer last.
     Install(InstallArgs),
 
     /// Show the installed release selected by the local host configuration.
@@ -515,6 +515,10 @@ pub struct InstallArgs {
     /// Install root to plan or populate. Defaults to /opt/m80.
     #[arg(long = "install-root", value_name = "PATH", default_value = "/opt/m80")]
     pub install_root: PathBuf,
+
+    /// Directory where the m80 command is linked after install.
+    #[arg(long = "bin-dir", value_name = "PATH")]
+    pub bin_dir: Option<PathBuf>,
 
     /// Print the install plan without touching host state.
     #[arg(long = "dry-run")]

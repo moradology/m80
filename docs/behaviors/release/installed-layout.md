@@ -1,7 +1,7 @@
 # Installed Layout
 
-Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.6`, `m80-o3uh9.3.7`,
-`m80-o3uh9.16.1`.
+Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.4`, `m80-o3uh9.3.6`,
+`m80-o3uh9.3.7`, `m80-o3uh9.16.1`.
 
 `m80 install --release-tag <TAG> --install-root <PATH>` fetches the pinned
 release asset index, verifies its checksum sidecar, selects the matching Linux
@@ -54,6 +54,13 @@ material.
 
 The executable entrypoint is `bin/m80`; guest metadata is rooted at
 `artifacts/output.ext4.manifest.json`.
+
+The installer also publishes `<bin-dir>/m80` as a symlink to the installed
+release binary and verifies that `command -v m80` resolves to that path before
+flipping `<install-root>/active`. The default bin directory is `/usr/local/bin`
+for `/opt/m80` installs and `<install-root>/bin` for explicit fixture/proof
+roots; `--bin-dir <PATH>` overrides it. The detailed command handoff contract is
+captured in [`installer-path-handoff.md`](installer-path-handoff.md).
 
 For the default install root `/opt/m80`, `/etc/m80/profiles/default.toml`
 points at the installed artifact paths, generated host-binaries manifest, and
@@ -116,6 +123,8 @@ create `<install-root>`.
 - `install_bundle_layout_rejects_checksum_redirect_to_different_fixture_host`
 - `install_bundle_layout_missing_required_bundle_file_fails_before_activation`
 - `install_bundle_layout_duplicate_bundle_path_fails_before_activation`
+- `install_bundle_layout_fails_when_older_m80_shadows_installed_path`
+- `install_bundle_layout_explicit_bin_dir_override_controls_handoff_path`
 - `install_bundle_layout_symlink_payload_fails_before_activation`
 - `install_bundle_layout_hardlink_payload_fails_before_activation`
 - `install_bundle_layout_directory_payload_fails_before_activation`
