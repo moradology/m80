@@ -775,6 +775,18 @@ Inner command timeouts remain the primary failure detector for network fetches,
 tool installation, and smoke probes; the job timeout is the final guard so a
 wedged runner cannot leave release authority undecided.
 
+Before closing release beads locally, run the same whitespace gate CI runs:
+
+```sh
+git diff --check
+```
+
+On GitHub, `.github/workflows/ci.yml` runs a changed-line equivalent on both
+push and pull request events before host tool installation and Rust build/test
+steps. Pull requests diff against `github.event.pull_request.base.sha`; pushes
+diff against `github.event.before`, with branch-creation pushes falling back to
+the repository root commit.
+
 The durable publish-proof schema entrypoint is `m80-release-evidence.json`,
 validated by `scripts/release_evidence_bundle.py`. Schema version 2 records
 release tag, commit, workflow run id, m80 version, resolved install tag,

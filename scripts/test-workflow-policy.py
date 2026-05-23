@@ -91,6 +91,53 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_ci_requires_changed_line_whitespace_check(self) -> None:
+        with workflow_dir("ci.yml", ci_workflow(diff_check_step="")) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CI workflow must run git diff --check before Rust steps", result.stderr)
+
+    def test_ci_diff_check_requires_push_and_pr_base_revisions(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            ci_workflow(
+                diff_check_step="""
+                - name: changed-line whitespace check
+                  run: |
+                    set -euo pipefail
+                    git diff --check HEAD~1...HEAD
+                """
+            ),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must use github.event.before for push", result.stderr)
+        self.assertIn("must use pull_request.base.sha for PRs", result.stderr)
+        self.assertIn("must prove the base commit exists", result.stderr)
+        self.assertIn("must handle branch-creation push events", result.stderr)
+
+    def test_ci_diff_check_must_precede_expensive_rust_steps(self) -> None:
+        workflow = ci_workflow(diff_check_step="")
+        workflow = workflow.replace(
+            "      - name: cargo build\n        run: cargo build --workspace\n",
+            "      - name: cargo build\n        run: cargo build --workspace\n"
+            + textwrap.indent(textwrap.dedent(ci_diff_check_step()).strip(), "      ")
+            + "\n",
+        )
+        with workflow_dir("ci.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("git diff --check must run before expensive Rust steps", result.stderr)
+
+    def test_ci_accepts_changed_line_whitespace_check_before_rust(self) -> None:
+        with workflow_dir("ci.yml", ci_workflow()) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_workflow_scope_policy_rejects_duplicate_entries(self) -> None:
         with workflow_dir(
             "ci.yml",
@@ -1801,6 +1848,49 @@ jobs:
 {upload_step}
 {publish_job}
 """
+
+
+def ci_workflow(*, diff_check_step: str | None = None) -> str:
+    step = ci_diff_check_step() if diff_check_step is None else diff_check_step
+    step_block = textwrap.indent(textwrap.dedent(step).strip(), "      ")
+    if step_block:
+        step_block = "\n" + step_block
+    return f"""
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0{step_block}
+      - name: cargo build
+        run: cargo build --workspace
+"""
+
+
+def ci_diff_check_step() -> str:
+    return """
+    - name: changed-line whitespace check
+      env:
+        BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        set -euo pipefail
+        if [ "$EVENT_NAME" = "push" ] && [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+        fi
+        git cat-file -e "$BASE_SHA^{commit}"
+        git diff --check "$BASE_SHA"...HEAD
+    """
 
 
 class workflow_dir:

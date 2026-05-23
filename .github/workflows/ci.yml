@@ -23,6 +23,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: changed-line whitespace check
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ] && [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          git cat-file -e "$BASE_SHA^{commit}"
+          git diff --check "$BASE_SHA"...HEAD
+
       - name: Install host test tools
         run: |
           set -euo pipefail

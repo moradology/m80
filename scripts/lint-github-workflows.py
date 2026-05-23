@@ -16,6 +16,9 @@ JOB_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
 PERMISSION_RE = re.compile(r"^\s{6}([A-Za-z0-9_-]+):\s*([A-Za-z0-9_-]+)\s*(?:#.*)?$")
 SECRET_RE = re.compile(r"\$\{\{\s*secrets\.")
 CARGO_COMMAND_RE = re.compile(r"(?:^|\s)cargo(?:\s+\+\S+)?\s+(build|test|clippy|install)\b")
+EXPENSIVE_RUST_CI_RE = re.compile(
+    r"(?:^|\s)(?:cargo\s+(?:fmt|build|test|clippy)\b|rustup\s+toolchain\s+install\b)"
+)
 RUSTUP_TOOLCHAIN_INSTALL_RE = re.compile(r"(?:^|\s)rustup\s+toolchain\s+install\s+(\S+)")
 RUSTUP_TARGET_ADD_RE = re.compile(r"(?:^|\s)rustup\s+target\s+add\b")
 PINNED_RUST_TOOLCHAIN_RE = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
@@ -122,6 +125,8 @@ def lint_workflow_dir(
         errors.extend(lint_job_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_multiline_run_block_strictness(path, lines))
+        if path.name == "ci.yml":
+            errors.extend(lint_ci_changed_line_whitespace_check(path, lines))
         if workflow_scope == "latest-freshness":
             errors.extend(lint_freshness_workflow(path, text, lines))
         if release_workflow:
@@ -572,6 +577,62 @@ def lint_configured_timeout_jobs(
                 f"{minutes} does not match configured budget {budget}"
             )
     return errors
+
+
+def lint_ci_changed_line_whitespace_check(path: Path, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    workflow_text = "\n".join(lines)
+    if (
+        "fetch-depth: 0" not in workflow_text
+        and "git diff --check" not in workflow_text
+        and not (has_event(lines, "push") and has_pull_request_event(lines))
+    ):
+        return []
+    if not has_event(lines, "push"):
+        errors.append(f"{path}: CI workflow must run the whitespace check on push")
+    if not has_pull_request_event(lines):
+        errors.append(f"{path}: CI workflow must run the whitespace check on pull_request")
+
+    diff_check_line = first_line_index_containing(lines, "git diff --check")
+    if diff_check_line is None:
+        return errors + [f"{path}: CI workflow must run git diff --check before Rust steps"]
+
+    text_before_diff = "\n".join(lines[:diff_check_line + 1])
+    if "github.event.before" not in text_before_diff:
+        errors.append(f"{path}:{diff_check_line + 1}: git diff --check must use github.event.before for push")
+    if "github.event.pull_request.base.sha" not in text_before_diff:
+        errors.append(
+            f"{path}:{diff_check_line + 1}: git diff --check must use pull_request.base.sha for PRs"
+        )
+    if 'git cat-file -e "$BASE_SHA^{commit}"' not in text_before_diff:
+        errors.append(
+            f"{path}:{diff_check_line + 1}: git diff --check must prove the base commit exists"
+        )
+    if '"0000000000000000000000000000000000000000"' not in text_before_diff:
+        errors.append(
+            f"{path}:{diff_check_line + 1}: git diff --check must handle branch-creation push events"
+        )
+
+    first_expensive_rust_line = first_expensive_rust_ci_line(lines)
+    if first_expensive_rust_line is not None and diff_check_line > first_expensive_rust_line:
+        errors.append(
+            f"{path}:{diff_check_line + 1}: git diff --check must run before expensive Rust steps"
+        )
+    return errors
+
+
+def first_line_index_containing(lines: list[str], needle: str) -> int | None:
+    for index, line in enumerate(lines):
+        if needle in line:
+            return index
+    return None
+
+
+def first_expensive_rust_ci_line(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        if EXPENSIVE_RUST_CI_RE.search(line):
+            return index
+    return None
 
 
 def job_timeout_minutes(lines: list[str]) -> tuple[int, int] | None:

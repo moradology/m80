@@ -34,6 +34,10 @@ public release state.
   pipeline failures and unset variables fail in the block itself. A block may
   opt out only with the `m80-lint: allow-nonstrict-run` marker when a documented
   POSIX or non-bash shell contract requires it.
+- CI runs `git diff --check` on changed lines for push and pull request events
+  before Rust build/test/clippy work. Push events use `github.event.before`;
+  pull requests use `github.event.pull_request.base.sha`; branch-creation pushes
+  fall back to the repository root commit.
 - The pinned workflow syntax/run-block lint runner is `scripts/run-actionlint.py`. It
   pins `rhysd/actionlint` `v1.7.12` for Linux x86_64 and verifies
   `actionlint_1.7.12_linux_amd64.tar.gz` before extracting the binary. The
@@ -75,6 +79,8 @@ changes are one config edit plus matching YAML.
 actionlint syntax/run-block gate on every push and pull request before the
 normal Rust build/test/clippy sequence. The m80 linter's negative fixture suite
 lives in `scripts/test-workflow-policy.py`.
+The changed-line whitespace gate runs even earlier, immediately after checkout,
+so whitespace damage fails before host package installation and Rust work.
 
 For `release-artifacts.yml`, the m80 linter also checks the artifact-origin
 handoff: build outputs must expose the recorded artifact id/name, producer job,
@@ -111,7 +117,10 @@ resulting `m80-repository-protection-audit.json` evidence artifact.
   is not forced through release-only checks, and missing, duplicate, or unknown
   scope entries fail closed. Timeout budget coverage includes missing budget
   entries, YAML mismatch, reusable marker mismatch, stale runbook tables, and
-  the clean repository workflow set.
+  the clean repository workflow set. CI hygiene coverage rejects a missing
+  changed-line `git diff --check`, stale base-revision sources, missing base
+  commit proof, missing branch-creation fallback, and any placement after
+  expensive Rust work.
 - `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports
