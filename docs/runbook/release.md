@@ -83,6 +83,11 @@ sudo sh "${tmp}/install.sh"
 
 Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
+Use latest for the fastest interactive Linux install, pinned for automation or
+reproducible bug reports, verified handoff when a trusted checkout must inspect
+`install.sh` before sudo, `m80 install-status` for first repair triage,
+`m80 update --check` for read-only freshness, and rollback cleanup only after
+choosing a previously verified active version.
 Legacy artifact-only `releases/latest` tarball and raw `main` installer flows
 are documented only in the
 [`legacy quickstart migration note`](../behaviors/release/legacy-quickstart-hard-cutover.md).
@@ -308,11 +313,13 @@ The behavior contract is recorded in
 Rollback is pointer-first. Switch the active pointer to a previously verified
 version, confirm status, then clean the now-inactive directory:
 
+<!-- m80:quickstart-snippet rollback-cleanup start -->
 ```sh
 sudo ln -sfnT -- /opt/m80/versions/<previous-tag> /opt/m80/active
 m80 install-status
 sudo m80 install-cleanup --release-tag <old-tag>
 ```
+<!-- m80:quickstart-snippet rollback-cleanup end -->
 
 For install-root fixtures, pass the same root to status and cleanup:
 
@@ -378,11 +385,21 @@ This status capture proves the local installed selector/profile/metadata shape.
 It does not replace the real-KVM smoke, public release proof, host-prerequisite
 preflight, or freshness lanes.
 
+For local install repair triage, start with:
+
+<!-- m80:quickstart-snippet repair-status start -->
+```sh
+m80 install-status
+```
+<!-- m80:quickstart-snippet repair-status end -->
+
 For operator update status, use the read-only check:
 
+<!-- m80:quickstart-snippet freshness-check start -->
 ```sh
 m80 update --check
 ```
+<!-- m80:quickstart-snippet freshness-check end -->
 
 The check reads the same local active install and proof-cache state, then
 compares it with bounded latest freshness metadata. It reports `current`,

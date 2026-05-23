@@ -8,6 +8,9 @@ Public install snippets are a tested release contract, not prose examples.
 - `pinned-install`
 - `verified-install-handoff`
 - `post-install-smoke`
+- `freshness-check`
+- `repair-status`
+- `rollback-cleanup`
 
 `scripts/quickstart_snippets.py` owns the expected snippet bodies. It derives
 release URLs from `docs/behaviors/release/public-release-root.env`, and it owns
@@ -31,6 +34,12 @@ artifact-only `releases/latest/download/*.tar.gz` quickstarts, and public
 install URLs outside the configured `moradology/m80` repository. The only
 deprecated URL exception is an explicitly marked migration-note block in
 `docs/behaviors/release/legacy-quickstart-hard-cutover.md`.
+
+Operational snippets use the same marker contract. README and runbook examples
+for the read-only freshness check, first repair diagnostic, and rollback cleanup
+must stay as copy-pasteable POSIX shell blocks from
+`scripts/quickstart_snippets.py`. The runbook may explain when to use each
+command, but it must not hand-maintain alternate command bodies.
 
 The same helper builds a public command inventory from `README.md`, crate
 READMEs, `docs/runbook/**`, and `docs/behaviors/**`. Fenced command blocks that

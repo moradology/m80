@@ -49,9 +49,11 @@ m80 run -it --workspace . --cwd /workspace -- sh
 
 Keep it current:
 
+<!-- m80:quickstart-snippet freshness-check start -->
 ```sh
 m80 update --check
 ```
+<!-- m80:quickstart-snippet freshness-check end -->
 
 If it prints a `next_command=...`, run that command.
 
@@ -67,9 +69,11 @@ Use a stable tag such as `v0.2.11`.
 
 If something fails, start with:
 
+<!-- m80:quickstart-snippet repair-status start -->
 ```sh
 m80 install-status
 ```
+<!-- m80:quickstart-snippet repair-status end -->
 
 If you are coming from the old artifact-only quickstart or a raw `main`
 installer command, use the

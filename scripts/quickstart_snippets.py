@@ -102,6 +102,24 @@ def quickstart_smoke_command() -> str:
     return "m80 run -- echo hello"
 
 
+def install_status_command() -> str:
+    return "m80 install-status"
+
+
+def update_check_command() -> str:
+    return "m80 update --check"
+
+
+def rollback_cleanup_block() -> str:
+    return "\n".join(
+        [
+            "sudo ln -sfnT -- /opt/m80/versions/<previous-tag> /opt/m80/active",
+            "m80 install-status",
+            "sudo m80 install-cleanup --release-tag <old-tag>",
+        ]
+    )
+
+
 def quickstart_smoke_argv() -> list[str]:
     return shlex.split(quickstart_smoke_command())
 
@@ -112,6 +130,9 @@ def expected_quickstart_snippets(release_tag: str = "<version>") -> dict[str, st
         "latest-install": latest_install_command(),
         "pinned-install": pinned_install_command(release_tag),
         "verified-install-handoff": verified_install_handoff_block(release_tag),
+        "repair-status": install_status_command(),
+        "freshness-check": update_check_command(),
+        "rollback-cleanup": rollback_cleanup_block(),
     }
 
 
@@ -478,6 +499,8 @@ def is_public_command_line(line: str, *, include_run_variants: bool) -> bool:
         return True
     if line.startswith("m80 install") or line.startswith("m80 quickstart"):
         return True
+    if line == update_check_command():
+        return True
     if line == quickstart_smoke_command():
         return True
     if include_run_variants and line.startswith("m80 run"):
@@ -500,6 +523,12 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
         return "pinned"
     if body == expected["verified-install-handoff"]:
         return "verified/operator"
+    if body == expected["repair-status"]:
+        return "troubleshooting"
+    if body == expected["freshness-check"]:
+        return "freshness-check"
+    if body == expected["rollback-cleanup"]:
+        return "troubleshooting"
     if is_legacy_internal_reference(body, relative_path, expected):
         return "legacy-internal"
     if is_install_status_command(body):

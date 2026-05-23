@@ -170,7 +170,9 @@ class ReleaseUrlContractTest(unittest.TestCase):
             "README.md": {
                 "latest-install": expected["latest-install"],
                 "post-install-smoke": expected["post-install-smoke"],
+                "freshness-check": expected["freshness-check"],
                 "pinned-install": expected["pinned-install"],
+                "repair-status": expected["repair-status"],
             },
             "docs/runbook/release.md": expected,
         }
@@ -191,6 +193,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
         for expected in [
             ("README.md", expected_snippets["post-install-smoke"], "common"),
             ("README.md", expected_snippets["latest-install"], "common"),
+            ("README.md", expected_snippets["freshness-check"], "freshness-check"),
             ("README.md", expected_snippets["pinned-install"], "pinned"),
             ("README.md", "m80 install-status", "troubleshooting"),
             (
@@ -207,6 +210,9 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
             ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),
             ("docs/runbook/release.md", expected_snippets["verified-install-handoff"], "verified/operator"),
+            ("docs/runbook/release.md", expected_snippets["freshness-check"], "freshness-check"),
+            ("docs/runbook/release.md", expected_snippets["repair-status"], "troubleshooting"),
+            ("docs/runbook/release.md", expected_snippets["rollback-cleanup"], "troubleshooting"),
             ("examples/echo-hello/README.md", expected_snippets["post-install-smoke"], "common"),
             ("examples/echo-hello/run.sh", expected_snippets["post-install-smoke"], "common"),
             (
