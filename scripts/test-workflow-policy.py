@@ -669,6 +669,18 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertIn("token env GH_TOKEN missing", result.stderr)
         self.assertIn("token env GH_TOKEN missing", payload["failure_reason"])
 
+    def test_publish_authority_policy_accepts_absent_release_metadata(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            receipt = root / "token-authority.json"
+            result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True, gh_mode="absent")
+            payload = json.loads(receipt.read_text())
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["decision"], "approved")
+        self.assertEqual(payload["probes"][0]["release_state"], "absent")
+        self.assertEqual(payload["probes"][0]["exit_status"], 1)
+        self.assertIn("release not found", payload["probes"][0]["stderr"])
+
     def test_publish_authority_policy_rejects_unreadable_release_metadata(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
             receipt = root / "token-authority.json"
@@ -1478,6 +1490,10 @@ def run_authority(
                 case "${M80_FAKE_GH_MODE:-ok}" in
                   ok)
                     printf '{"tagName":"v0.1.0","url":"https://github.com/moradology/m80/releases/tag/v0.1.0","isDraft":false,"isPrerelease":false}\\n'
+                    ;;
+                  absent)
+                    echo "release not found" >&2
+                    exit 1
                     ;;
                   read_only)
                     echo "HTTP 403: resource not accessible by integration" >&2

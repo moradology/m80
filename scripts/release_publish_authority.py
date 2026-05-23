@@ -254,7 +254,13 @@ def run_release_metadata_probe(repository: str, release_tag: str) -> dict:
 
 
 def verify_release_metadata_probe(probe: dict, release_tag: str) -> None:
-    require(probe["exit_status"] == 0, "release publish authority release metadata unreadable")
+    if probe["exit_status"] != 0:
+        require(
+            release_metadata_absent(probe),
+            "release publish authority release metadata unreadable",
+        )
+        probe["release_state"] = "absent"
+        return
     try:
         payload = json.loads(probe["stdout"])
     except json.JSONDecodeError as exc:
@@ -262,6 +268,12 @@ def verify_release_metadata_probe(probe: dict, release_tag: str) -> None:
     require(payload.get("tagName") == release_tag, "release publish authority release metadata tag mismatch")
     require(payload.get("isDraft") is False, "release publish authority release metadata is draft")
     require(payload.get("isPrerelease") is False, "release publish authority release metadata is prerelease")
+    probe["release_state"] = "published"
+
+
+def release_metadata_absent(probe: dict) -> bool:
+    stderr = str(probe.get("stderr", "")).lower()
+    return "release not found" in stderr
 
 
 def verify_receipt(receipt: dict, context: PublishContext, release_tag: str, commit_sha: str) -> None:
