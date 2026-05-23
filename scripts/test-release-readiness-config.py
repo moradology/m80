@@ -31,6 +31,37 @@ class ReleaseReadinessConfigTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing required readiness lane: real-kvm-quickstart", result.stderr)
+        self.assertIn("unknown required lane id: real-kvm-quickstart", result.stderr)
+
+    def test_missing_required_stage_fails(self) -> None:
+        config = valid_config()
+        config["readiness_stages"] = [
+            stage for stage in config["readiness_stages"] if stage["id"] != "pre-latest"
+        ]
+
+        result = run_verify(write_config(config))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing required readiness stage: pre-latest", result.stderr)
+
+    def test_stage_unknown_lane_fails(self) -> None:
+        config = valid_config()
+        config["readiness_stages"][0]["required_lane_ids"].append("ghost-lane")
+
+        result = run_verify(write_config(config))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown required lane id: ghost-lane", result.stderr)
+
+    def test_pre_upload_stage_shape_is_fixed(self) -> None:
+        config = valid_config()
+        stage = stage_by_id(config, "pre-upload")
+        stage["required_lane_ids"].append("real-kvm-quickstart")
+
+        result = run_verify(write_config(config))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required_lane_ids must be", result.stderr)
 
     def test_duplicate_lane_id_fails(self) -> None:
         config = valid_config()
@@ -141,6 +172,13 @@ def lane_by_id(config: dict, lane_id: str) -> dict:
         if lane["id"] == lane_id:
             return lane
     raise AssertionError(f"lane missing from fixture: {lane_id}")
+
+
+def stage_by_id(config: dict, stage_id: str) -> dict:
+    for stage in config["readiness_stages"]:
+        if stage["id"] == stage_id:
+            return stage
+    raise AssertionError(f"stage missing from fixture: {stage_id}")
 
 
 CLEANUPS: list[tempfile.TemporaryDirectory] = []

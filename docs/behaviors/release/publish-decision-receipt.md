@@ -6,7 +6,7 @@ The tag publish job must write and validate
 The receipt is the publish-authority handoff: it records which already-verified
 inputs justified moving public release state.
 
-The receipt uses `schema_version: 3` and `kind:
+The receipt uses `schema_version: 4` and `kind:
 "m80_release_publish_decision"`. It records:
 
 - `release_tag`, `commit_sha`, `workflow_run_id`, `workflow_run_attempt`,
@@ -17,6 +17,9 @@ The receipt uses `schema_version: 3` and `kind:
 - `proof_ledger` and `proof_ledger_digest`, bound to
   `m80-release-proof-ledger.jsonl`. This field must never point at a
   `m80-quickstart-proof-*.json` proof artifact.
+- `readiness_decision`, `readiness_decision_digest`, and
+  `readiness_required_lane_ids`, bound to the pre-upload
+  `m80-release-readiness-decision.json`.
 - `token_authority` and `token_authority_digest`, bound to
   `m80-release-token-authority.json`. The token authority receipt must be an
   approved publish-job receipt for the same tag, commit, run id, actor,
@@ -33,14 +36,15 @@ the current dist directory, tag, commit, actor, repository, ref, upload
 manifest, token authority receipt, proof input, and public asset bytes.
 
 The verifier fails closed for a missing receipt, stale upload-manifest digest,
-stale proof-ledger digest, missing or stale quickstart proof JSON, swapped
-ledger/proof refs, duplicate proof JSON refs, legacy ambiguous schema, wrong
-actor, wrong repository, wrong ref, wrong tag, wrong commit, failed or wrong-job
-token authority, stale public asset hash or size, and malformed receipt fields.
-The publish job runs the verifier before upload, draft publication, and latest
-promotion. A later failed publish preserves the attempted receipt in the
-failed publish diagnostics artifact; successful publishes upload the receipt as
-a durable workflow artifact.
+stale proof-ledger digest, missing/stale/failed/wrong-stage readiness decision,
+missing or stale quickstart proof JSON, swapped ledger/proof refs, duplicate
+proof JSON refs, legacy ambiguous schema, wrong actor, wrong repository, wrong
+ref, wrong tag, wrong commit, failed or wrong-job token authority, stale public
+asset hash or size, and malformed receipt fields. The publish job runs the
+verifier before upload, draft publication, and latest promotion. A later failed
+publish preserves the attempted receipt in the failed publish diagnostics
+artifact; successful publishes upload the receipt as a durable workflow
+artifact.
 
 This receipt is not a signature and not a substitute for the underlying release
 integrity material. It is the auditable decision record that says the publish

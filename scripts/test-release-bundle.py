@@ -24,6 +24,7 @@ VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
 RELEASE_INTEGRITY_CONTRACT = REPO_ROOT / "docs" / "behaviors" / "release" / "release-integrity-contract.json"
 UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
 PUBLISH_RECEIPT = REPO_ROOT / "scripts" / "release_publish_receipt.py"
+RELEASE_READINESS_DECISION = REPO_ROOT / "scripts" / "release_readiness_decision.py"
 REMOTE_INVENTORY = REPO_ROOT / "scripts" / "release_remote_asset_inventory.py"
 EVIDENCE_BUNDLE = REPO_ROOT / "scripts" / "release_evidence_bundle.py"
 WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
@@ -44,6 +45,7 @@ INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
+READINESS_DECISION_NAME = "m80-release-readiness-decision.json"
 TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
@@ -1387,6 +1389,16 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
         self.assertIn("Verify release upload manifest before upload", workflow)
+        self.assertIn("Write pre-upload release readiness decision", workflow)
+        self.assertIn("scripts/release_readiness_decision.py", workflow)
+        self.assertIn("--stage pre-upload", workflow)
+        self.assertIn("--stage pre-latest", workflow)
+        self.assertIn('--out "$UPLOAD_DIR/m80-release-readiness-decision.json"', workflow)
+        self.assertIn('--readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json"', workflow)
+        self.assertLess(
+            workflow.index("scripts/release_readiness_decision.py"),
+            workflow.index("scripts/release_publish_authority.py"),
+        )
         self.assertIn("Verify publish authority before mutation", workflow)
         self.assertIn("scripts/release_publish_authority.py", workflow)
         self.assertIn("M80_RELEASE_TOKEN_SOURCE: github.token", workflow)
@@ -1460,6 +1472,14 @@ class ReleaseBundleTest(unittest.TestCase):
             workflow.index("scripts/release_latest_promotion.py"),
             workflow.index('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag'),
         )
+        self.assertLess(
+            workflow.rindex(
+                "scripts/release_readiness_decision.py",
+                0,
+                workflow.index("scripts/release_latest_promotion.py"),
+            ),
+            workflow.index("scripts/release_latest_promotion.py"),
+        )
         self.assertIn("python3 scripts/stable_release_channel.py", workflow)
         self.assertIn("Write no-auth public-access release readiness receipt", workflow)
         self.assertIn("scripts/release_public_access_receipt.py", workflow)
@@ -1525,6 +1545,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("actions/download-artifact", workflow)
         self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json", workflow)
+        self.assertIn("m80-release-readiness-decision-${{ github.run_id }}", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-readiness-decision.json", workflow)
         self.assertIn("m80-release-token-authority-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json", workflow)
         self.assertIn("m80-repository-protection-audit-${{ github.run_id }}", workflow)
@@ -1935,7 +1957,7 @@ class ReleaseBundleTest(unittest.TestCase):
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(receipt["schema_version"], 3)
+            self.assertEqual(receipt["schema_version"], 4)
             self.assertEqual(receipt["kind"], "m80_release_publish_decision")
             self.assertEqual(receipt["decision"], "approved")
             self.assertEqual(receipt["release_tag"], "v0.2.11")
@@ -1948,6 +1970,12 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(receipt["artifact_manifest_digest"], receipt["artifact_manifest"]["sha256"])
             self.assertEqual(receipt["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
             self.assertEqual(receipt["proof_ledger_digest"], receipt["proof_ledger"]["sha256"])
+            self.assertEqual(receipt["readiness_decision"]["name"], READINESS_DECISION_NAME)
+            self.assertEqual(receipt["readiness_decision_digest"], receipt["readiness_decision"]["sha256"])
+            self.assertEqual(
+                receipt["readiness_required_lane_ids"],
+                ["docs-command", "hostless-quickstart", "release-bundle-integrity", "workflow-policy"],
+            )
             self.assertEqual(receipt["token_authority"]["name"], TOKEN_AUTHORITY_NAME)
             self.assertEqual(receipt["token_authority_digest"], receipt["token_authority"]["sha256"])
             self.assertEqual(
@@ -2006,6 +2034,89 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("proof ledger sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_missing_readiness_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            (out_dir / READINESS_DECISION_NAME).unlink()
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish readiness decision missing", result.stderr)
+
+    def test_release_publish_receipt_rejects_stale_readiness_decision_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            decision_path = out_dir / READINESS_DECISION_NAME
+            decision = json.loads(decision_path.read_text())
+            decision["lane_status"][0]["status"] = "failed"
+            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("readiness decision sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_failed_readiness_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            decision_path = out_dir / READINESS_DECISION_NAME
+            decision = json.loads(decision_path.read_text())
+            decision["status"] = "failed"
+            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release readiness decision status must be passed", result.stderr)
+
+    def test_release_publish_receipt_rejects_wrong_readiness_decision_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            decision_path = out_dir / READINESS_DECISION_NAME
+            decision = json.loads(decision_path.read_text())
+            decision["stage"] = "pre-latest"
+            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release readiness decision stage must be pre-upload", result.stderr)
+
+    def test_release_publish_receipt_rejects_failed_readiness_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            decision_path = out_dir / READINESS_DECISION_NAME
+            decision = json.loads(decision_path.read_text())
+            decision["status"] = "failed"
+            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release readiness decision status must be passed", result.stderr)
+
+    def test_release_publish_receipt_rejects_fixture_readiness_real_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            decision_path = out_dir / READINESS_DECISION_NAME
+            decision = json.loads(decision_path.read_text())
+            workflow_lane = next(row for row in decision["lane_status"] if row["lane_id"] == "workflow-policy")
+            workflow_lane["substrate"]["fixture"] = True
+            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("fixture substituted for real proof: workflow-policy", result.stderr)
 
     def test_release_publish_receipt_rejects_missing_token_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5761,8 +5872,43 @@ def evidence_bundle_fixture(root: Path) -> Path:
 
 def write_publish_proof_ledger(out_dir: Path) -> Path:
     write_workflow_only_proof_sidecars(out_dir)
+    write_pre_upload_readiness_decision(out_dir)
     write_token_authority_receipt(out_dir)
     return write_release_proof_ledger_placeholder(out_dir)
+
+
+def write_pre_upload_readiness_decision(out_dir: Path) -> Path:
+    decision = out_dir / READINESS_DECISION_NAME
+    subprocess.run(
+        [
+            "python3",
+            str(RELEASE_READINESS_DECISION),
+            "--stage",
+            "pre-upload",
+            "--release-tag",
+            "v0.2.11",
+            "--commit-sha",
+            INTEGRITY_COMMIT_SHA,
+            "--workflow-run-id",
+            "12345",
+            "--receipt",
+            f"workflow-policy={out_dir / WORKFLOW_POLICY_READINESS_RECEIPT_NAME}",
+            "--receipt",
+            f"release-bundle-integrity={out_dir / RELEASE_INTEGRITY_READINESS_RECEIPT_NAME}",
+            "--receipt",
+            f"docs-command={out_dir / DOCS_COMMAND_READINESS_RECEIPT_NAME}",
+            "--receipt",
+            f"hostless-quickstart={out_dir / HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME}",
+            "--out",
+            str(decision),
+            "--write",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return decision
 
 
 def write_workflow_only_proof_sidecars(out_dir: Path) -> None:

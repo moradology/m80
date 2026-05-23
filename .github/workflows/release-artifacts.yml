@@ -503,6 +503,23 @@ jobs:
             --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME"
 
+      - name: Write pre-upload release readiness decision
+        env:
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          scripts/release_readiness_decision.py \
+            --stage pre-upload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --receipt "workflow-policy=$UPLOAD_DIR/m80-readiness-workflow-policy.json" \
+            --receipt "release-bundle-integrity=$UPLOAD_DIR/m80-readiness-release-bundle-integrity.json" \
+            --receipt "docs-command=$UPLOAD_DIR/m80-readiness-docs-command.json" \
+            --receipt "hostless-quickstart=$UPLOAD_DIR/m80-readiness-hostless-quickstart.json" \
+            --out "$UPLOAD_DIR/m80-release-readiness-decision.json" \
+            --write
+
       - name: Audit repository release protections before mutation
         env:
           GH_TOKEN: ${{ github.token }}
@@ -548,6 +565,7 @@ jobs:
             --actor "$GITHUB_ACTOR" \
             --repository "$GITHUB_REPOSITORY" \
             --github-ref "$GITHUB_REF" \
+            --readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json" \
             --token-authority "$UPLOAD_DIR/m80-release-token-authority.json" \
             --write
 
@@ -588,6 +606,7 @@ jobs:
             --actor "$GITHUB_ACTOR" \
             --repository "$GITHUB_REPOSITORY" \
             --github-ref "$GITHUB_REF" \
+            --readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json" \
             --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
@@ -696,6 +715,7 @@ jobs:
             --actor "$GITHUB_ACTOR" \
             --repository "$GITHUB_REPOSITORY" \
             --github-ref "$GITHUB_REF" \
+            --readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json" \
             --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
@@ -801,6 +821,7 @@ jobs:
             --actor "$GITHUB_ACTOR" \
             --repository "$GITHUB_REPOSITORY" \
             --github-ref "$GITHUB_REF" \
+            --readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json" \
             --token-authority "$UPLOAD_DIR/m80-release-token-authority.json"
           publication_action="$(
             python3 - <<'PY'
@@ -815,6 +836,18 @@ jobs:
             echo "no latest promotion needed for action: $publication_action"
             exit 0
           fi
+          scripts/release_readiness_decision.py \
+            --stage pre-latest \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --receipt "workflow-policy=$UPLOAD_DIR/m80-readiness-workflow-policy.json" \
+            --receipt "release-bundle-integrity=$UPLOAD_DIR/m80-readiness-release-bundle-integrity.json" \
+            --receipt "docs-command=$UPLOAD_DIR/m80-readiness-docs-command.json" \
+            --receipt "hostless-quickstart=$UPLOAD_DIR/m80-readiness-hostless-quickstart.json" \
+            --receipt "real-kvm-quickstart=$UPLOAD_DIR/m80-readiness-real-kvm-quickstart.json" \
+            --out "$UPLOAD_DIR/m80-release-readiness-pre-latest-decision.json" \
+            --write
           gh release list \
             --repo "$GITHUB_REPOSITORY" \
             --limit 100 \
@@ -865,6 +898,13 @@ jobs:
         with:
           name: m80-release-token-authority-${{ github.run_id }}
           path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json
+          if-no-files-found: error
+
+      - name: Upload release readiness decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-readiness-decision-${{ github.run_id }}
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-readiness-decision.json
           if-no-files-found: error
 
       - name: Upload repository protection audit

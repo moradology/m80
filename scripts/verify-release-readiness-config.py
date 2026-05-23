@@ -14,8 +14,9 @@ from typing import Any
 
 DEFAULT_CONFIG = Path("docs/behaviors/release/release-readiness-lanes.json")
 SCHEMA_VERSION = 1
-TOP_LEVEL_FIELDS = {"schema_version", "status_taxonomy", "lanes"}
+TOP_LEVEL_FIELDS = {"schema_version", "status_taxonomy", "readiness_stages", "lanes"}
 STATUS_FIELDS = {"id", "publish_effect", "requires_remediation", "description"}
+STAGE_FIELDS = {"id", "required_lane_ids", "policy_text"}
 LANE_FIELDS = {
     "id",
     "title",
@@ -59,6 +60,22 @@ REQUIRED_LANE_IDS = {
     "hostless-quickstart",
     "real-kvm-quickstart",
     "public-access-latest",
+}
+REQUIRED_STAGE_LANES = {
+    "pre-upload": {
+        "workflow-policy",
+        "docs-command",
+        "release-bundle-integrity",
+        "hostless-quickstart",
+    },
+    "pre-latest": {
+        "workflow-policy",
+        "docs-command",
+        "release-bundle-integrity",
+        "hostless-quickstart",
+        "real-kvm-quickstart",
+    },
+    "post-latest-public": REQUIRED_LANE_IDS,
 }
 EXPECTED_PROOF_BY_KIND = {
     "workflow-policy": {"workflow-policy-report"},
@@ -124,8 +141,9 @@ def validate_readiness_config(config: dict[str, Any], *, source: Path | str = "<
     if config.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"{source}: schema_version must be {SCHEMA_VERSION}")
 
-    lanes = config.get("lanes")
     statuses = config.get("status_taxonomy")
+    stages = config.get("readiness_stages")
+    lanes = config.get("lanes")
     if isinstance(statuses, list):
         errors.extend(validate_status_taxonomy(statuses, source=source))
     else:
@@ -152,6 +170,71 @@ def validate_readiness_config(config: dict[str, Any], *, source: Path | str = "<
 
     for required_id in sorted(REQUIRED_LANE_IDS - present_ids):
         errors.append(f"{source}: missing required readiness lane: {required_id}")
+    if isinstance(stages, list):
+        errors.extend(validate_readiness_stages(stages, lane_ids=present_ids, lanes=lanes, source=source))
+    else:
+        errors.append(f"{source}: readiness_stages must be a nonempty list")
+    return errors
+
+
+def validate_readiness_stages(
+    stages: list[object],
+    *,
+    lane_ids: set[str],
+    lanes: list[object],
+    source: Path | str,
+) -> list[str]:
+    errors: list[str] = []
+    if not stages:
+        return [f"{source}: readiness_stages must be a nonempty list"]
+    lanes_by_id = {lane["id"]: lane for lane in lanes if isinstance(lane, dict) and isinstance(lane.get("id"), str)}
+    seen_ids: set[str] = set()
+    present_ids: set[str] = set()
+    for index, stage in enumerate(stages):
+        label = f"{source}:readiness_stages[{index}]"
+        if not isinstance(stage, dict):
+            errors.append(f"{label}: stage must be an object")
+            continue
+        stage_id = stage.get("id")
+        if isinstance(stage_id, str) and stage_id:
+            label = f"{source}:stage {stage_id}"
+            if stage_id in seen_ids:
+                errors.append(f"{label}: duplicate stage id")
+            seen_ids.add(stage_id)
+            present_ids.add(stage_id)
+        errors.extend(validate_stage(stage, label, lane_ids=lane_ids, lanes_by_id=lanes_by_id))
+    for required_id in sorted(set(REQUIRED_STAGE_LANES) - present_ids):
+        errors.append(f"{source}: missing required readiness stage: {required_id}")
+    return errors
+
+
+def validate_stage(
+    stage: dict[str, Any],
+    label: str,
+    *,
+    lane_ids: set[str],
+    lanes_by_id: dict[str, dict[str, Any]],
+) -> list[str]:
+    errors: list[str] = []
+    errors.extend(require_exact_fields(stage, STAGE_FIELDS, label))
+    stage_id = require_nonempty_string(stage, "id", label, errors)
+    if stage_id and ID_RE.fullmatch(stage_id) is None:
+        errors.append(f"{label}: id must be kebab-case alphanumeric")
+    required_lane_ids = require_string_list(stage, "required_lane_ids", label, errors)
+    if len(required_lane_ids) != len(set(required_lane_ids)):
+        errors.append(f"{label}: duplicate required lane id")
+    for lane_id in sorted(set(required_lane_ids) - lane_ids):
+        errors.append(f"{label}: unknown required lane id: {lane_id}")
+    for lane_id in required_lane_ids:
+        lane = lanes_by_id.get(lane_id)
+        if lane and (lane.get("severity") != "required" or lane.get("publish_blocking") is not True):
+            errors.append(f"{label}: stage lane must be required and publish_blocking: {lane_id}")
+    if stage_id in REQUIRED_STAGE_LANES and set(required_lane_ids) != REQUIRED_STAGE_LANES[stage_id]:
+        errors.append(
+            f"{label}: required_lane_ids must be {sorted(REQUIRED_STAGE_LANES[stage_id])}, "
+            f"got {sorted(required_lane_ids)}"
+        )
+    require_nonempty_string(stage, "policy_text", label, errors)
     return errors
 
 

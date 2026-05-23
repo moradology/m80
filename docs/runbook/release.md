@@ -831,11 +831,14 @@ step. If the job-level timeout fires first, GitHub names the timed-out job in
 the run UI; the budget table above is the source of truth for which guard fired.
 
 The release readiness gate source of truth is
-`docs/behaviors/release/release-readiness-lanes.json`. It names the required
-lanes, proof kinds, allowed substrate kinds, required/warning severity,
-status taxonomy, tag/commit fields, digest fields, and remediation command
-fields that a future aggregate readiness receipt must consume before
-publish/latest authority can move. Validate changes with
+`docs/behaviors/release/release-readiness-lanes.json`. It names the readiness
+stages, required lanes, proof kinds, allowed substrate kinds, required/warning
+severity, status taxonomy, tag/commit fields, digest fields, and remediation
+command fields consumed before publish/latest authority can move. `pre-upload`
+is required before publish authority, upload, or release edits. `pre-latest`
+adds the real-KVM quickstart lane before the workflow can move latest.
+`post-latest-public` is checked after latest moves because it proves the public
+latest URL from unauthenticated GitHub. Validate changes with
 `python3 scripts/verify-release-readiness-config.py`; CI runs that validator and
 its negative fixture suite beside the release script tests.
 
@@ -845,13 +848,14 @@ Before the tag publish job mutates GitHub release state, it writes and validates
 `m80-release-publish-decision.json` with
 `scripts/release_publish_receipt.py`. The receipt binds the release tag, commit
 SHA, workflow run id/attempt, actor, repository, tag ref, upload manifest
-digest, `m80-release-token-authority.json` digest,
-`m80-release-proof-ledger.jsonl` digest, separate
-`m80-quickstart-proof-*.json` proof refs, and public asset list. The mutating
-`gh release upload`, draft-publication, and latest-promotion steps run only
-after the receipt validates against the downloaded workflow artifact bytes and
-the token authority receipt. The ledger is the durable JSONL index; the
-quickstart proof JSON is the per-lane proof payload. They are never
+digest, pre-upload `m80-release-readiness-decision.json` digest and required
+lane ids, `m80-release-token-authority.json` digest,
+`m80-release-proof-ledger.jsonl` digest, separate `m80-quickstart-proof-*.json`
+proof refs, and public asset list. The mutating `gh release upload`,
+draft-publication, and latest-promotion steps run only after the receipt
+validates against the downloaded workflow artifact bytes, the readiness
+decision, and the token authority receipt. The ledger is the durable JSONL
+index; the quickstart proof JSON is the per-lane proof payload. They are never
 interchangeable receipt fields.
 
 The publish decision receipt is uploaded as a durable workflow artifact on

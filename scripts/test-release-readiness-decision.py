@@ -31,6 +31,7 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
             self.assertIn("release readiness passed", result.stdout)
             decision = json.loads(out.read_text())
             self.assertEqual(decision["status"], "passed")
+            self.assertEqual(decision["stage"], "post-latest-public")
             self.assertEqual(decision["release_tag"], RELEASE_TAG)
             self.assertEqual(decision["commit_sha"], COMMIT_SHA)
             self.assertIn("real-kvm-quickstart", decision["required_lane_ids"])
@@ -43,6 +44,35 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
             del receipts["real-kvm-quickstart"]
 
             result = run_decision(receipts, root / "decision.json")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing required readiness lane(s): real-kvm-quickstart", result.stderr)
+
+    def test_pre_upload_stage_does_not_require_real_kvm_or_public_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipts = write_all_receipts(root)
+            del receipts["real-kvm-quickstart"]
+            del receipts["public-access-latest"]
+
+            result = run_decision(receipts, root / "decision.json", stage="pre-upload")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            decision = json.loads((root / "decision.json").read_text())
+            self.assertEqual(decision["stage"], "pre-upload")
+            self.assertEqual(
+                decision["required_lane_ids"],
+                ["docs-command", "hostless-quickstart", "release-bundle-integrity", "workflow-policy"],
+            )
+
+    def test_pre_latest_stage_requires_real_kvm(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipts = write_all_receipts(root)
+            del receipts["real-kvm-quickstart"]
+            del receipts["public-access-latest"]
+
+            result = run_decision(receipts, root / "decision.json", stage="pre-latest")
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing required readiness lane(s): real-kvm-quickstart", result.stderr)
@@ -72,6 +102,19 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("real-kvm-quickstart: fixture receipt cannot satisfy required substrate", result.stderr)
+
+    def test_pre_upload_fixture_cannot_satisfy_github_actions_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipts = write_all_receipts(root)
+            payload = json.loads(receipts["workflow-policy"].read_text())
+            payload["substrate"]["fixture"] = True
+            receipts["workflow-policy"].write_text(json.dumps(payload) + "\n")
+
+            result = run_decision(receipts, root / "decision.json", stage="pre-upload")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("workflow-policy: fixture receipt cannot satisfy required substrate", result.stderr)
 
     def test_failed_public_access_proof_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,12 +169,19 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
             self.assertIn("hostless-quickstart: unknown lane state: green", result.stderr)
 
 
-def run_decision(receipts: dict[str, Path], out: Path) -> subprocess.CompletedProcess[str]:
+def run_decision(
+    receipts: dict[str, Path],
+    out: Path,
+    *,
+    stage: str = "post-latest-public",
+) -> subprocess.CompletedProcess[str]:
     args = [
         "python3",
         str(SCRIPT),
         "--config",
         str(CONFIG),
+        "--stage",
+        stage,
         "--release-tag",
         RELEASE_TAG,
         "--commit-sha",

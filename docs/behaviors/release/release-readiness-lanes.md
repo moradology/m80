@@ -1,7 +1,7 @@
 # Release readiness lanes
 
-`release-readiness-lanes.json` is the lane contract for the release readiness
-gate. Local CI lanes write normalized JSON receipts with
+`release-readiness-lanes.json` is the lane and stage contract for the release
+readiness gate. Local CI lanes write normalized JSON receipts with
 `scripts/release_readiness_receipt.py` before the aggregate gate reads them.
 
 Each local lane receipt records:
@@ -25,8 +25,11 @@ replace the underlying checks: the workflow policy linter, release-integrity
 verification, and quickstart proof verifier still run and produce their own
 artifacts.
 
-`scripts/release_readiness_decision.py` consumes the lane receipts as explicit
-`lane_id=path` inputs and writes the aggregate decision. Missing required lanes,
-stale tag or commit, authenticated public-access proof, blocking statuses, and
-fixture substitution for real-substrate lanes fail before a publish hook can
-consume the decision.
+`scripts/release_readiness_decision.py` consumes a stage plus explicit
+`lane_id=path` inputs and writes the aggregate decision. `pre-upload` gates
+publish authority and upload. `pre-latest` adds real-KVM quickstart proof before
+latest promotion. `post-latest-public` includes the unauthenticated public
+latest proof after the latest pointer moves. Missing stage lanes, stale tag or
+commit, authenticated public-access proof, blocking statuses, and fixture
+substitution for real-substrate lanes fail before a publish hook can consume
+the decision.

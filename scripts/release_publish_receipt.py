@@ -11,8 +11,9 @@ from pathlib import Path
 import re
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 RECEIPT_NAME = "m80-release-publish-decision.json"
+READINESS_DECISION_NAME = "m80-release-readiness-decision.json"
 TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
@@ -38,6 +39,9 @@ TOP_LEVEL_FIELDS = {
     "artifact_manifest_digest",
     "proof_ledger",
     "proof_ledger_digest",
+    "readiness_decision",
+    "readiness_decision_digest",
+    "readiness_required_lane_ids",
     "token_authority",
     "token_authority_digest",
     "quickstart_proofs",
@@ -90,6 +94,11 @@ def parse_args() -> argparse.Namespace:
         help=f"default: <dist-dir>/{RELEASE_PROOF_LEDGER_NAME}",
     )
     parser.add_argument(
+        "--readiness-decision",
+        type=Path,
+        help=f"default: <dist-dir>/{READINESS_DECISION_NAME}",
+    )
+    parser.add_argument(
         "--hostless-proof",
         type=Path,
         help=f"default: <dist-dir>/{HOSTLESS_PROOF_NAME}",
@@ -118,6 +127,7 @@ def main() -> int:
     dist_dir = args.dist_dir.resolve()
     manifest_path = (args.artifact_manifest or dist_dir / UPLOAD_MANIFEST_NAME).resolve()
     proof_ledger_path = (args.proof_ledger or dist_dir / RELEASE_PROOF_LEDGER_NAME).resolve()
+    readiness_decision_path = (args.readiness_decision or dist_dir / READINESS_DECISION_NAME).resolve()
     hostless_proof_path = (args.hostless_proof or dist_dir / HOSTLESS_PROOF_NAME).resolve()
     real_kvm_proof_path = args.real_kvm_proof.resolve() if args.real_kvm_proof else None
     token_authority_path = (args.token_authority or dist_dir / TOKEN_AUTHORITY_NAME).resolve()
@@ -139,6 +149,7 @@ def main() -> int:
             failure_reason=args.failure_reason,
             manifest_path=manifest_path,
             proof_ledger_path=proof_ledger_path,
+            readiness_decision_path=readiness_decision_path,
             hostless_proof_path=hostless_proof_path,
             real_kvm_proof_path=real_kvm_proof_path,
             token_authority_path=token_authority_path,
@@ -158,6 +169,7 @@ def main() -> int:
         github_ref=args.github_ref,
         manifest_path=manifest_path,
         proof_ledger_path=proof_ledger_path,
+        readiness_decision_path=readiness_decision_path,
         hostless_proof_path=hostless_proof_path,
         real_kvm_proof_path=real_kvm_proof_path,
         token_authority_path=token_authority_path,
@@ -182,6 +194,7 @@ def build_receipt(
     failure_reason: str | None,
     manifest_path: Path,
     proof_ledger_path: Path,
+    readiness_decision_path: Path,
     hostless_proof_path: Path,
     real_kvm_proof_path: Path | None,
     token_authority_path: Path,
@@ -190,7 +203,15 @@ def build_receipt(
     public_assets = normalized_public_assets(manifest)
     artifact_manifest = file_ref(dist_dir, manifest_path, "artifact manifest")
     proof_ledger = file_ref(dist_dir, proof_ledger_path, "proof ledger")
+    readiness_decision = file_ref(dist_dir, readiness_decision_path, "readiness decision")
     token_authority = file_ref(dist_dir, token_authority_path, "token authority receipt")
+    readiness_payload = read_json(readiness_decision_path, "release readiness decision")
+    verify_readiness_decision_receipt(
+        readiness_payload,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        workflow_run_id=workflow_run_id,
+    )
     hostless_proof = file_ref(dist_dir, hostless_proof_path, "hostless quickstart proof")
     quickstart_proofs = [
         {
@@ -227,6 +248,9 @@ def build_receipt(
         "artifact_manifest_digest": artifact_manifest["sha256"],
         "proof_ledger": proof_ledger,
         "proof_ledger_digest": proof_ledger["sha256"],
+        "readiness_decision": readiness_decision,
+        "readiness_decision_digest": readiness_decision["sha256"],
+        "readiness_required_lane_ids": sorted(readiness_payload["required_lane_ids"]),
         "token_authority": token_authority,
         "token_authority_digest": token_authority["sha256"],
         "quickstart_proofs": quickstart_proofs,
@@ -248,6 +272,7 @@ def verify_receipt(
     github_ref: str,
     manifest_path: Path,
     proof_ledger_path: Path,
+    readiness_decision_path: Path,
     hostless_proof_path: Path,
     real_kvm_proof_path: Path | None,
     token_authority_path: Path,
@@ -310,6 +335,27 @@ def verify_receipt(
     require(
         receipt["proof_ledger_digest"] == proof_ledger["sha256"],
         "release publish decision receipt proof_ledger_digest mismatch",
+    )
+    readiness_decision = verify_file_ref(
+        receipt["readiness_decision"],
+        dist_dir=dist_dir,
+        path=readiness_decision_path,
+        label="readiness decision",
+    )
+    require(
+        receipt["readiness_decision_digest"] == readiness_decision["sha256"],
+        "release publish decision receipt readiness_decision_digest mismatch",
+    )
+    readiness_payload = read_json(readiness_decision_path, "release readiness decision")
+    verify_readiness_decision_receipt(
+        readiness_payload,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        workflow_run_id=workflow_run_id,
+    )
+    require(
+        receipt["readiness_required_lane_ids"] == sorted(readiness_payload["required_lane_ids"]),
+        "release publish decision receipt readiness_required_lane_ids mismatch",
     )
     token_authority = verify_file_ref(
         receipt["token_authority"],
@@ -416,6 +462,49 @@ def require_quickstart_proofs(value: object, *, dist_dir: Path, expected_paths: 
         not missing,
         f"release publish decision receipt missing quickstart proof lane: {comma_or_none(missing)}",
     )
+
+
+def verify_readiness_decision_receipt(
+    receipt: dict,
+    *,
+    release_tag: str,
+    commit_sha: str,
+    workflow_run_id: str,
+) -> None:
+    require(receipt.get("kind") == "m80_release_readiness_decision", "release readiness decision kind mismatch")
+    require(receipt.get("status") == "passed", "release readiness decision status must be passed")
+    require(receipt.get("stage") == "pre-upload", "release readiness decision stage must be pre-upload")
+    require(receipt.get("release_tag") == release_tag, "release readiness decision release_tag mismatch")
+    require(receipt.get("commit_sha") == commit_sha, "release readiness decision commit_sha mismatch")
+    require(receipt.get("workflow_run_id") == workflow_run_id, "release readiness decision workflow_run_id mismatch")
+    required_lane_ids = receipt.get("required_lane_ids")
+    require(
+        isinstance(required_lane_ids, list)
+        and required_lane_ids
+        and all(isinstance(lane_id, str) and lane_id for lane_id in required_lane_ids)
+        and len(required_lane_ids) == len(set(required_lane_ids)),
+        "release readiness decision required_lane_ids invalid",
+    )
+    lane_status = receipt.get("lane_status")
+    require(isinstance(lane_status, list), "release readiness decision lane_status must be a list")
+    status_by_lane = {}
+    for row in lane_status:
+        require(isinstance(row, dict), "release readiness decision lane_status entry must be an object")
+        lane_id = row.get("lane_id")
+        require(isinstance(lane_id, str) and lane_id, "release readiness decision lane_status lane_id invalid")
+        require(lane_id not in status_by_lane, f"release readiness decision duplicate lane_status: {lane_id}")
+        status_by_lane[lane_id] = row
+    missing = sorted(set(required_lane_ids) - set(status_by_lane))
+    require(not missing, f"release readiness decision missing required lane_status: {comma_or_none(missing)}")
+    for lane_id in required_lane_ids:
+        row = status_by_lane[lane_id]
+        require(row.get("status") == "passed", f"release readiness decision required lane did not pass: {lane_id}")
+        require(row.get("publish_effect") == "satisfies", f"release readiness decision required lane does not satisfy: {lane_id}")
+        substrate = row.get("substrate")
+        require(isinstance(substrate, dict), f"release readiness decision {lane_id} substrate invalid")
+        if lane_id != "hostless-quickstart":
+            require(substrate.get("fixture") is False, f"release readiness decision fixture substituted for real proof: {lane_id}")
+    require(receipt.get("blocking_remediations") == [], "release readiness decision has blocking remediations")
 
 
 def verify_token_authority_receipt(

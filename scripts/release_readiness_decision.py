@@ -23,6 +23,7 @@ class VerificationError(ValueError):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--stage", required=True)
     parser.add_argument("--release-tag", required=True)
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--workflow-run-id")
@@ -44,6 +45,7 @@ def main() -> int:
             decision = build_decision(
                 config,
                 receipt_paths,
+                stage=args.stage,
                 release_tag=args.release_tag,
                 commit_sha=args.commit_sha,
                 workflow_run_id=args.workflow_run_id,
@@ -54,6 +56,7 @@ def main() -> int:
             decision,
             config,
             receipt_paths,
+            stage=args.stage,
             release_tag=args.release_tag,
             commit_sha=args.commit_sha,
             workflow_run_id=args.workflow_run_id,
@@ -68,12 +71,13 @@ def build_decision(
     config: dict[str, Any],
     receipt_paths: dict[str, Path],
     *,
+    stage: str,
     release_tag: str,
     commit_sha: str,
     workflow_run_id: str | None,
 ) -> dict[str, Any]:
     lanes = lanes_by_id(config)
-    required_ids = required_lane_ids(config)
+    required_ids = required_lane_ids(config, stage)
     missing = sorted(required_ids - set(receipt_paths))
     check(not missing, f"missing required readiness lane(s): {', '.join(missing)}")
 
@@ -106,6 +110,7 @@ def build_decision(
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
         "status": "passed",
+        "stage": stage,
         "release_tag": release_tag,
         "commit_sha": commit_sha,
         "workflow_run_id": workflow_run_id,
@@ -120,6 +125,7 @@ def verify_decision(
     config: dict[str, Any],
     receipt_paths: dict[str, Path],
     *,
+    stage: str,
     release_tag: str,
     commit_sha: str,
     workflow_run_id: str | None,
@@ -127,6 +133,7 @@ def verify_decision(
     expected = build_decision(
         config,
         receipt_paths,
+        stage=stage,
         release_tag=release_tag,
         commit_sha=commit_sha,
         workflow_run_id=workflow_run_id,
@@ -243,12 +250,11 @@ def parse_receipt_args(values: list[str]) -> dict[str, Path]:
     return receipts
 
 
-def required_lane_ids(config: dict[str, Any]) -> set[str]:
-    return {
-        lane["id"]
-        for lane in config["lanes"]
-        if lane.get("severity") == "required" and lane.get("publish_blocking") is True
-    }
+def required_lane_ids(config: dict[str, Any], stage: str) -> set[str]:
+    for stage_row in config["readiness_stages"]:
+        if stage_row["id"] == stage:
+            return set(stage_row["required_lane_ids"])
+    raise VerificationError(f"unknown readiness stage: {stage}")
 
 
 def lanes_by_id(config: dict[str, Any]) -> dict[str, dict[str, Any]]:

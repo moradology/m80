@@ -44,6 +44,41 @@
       "description": "The proof ran on a fixture or host class that cannot satisfy the configured lane substrate."
     }
   ],
+  "readiness_stages": [
+    {
+      "id": "pre-upload",
+      "required_lane_ids": [
+        "workflow-policy",
+        "release-bundle-integrity",
+        "docs-command",
+        "hostless-quickstart"
+      ],
+      "policy_text": "Release upload may acquire publish authority only after build, workflow-policy, docs-command, and hostless installer proofs pass for the exact tag, commit, and workflow run."
+    },
+    {
+      "id": "pre-latest",
+      "required_lane_ids": [
+        "workflow-policy",
+        "release-bundle-integrity",
+        "docs-command",
+        "hostless-quickstart",
+        "real-kvm-quickstart"
+      ],
+      "policy_text": "Latest promotion additionally requires the privileged real-KVM quickstart proof. The hostless fixture never substitutes for this lane."
+    },
+    {
+      "id": "post-latest-public",
+      "required_lane_ids": [
+        "workflow-policy",
+        "release-bundle-integrity",
+        "docs-command",
+        "hostless-quickstart",
+        "real-kvm-quickstart",
+        "public-access-latest"
+      ],
+      "policy_text": "The public latest lane runs after latest moves and proves unauthenticated users can fetch the promoted installer and proof assets."
+    }
+  ],
   "lanes": [
     {
       "id": "workflow-policy",

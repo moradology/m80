@@ -1695,6 +1695,17 @@ jobs:
         run: |
           set -euo pipefail
           scripts/release_upload_manifest.py --dist-dir "$UPLOAD_DIR" --release-tag "$GITHUB_REF_NAME"
+      - name: Write pre-upload release readiness decision
+        run: |
+          set -euo pipefail
+          scripts/release_readiness_decision.py \\
+            --stage pre-upload \\
+            --out "$UPLOAD_DIR/m80-release-readiness-decision.json"
+      - name: Validate publish decision receipt
+        run: |
+          set -euo pipefail
+          scripts/release_publish_receipt.py \\
+            --readiness-decision "$UPLOAD_DIR/m80-release-readiness-decision.json"
       - name: Audit repository release protections before mutation
         env:
           GH_TOKEN: ${{{{ github.token }}}}
@@ -1716,6 +1727,9 @@ jobs:
       - name: Approve latest promotion
         run: |
           set -euo pipefail
+          scripts/release_readiness_decision.py \\
+            --stage pre-latest \\
+            --out "$UPLOAD_DIR/m80-release-readiness-pre-latest-decision.json"
           scripts/release_latest_promotion.py \\
             --release-tag "$GITHUB_REF_NAME" \\
             --release-list "$REDOWNLOAD_DIR/github-releases-before-latest.json" \\
@@ -1737,6 +1751,12 @@ jobs:
         with:
           name: m80-latest-rollback-receipt-${{{{ github.run_id }}}}
           path: docs/operations/release-latest-rollback-receipt.json
+          if-no-files-found: error
+      - name: Upload release readiness decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-readiness-decision-${{{{ github.run_id }}}}
+          path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}/m80-release-readiness-decision.json
           if-no-files-found: error
       - name: Cleanup release publish scratch dirs
         if: always()

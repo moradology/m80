@@ -73,6 +73,9 @@ PUBLISH_RECEIPT_FIELDS = {
     "artifact_manifest_digest",
     "proof_ledger",
     "proof_ledger_digest",
+    "readiness_decision",
+    "readiness_decision_digest",
+    "readiness_required_lane_ids",
     "token_authority",
     "token_authority_digest",
     "quickstart_proofs",
@@ -415,7 +418,7 @@ def verify_publish_receipt(
     inventory_by_name: dict[str, dict],
 ) -> None:
     require_exact_fields(receipt, PUBLISH_RECEIPT_FIELDS, "release publish decision receipt")
-    require(receipt["schema_version"] == 3, "release publish decision receipt schema_version mismatch")
+    require(receipt["schema_version"] == 4, "release publish decision receipt schema_version mismatch")
     require(receipt["kind"] == "m80_release_publish_decision", "release publish decision receipt kind mismatch")
     require(receipt["decision"] == "approved", "release publish decision receipt decision must be approved")
     require(receipt["failure_reason"] is None, "approved release publish decision receipt must not have failure_reason")
@@ -430,6 +433,19 @@ def verify_publish_receipt(
     require(
         receipt["artifact_manifest_digest"] == artifact_manifest["sha256"],
         "release publish decision receipt artifact_manifest_digest mismatch",
+    )
+    require_file_ref_shape(receipt["readiness_decision"], "release publish decision receipt readiness_decision")
+    require(
+        receipt["readiness_decision_digest"] == receipt["readiness_decision"]["sha256"],
+        "release publish decision receipt readiness_decision_digest mismatch",
+    )
+    required_lane_ids = receipt["readiness_required_lane_ids"]
+    require(
+        isinstance(required_lane_ids, list)
+        and required_lane_ids
+        and all(isinstance(lane_id, str) and lane_id for lane_id in required_lane_ids)
+        and len(required_lane_ids) == len(set(required_lane_ids)),
+        "release publish decision receipt readiness_required_lane_ids invalid",
     )
     receipt_assets = normalized_manifest_assets(
         {"release_tag": release_tag, "public_assets": receipt["public_assets"]},
@@ -449,15 +465,20 @@ def verify_publish_receipt(
 
 
 def verify_file_ref(ref: object, *, path: Path, expected_name: str, label: str) -> dict:
-    require(isinstance(ref, dict), f"{label} must be an object")
-    require_exact_fields(ref, FILE_REF_FIELDS, label)
+    require_file_ref_shape(ref, label)
     require(ref["name"] == expected_name, f"{label} name mismatch")
-    require_sha256_ref(ref["sha256"], f"{label} sha256")
-    require_non_negative_int(ref["size_bytes"], f"{label} size_bytes")
     require(path.is_file(), f"{label} missing: {path}")
     expected = file_ref(path)
     require(ref == expected, f"{label} digest mismatch")
     return expected
+
+
+def require_file_ref_shape(ref: object, label: str) -> None:
+    require(isinstance(ref, dict), f"{label} must be an object")
+    require_exact_fields(ref, FILE_REF_FIELDS, label)
+    require_dist_name(ref["name"], f"{label} name")
+    require_sha256_ref(ref["sha256"], f"{label} sha256")
+    require_non_negative_int(ref["size_bytes"], f"{label} size_bytes")
 
 
 def require_named_file_matches_inventory(

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_readiness_publish_hook_proof",
+  "bead_id": "m80-o3uh9.13.31.3",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "github-actions-policy",
+    "fixture": false,
+    "source": "deterministic release workflow and receipt verifier tests"
+  },
+  "scope": "Release readiness publish hook consumes the aggregate readiness decision before upload, release edit, and latest promotion.",
+  "command": "python3 scripts/test-release-readiness-config.py && python3 scripts/verify-release-readiness-config.py && python3 scripts/test-release-readiness-decision.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.31.3 && br dep cycles --json && git diff --check",
+  "exit_status": 0,
+  "commands": [
+    "python3 scripts/test-release-readiness-config.py",
+    "python3 scripts/verify-release-readiness-config.py",
+    "python3 scripts/test-release-readiness-decision.py",
+    "python3 scripts/test-release-bundle.py",
+    "python3 scripts/lint-github-workflows.py",
+    "python3 scripts/test-workflow-policy.py",
+    "python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+    "python3 scripts/test-release-tracker-policy.py",
+    "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+    "br lint m80-o3uh9.13.31.3",
+    "br dep cycles --json",
+    "git diff --check"
+  ],
+  "result": "passed",
+  "stdout": "test-release-readiness-config: 13 OK; verify-release-readiness-config: OK; test-release-readiness-decision: 11 OK; test-release-bundle: 252 OK; lint-github-workflows: OK; test-workflow-policy: 80 OK; run-actionlint: OK; test-release-tracker-policy: 46 OK; verify-release-tracker-policy: OK; br lint m80-o3uh9.13.31.3: OK; br dep cycles: 0 cycles; git diff --check: OK",
+  "stderr": "",
+  "stdout_summary": [
+    "test-release-readiness-config: 13 OK",
+    "verify-release-readiness-config: OK",
+    "test-release-readiness-decision: 11 OK",
+    "test-release-bundle: 252 OK",
+    "lint-github-workflows: OK",
+    "test-workflow-policy: 80 OK",
+    "run-actionlint: OK",
+    "test-release-tracker-policy: 46 OK",
+    "verify-release-tracker-policy: OK",
+    "br lint m80-o3uh9.13.31.3: OK",
+    "br dep cycles: 0 cycles",
+    "git diff --check: OK"
+  ]
+}
