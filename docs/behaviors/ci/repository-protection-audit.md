@@ -18,6 +18,12 @@ uploads release assets, publishes a draft, or marks a release as latest.
   ruleset, and `m80-release-publish` required reviewers
 - structured expected, observed, status, and remediation fields for every check
 
+The main-branch required-check proof may come from either classic branch
+protection or an active branch ruleset covering `refs/heads/main`. The branch
+ruleset path is required in the release workflow because GitHub's workflow token
+can read repository rulesets but may not be allowed to read the branch
+protection endpoint.
+
 The audit exits non-zero for missing, weak, unreadable, or unauthenticated
 settings. The release workflow runs it before the publish authority receipt and
 uploads the JSON audit as `m80-repository-protection-audit-<run id>` on green
@@ -25,7 +31,8 @@ runs. Failed publish diagnostics also preserve the audit file when it exists.
 
 ## Verification
 
-`scripts/test-repository-protection-audit.py` covers protected fixtures, missing
+`scripts/test-repository-protection-audit.py` covers protected fixtures,
+branch-ruleset fallback when branch protection is unreadable, missing
 main-branch required checks, missing release-tag rulesets, missing environment
 approval, and unavailable GitHub API payloads.
 

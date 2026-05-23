@@ -18,19 +18,22 @@ nested one directory below the verified upload root. `v0.2.13` carried the same
 support bundle plus the flattened artifact-download handoff, but its publish
 job failed before release mutation because GitHub's ruleset list API omitted
 the tag ref conditions needed by the repository protection audit. `v0.2.14`
-hydrates the ruleset detail before evaluating release-tag protections.
+hydrated the ruleset detail before evaluating release-tag protections, then
+failed before release mutation because the workflow token could not read the
+branch-protection endpoint. `v0.2.15` accepts an active branch ruleset with
+required status checks as the workflow-readable proof for `main`.
 
-The current repair source therefore uses workspace package version `0.2.14`.
-The matching stable tag is `v0.2.14`; tags at or before the existing public
+The current repair source therefore uses workspace package version `0.2.15`.
+The matching stable tag is `v0.2.15`; tags at or before the existing public
 latest `v0.2.11` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.14-dev` and remains barred from
+so an unreleased local build now reports `0.2.15-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.14` as the packageable release
+Fixture and release-script coverage uses `v0.2.15` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,

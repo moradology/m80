@@ -16,7 +16,7 @@ M80_RELEASE_TAG=vX.Y.Z \
 ```
 
 The injected tag must be the exact `v<workspace package version>` tag. For the
-workspace package version `0.2.14`, the expected release tag is `v0.2.14`.
+workspace package version `0.2.15`, the expected release tag is `v0.2.15`.
 The injected source commit must be the exact commit used by the release build
 manifest and signed release integrity material.
 The injected Rust target triple must be one of the target triples recorded in
@@ -736,7 +736,8 @@ dependency.
 Repository settings are audited before release mutation because they can drift
 outside git. The required settings are:
 
-- `main` branch protection has required status checks.
+- `main` has required status checks, proven either by branch protection or an
+  active branch ruleset covering `refs/heads/main`.
 - A repository ruleset targets release tags matching `v*`.
 - The `m80-release-publish` environment has required reviewers.
 

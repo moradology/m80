@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag-pattern", default="v*")
     parser.add_argument("--environment", default="m80-release-publish")
     parser.add_argument("--branch-protection-json", type=Path)
+    parser.add_argument("--branch-rulesets-json", type=Path)
     parser.add_argument("--rulesets-json", type=Path)
     parser.add_argument("--environment-json", type=Path)
     parser.add_argument("--out", type=Path, required=True)
@@ -58,6 +59,11 @@ def build_audit(args: argparse.Namespace) -> dict[str, Any]:
         f"repos/{args.repository}/branches/{args.branch}/protection",
         "branch protection",
     )
+    branch_rulesets_payload = load_payload_or_gh(
+        args.branch_rulesets_json,
+        f"repos/{args.repository}/rulesets?targets=branch",
+        "branch rulesets",
+    )
     rulesets_payload = load_payload_or_gh(
         args.rulesets_json,
         f"repos/{args.repository}/rulesets?targets=tag",
@@ -69,7 +75,7 @@ def build_audit(args: argparse.Namespace) -> dict[str, Any]:
         "publish environment",
     )
     checks = [
-        check_branch_protection(branch_payload, args.branch),
+        check_branch_required_checks(branch_payload, branch_rulesets_payload, args.branch),
         check_tag_ruleset(rulesets_payload, args.tag_pattern),
         check_environment(environment_payload, args.environment),
     ]
@@ -118,33 +124,80 @@ def load_payload_or_gh(path: Path | None, endpoint: str, label: str) -> dict[str
         }
 
 
-def check_branch_protection(payload: Any, branch: str) -> dict[str, Any]:
-    unavailable = api_error(payload)
-    if unavailable is not None:
-        return check(
-            "main-branch-required-checks",
-            "unavailable",
-            f"{branch} branch protection with required status checks",
-            unavailable,
-            f"make GitHub branch protection for {branch} readable and require status checks",
-        )
-    contexts = required_status_contexts(payload)
-    observed = {"required_status_checks": contexts}
+def check_branch_required_checks(
+    branch_payload: Any,
+    branch_rulesets_payload: Any,
+    branch: str,
+) -> dict[str, Any]:
+    contexts = required_status_contexts(branch_payload)
+    observed: dict[str, Any] = {
+        "branch_protection": branch_protection_observation(branch_payload, contexts),
+        "branch_rulesets": [],
+    }
     if contexts:
         return check(
             "main-branch-required-checks",
             "passed",
-            f"{branch} branch protection with required status checks",
+            f"{branch} branch protection or active branch ruleset with required status checks",
             observed,
             "none",
+        )
+    ruleset_unavailable = api_error(branch_rulesets_payload)
+    if ruleset_unavailable is None:
+        rulesets = hydrate_rulesets(
+            branch_rulesets_payload if isinstance(branch_rulesets_payload, list) else []
+        )
+        matching = [
+            ruleset_summary(ruleset)
+            for ruleset in rulesets
+            if isinstance(ruleset, dict) and ruleset_matches_branch_required_checks(ruleset, branch)
+        ]
+        observed["branch_rulesets"] = matching
+        if matching:
+            return check(
+                "main-branch-required-checks",
+                "passed",
+                f"{branch} branch protection or active branch ruleset with required status checks",
+                observed,
+                "none",
+            )
+
+    protection_unavailable = api_error(branch_payload)
+    if protection_unavailable is not None and ruleset_unavailable is not None:
+        return check(
+            "main-branch-required-checks",
+            "unavailable",
+            f"{branch} branch protection or active branch ruleset with required status checks",
+            {
+                "branch_protection": protection_unavailable,
+                "branch_rulesets": ruleset_unavailable,
+            },
+            f"make GitHub branch rulesets readable and require status checks on {branch}",
+        )
+    if protection_unavailable is not None:
+        return check(
+            "main-branch-required-checks",
+            "failed",
+            f"{branch} branch protection or active branch ruleset with required status checks",
+            observed,
+            "add an active branch ruleset that covers "
+            f"refs/heads/{branch} and requires status checks",
         )
     return check(
         "main-branch-required-checks",
         "failed",
-        f"{branch} branch protection with required status checks",
+        f"{branch} branch protection or active branch ruleset with required status checks",
         observed,
-        f"configure required status checks on the {branch} branch protection rule",
+        f"configure required status checks on the {branch} branch protection "
+        "rule or branch ruleset",
     )
+
+
+def branch_protection_observation(payload: Any, contexts: list[str]) -> Any:
+    unavailable = api_error(payload)
+    if unavailable is not None:
+        return unavailable
+    return {"required_status_checks": contexts}
 
 
 def required_status_contexts(payload: Any) -> list[str]:
@@ -164,6 +217,38 @@ def required_status_contexts(payload: Any) -> list[str]:
                 name = item.get("context") or item.get("name")
                 if name:
                     contexts.append(str(name))
+    return sorted(set(contexts))
+
+
+def ruleset_matches_branch_required_checks(ruleset: dict[str, Any], branch: str) -> bool:
+    if ruleset.get("target") != "branch":
+        return False
+    if str(ruleset.get("enforcement", "")).lower() != "active":
+        return False
+    includes = ruleset_ref_includes(ruleset)
+    expected = {branch, f"refs/heads/{branch}"}
+    if not any(include in expected for include in includes):
+        return False
+    return bool(ruleset_required_status_contexts(ruleset))
+
+
+def ruleset_required_status_contexts(ruleset: dict[str, Any]) -> list[str]:
+    rules = ruleset.get("rules")
+    if not isinstance(rules, list):
+        return []
+    contexts: list[str] = []
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        parameters = rule.get("parameters")
+        if not isinstance(parameters, dict):
+            continue
+        required = parameters.get("required_status_checks")
+        if not isinstance(required, list):
+            continue
+        for item in required:
+            if isinstance(item, dict) and item.get("context"):
+                contexts.append(str(item["context"]))
     return sorted(set(contexts))
 
 
@@ -263,6 +348,7 @@ def ruleset_summary(ruleset: dict[str, Any]) -> dict[str, Any]:
         "target": ruleset.get("target"),
         "enforcement": ruleset.get("enforcement"),
         "include": ruleset_ref_includes(ruleset),
+        "required_status_checks": ruleset_required_status_contexts(ruleset),
     }
 
 

@@ -30,7 +30,10 @@ class RepositoryProtectionAuditTest(unittest.TestCase):
             )
 
     def test_missing_branch_required_checks_fails(self) -> None:
-        with fixtures(branch={"required_status_checks": {"contexts": []}}) as paths:
+        with fixtures(
+            branch={"required_status_checks": {"contexts": []}},
+            branch_rulesets=[],
+        ) as paths:
             result = run_audit(paths)
 
             self.assertNotEqual(result.returncode, 0)
@@ -38,6 +41,27 @@ class RepositoryProtectionAuditTest(unittest.TestCase):
             audit = json.loads(paths.out.read_text())
             self.assertEqual(audit["status"], "failed")
             self.assertIn("configure required status checks", audit["checks"][0]["remediation"])
+
+    def test_branch_ruleset_proves_required_checks_when_branch_protection_unreadable(self) -> None:
+        with fixtures(
+            branch={
+                "m80_api_error": {
+                    "endpoint": "repos/moradology/m80/branches/main/protection",
+                    "label": "branch protection",
+                    "stderr": "HTTP 403",
+                }
+            },
+        ) as paths:
+            result = run_audit(paths)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            audit = json.loads(paths.out.read_text())
+            branch_check = audit["checks"][0]
+            self.assertEqual(branch_check["status"], "passed")
+            self.assertEqual(
+                branch_check["observed"]["branch_rulesets"][0]["required_status_checks"],
+                ["audit", "test"],
+            )
 
     def test_missing_release_tag_ruleset_fails(self) -> None:
         with fixtures(rulesets=[]) as paths:
@@ -99,6 +123,7 @@ class FixturePaths:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.branch = root / "branch.json"
+        self.branch_rulesets = root / "branch-rulesets.json"
         self.rulesets = root / "rulesets.json"
         self.environment = root / "environment.json"
         self.out = root / "audit.json"
@@ -109,10 +134,14 @@ class fixtures:
         self,
         *,
         branch: object | None = None,
+        branch_rulesets: object | None = None,
         rulesets: object | None = None,
         environment: object | None = None,
     ) -> None:
         self.branch = protected_branch() if branch is None else branch
+        self.branch_rulesets = (
+            protected_branch_rulesets() if branch_rulesets is None else branch_rulesets
+        )
         self.rulesets = protected_rulesets() if rulesets is None else rulesets
         self.environment = protected_environment() if environment is None else environment
         self.tempdir: tempfile.TemporaryDirectory[str] | None = None
@@ -121,6 +150,7 @@ class fixtures:
         self.tempdir = tempfile.TemporaryDirectory()
         paths = FixturePaths(Path(self.tempdir.name))
         paths.branch.write_text(json.dumps(self.branch))
+        paths.branch_rulesets.write_text(json.dumps(self.branch_rulesets))
         paths.rulesets.write_text(json.dumps(self.rulesets))
         paths.environment.write_text(json.dumps(self.environment))
         return paths
@@ -138,6 +168,8 @@ def run_audit(paths: FixturePaths) -> subprocess.CompletedProcess[str]:
             "moradology/m80",
             "--branch-protection-json",
             str(paths.branch),
+            "--branch-rulesets-json",
+            str(paths.branch_rulesets),
             "--rulesets-json",
             str(paths.rulesets),
             "--environment-json",
@@ -161,6 +193,30 @@ def protected_branch() -> dict[str, object]:
         },
         "required_pull_request_reviews": {"required_approving_review_count": 1},
     }
+
+
+def protected_branch_rulesets() -> list[dict[str, object]]:
+    return [
+        {
+            "id": 19,
+            "name": "main required checks",
+            "target": "branch",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+            "rules": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [
+                            {"context": "test"},
+                            {"context": "audit"},
+                        ],
+                        "strict_required_status_checks_policy": True,
+                    },
+                }
+            ],
+        }
+    ]
 
 
 def protected_rulesets() -> list[dict[str, object]]:
