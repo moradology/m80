@@ -65,6 +65,7 @@ need() {
 need curl
 need sha256sum
 need tar
+need env
 need mktemp
 need chmod
 need mkdir
@@ -1180,4 +1181,25 @@ tar -xzf "$bundle_path" -C "$extract_dir" bin/m80
 chmod 0755 "$extract_dir/bin/m80"
 verify_extracted_m80_identity "$extract_dir/bin/m80"
 
-"$extract_dir/bin/m80" install --bundle-url "$selected_bundle_url" "$@"
+run_extracted_m80_install() {
+    env -i \
+        HOME="${HOME:-}" \
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+        TMPDIR=/tmp \
+        LANG="${LANG:-C}" \
+        LC_ALL="${LC_ALL:-}" \
+        LC_CTYPE="${LC_CTYPE:-}" \
+        SSL_CERT_FILE="${SSL_CERT_FILE:-}" \
+        SSL_CERT_DIR="${SSL_CERT_DIR:-}" \
+        CURL_CA_BUNDLE="${CURL_CA_BUNDLE:-}" \
+        REQUESTS_CA_BUNDLE="${REQUESTS_CA_BUNDLE:-}" \
+        HTTP_PROXY="${HTTP_PROXY:-}" \
+        HTTPS_PROXY="${HTTPS_PROXY:-}" \
+        NO_PROXY="${NO_PROXY:-}" \
+        http_proxy="${http_proxy:-}" \
+        https_proxy="${https_proxy:-}" \
+        no_proxy="${no_proxy:-}" \
+        "$extract_dir/bin/m80" install --bundle-url "$selected_bundle_url" "$@"
+}
+
+run_extracted_m80_install "$@"

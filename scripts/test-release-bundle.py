@@ -511,6 +511,60 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(args[2], f"{base}/{BUNDLE_NAME}")
             self.assertEqual(args[3:], ["--dry-run"])
 
+    def test_rendered_install_script_quarantines_child_m80_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            oldbin = root / "oldbin"
+            oldbin.mkdir()
+            write_executable(oldbin / "m80", "#!/bin/sh\nexit 77\n")
+            malicious_env = {
+                "M80_KERNEL_IMAGE": "/tmp/evil-kernel",
+                "M80_ROOTFS_IMAGE": "/tmp/evil-rootfs",
+                "M80_CONFIG": "/tmp/evil-config.toml",
+                "M80_PROFILE": "evil-profile",
+                "M80_RUN_ROOT": "/tmp/evil-run-root",
+                "M80_RELEASE_ATTESTATION_GH": "/tmp/evil-gh",
+                "M80_FAKE_CURL_MATERIAL_DIR": "/tmp/evil-fixture",
+                "M80_BUNDLE_URL": "https://example.invalid/evil.tar.gz",
+            }
+
+            result, _urls, install_args = run_rendered_install(
+                root,
+                args=["--dry-run"],
+                extra_env=malicious_env,
+                path_prefix=oldbin,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(install_args.is_file(), result.stderr)
+            env_lines = (root / "install-env.log").read_text().splitlines()
+            env_keys = {line.split("=", 1)[0] for line in env_lines}
+            expected_env_keys = {
+                "HOME",
+                "PATH",
+                "TMPDIR",
+                "LANG",
+                "LC_ALL",
+                "LC_CTYPE",
+                "SSL_CERT_FILE",
+                "SSL_CERT_DIR",
+                "CURL_CA_BUNDLE",
+                "REQUESTS_CA_BUNDLE",
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "NO_PROXY",
+                "http_proxy",
+                "https_proxy",
+                "no_proxy",
+            }
+            self.assertEqual(env_keys - {"PWD"}, expected_env_keys)
+            for key in malicious_env:
+                self.assertNotIn(key, env_keys)
+            self.assertFalse([key for key in env_keys if key.startswith("M80_")], env_lines)
+            self.assertIn("PATH=/usr/sbin:/usr/bin:/sbin:/bin", env_lines)
+            self.assertNotIn(str(oldbin), "\n".join(env_lines))
+
     def test_package_assembles_multi_tuple_release_from_tuple_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -3956,7 +4010,12 @@ def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> 
         "output.ext4",
     ]:
         write_executable(inputs / name, f"#!/bin/sh\nprintf '{name}\\n'\n")
-    write_fake_m80(inputs / "m80", release_tag)
+    write_fake_m80(
+        inputs / "m80",
+        release_tag,
+        install_args_log=root / "install-args.log",
+        install_env_log=root / "install-env.log",
+    )
     write_fake_guestd(inputs / "m80-guestd", guest_protocol)
     write_guest_manifest(inputs)
     write_build_receipt(inputs)
@@ -4007,12 +4066,20 @@ def fake_m80_payload(
 
 def fake_m80_script(payload: dict) -> str:
     rendered = shlex.quote(json.dumps(payload))
+    data = payload.get("data", {})
+    install_args_log = shlex.quote(str(data.get("_test_install_args_log", "")))
+    install_env_log = shlex.quote(str(data.get("_test_install_env_log", "")))
     return (
         "#!/bin/sh\n"
         "if [ \"${1:-}\" = install ]; then\n"
-        "  if [ -n \"${M80_FAKE_INSTALL_ARGS:-}\" ]; then\n"
-        "    : > \"$M80_FAKE_INSTALL_ARGS\"\n"
-        "    for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> \"$M80_FAKE_INSTALL_ARGS\"; done\n"
+        f"  install_args_log={install_args_log}\n"
+        f"  install_env_log={install_env_log}\n"
+        "  if [ -n \"$install_args_log\" ]; then\n"
+        "    : > \"$install_args_log\"\n"
+        "    for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> \"$install_args_log\"; done\n"
+        "  fi\n"
+        "  if [ -n \"$install_env_log\" ]; then\n"
+        "    env | sort > \"$install_env_log\"\n"
         "  fi\n"
         "  exit 0\n"
         "fi\n"
@@ -4027,17 +4094,24 @@ def write_fake_m80(
     source_commit: str = INTEGRITY_COMMIT_SHA,
     target: str = RELEASE_TARGET,
     target_triple: str = RELEASE_TARGET_TRIPLE,
+    install_args_log: Path | None = None,
+    install_env_log: Path | None = None,
 ) -> None:
+    test_updates = {
+        "source_commit": source_commit,
+        "target": target,
+        "target_triple": target_triple,
+    }
+    if install_args_log is not None:
+        test_updates["_test_install_args_log"] = str(install_args_log)
+    if install_env_log is not None:
+        test_updates["_test_install_env_log"] = str(install_env_log)
     write_executable(
         path,
         fake_m80_script(
             fake_m80_payload(
                 release_tag,
-                updates={
-                    "source_commit": source_commit,
-                    "target": target,
-                    "target_triple": target_triple,
-                },
+                updates=test_updates,
             )
         ),
     )
@@ -4749,6 +4823,8 @@ def run_rendered_install(
     curl_script: str | None = None,
     missing_tool: str | None = None,
     id_u: str = "0",
+    extra_env: dict[str, str] | None = None,
+    path_prefix: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
     out_dir = root / "out"
     fakebin = root / "fakebin-install"
@@ -4762,15 +4838,16 @@ def run_rendered_install(
     if curl_script is not None:
         write_executable(fakebin / "curl", curl_script)
     env = {
-        "PATH": str(fakebin),
+        "PATH": f"{path_prefix}:{fakebin}" if path_prefix is not None else str(fakebin),
         "M80_RELEASE_ROOT": str(out_dir),
         "M80_CURL_LOG": str(curl_log),
         "M80_CURL_ARGS_LOG": str(curl_args_log),
         "M80_TAR_LOG": str(tar_log),
         "M80_FAKE_UNAME_M": uname_arch,
         "M80_FAKE_ID_U": id_u,
-        "M80_FAKE_INSTALL_ARGS": str(install_args),
     }
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(
         [str(out_dir / INSTALL_NAME), *(args or [])],
         check=False,
@@ -4912,6 +4989,7 @@ print(json.dumps([{{"verificationResult": {{"statement": {{"subject": [{{"name":
     )
     for name, target in [
         ("sha256sum", "/usr/bin/sha256sum"),
+        ("env", "/usr/bin/env"),
         ("python3", "/usr/bin/python3"),
         ("chmod", "/bin/chmod"),
         ("mkdir", "/bin/mkdir"),
