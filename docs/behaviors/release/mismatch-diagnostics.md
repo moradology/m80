@@ -35,6 +35,11 @@ An install-owned default profile with missing referenced paths fails before
 unrelated host checks. The diagnostic names the missing profile fields and the
 same install repair command for the running binary identity.
 
+Host-prerequisite failures use the shared repair token catalog in
+`docs/behaviors/release/host-prerequisite-policy.md`. `m80 preflight`, `m80
+env`, install preflight failures, and JSON error envelopes all render the same
+`HostPrerequisiteCheck.remediation.id` for the same typed failure.
+
 Regression coverage:
 
 - `crates/m80-cli/src/cmds/tests.rs::run_default_env_profile_without_artifacts_prints_install_repair`

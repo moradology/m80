@@ -95,6 +95,28 @@ document:
 - `docs/behaviors/preflight/binary-discovery.md` for current preflight
   discovery and identity checks.
 
+## Repair Token Catalog
+
+Every host-prerequisite failure carries one stable remediation token. Text and
+JSON output render the same token, and release/install code must reuse this
+catalog instead of inventing local prose.
+
+| token | failures | target |
+| --- | --- | --- |
+| `install-firecracker-prerequisites` | missing Firecracker, wrong Firecracker train, missing jailer, wrong jailer pairing, missing or empty Firecracker seccomp filter | `docs/behaviors/release/host-prerequisite-policy.md` |
+| `repair-kvm` | missing `/dev/kvm` or `/dev/kvm` not writable by the run identity | `docs/ops/host-setup.md` |
+| `repair-cgroup-mode` | cgroup v2 unavailable or configured cgroup mode unsupported on this host | `docs/ops/host-setup.md` |
+| `repair-privilege` | process lacks root or the documented m80 capability set | `docs/ops/host-setup.md` |
+| `upgrade-firecracker-cve-floor` | official Firecracker train is below an active CVE floor | `docs/security/firecracker-cve-floor.md` |
+| `repair-host-binaries-manifest` | m80 helper, launch-material, installed-byte, or host-binaries manifest mismatch | `docs/ops/binary-installation.md` |
+| `repair-host-setup` | fallback host substrate failure that is not covered by a tighter token | `docs/ops/host-setup.md` |
+| `reinstall-m80-release` | m80-owned installed helper is missing or stale and the active profile names a release tag | pinned `curl -fsSL https://github.com/moradology/m80/releases/download/<tag>/install.sh \| sudo sh` command plus `docs/ops/binary-installation.md` |
+
+`reinstall-m80-release` is the only token that carries an installer command.
+Firecracker, jailer, seccomp, KVM, cgroup, and privilege repairs stay
+operator-owned and point to policy or setup docs because m80 v0.x does not own
+those host prerequisites.
+
 Release proof artifacts should include a saved `m80 preflight --json` payload.
 Its `data.runtime_profile` names the selected profile, active install pointer,
 artifact/helper paths, and release tag. Its `data.host_prerequisites` is the

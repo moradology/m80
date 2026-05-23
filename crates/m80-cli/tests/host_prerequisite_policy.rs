@@ -177,6 +177,33 @@ fn policy_doc_names_version_and_cve_sources_of_truth() {
 }
 
 #[test]
+fn policy_doc_names_host_prerequisite_repair_token_catalog() {
+    let policy = read_repo_file("docs/behaviors/release/host-prerequisite-policy.md");
+
+    assert_contains(&policy, "## Repair Token Catalog");
+    for required in [
+        "`install-firecracker-prerequisites`",
+        "`repair-kvm`",
+        "`repair-cgroup-mode`",
+        "`repair-privilege`",
+        "`upgrade-firecracker-cve-floor`",
+        "`repair-host-binaries-manifest`",
+        "`repair-host-setup`",
+        "`reinstall-m80-release`",
+        "`docs/behaviors/release/host-prerequisite-policy.md`",
+        "`docs/ops/host-setup.md`",
+        "`docs/ops/binary-installation.md`",
+        "`docs/security/firecracker-cve-floor.md`",
+    ] {
+        assert_contains(&policy, required);
+    }
+    assert_contains_words(
+        &policy,
+        "`reinstall-m80-release` is the only token that carries an installer command",
+    );
+}
+
+#[test]
 fn policy_doc_requires_preflight_proof_checks_for_release_artifacts() {
     let policy = read_repo_file("docs/behaviors/release/host-prerequisite-policy.md");
 

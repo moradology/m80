@@ -1,11 +1,14 @@
 use std::path::Path;
 
+use caps::Capability;
 use m80_preflight::{
     verify_host_substrate_fixture, CgroupPreflightMode, CheckRow, HostFeaturePreflightConfig,
     HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
     HostPrerequisiteOwner, HostPrerequisiteRemediation, HostPrerequisiteResult,
     HostPrerequisiteResultError, HostPrerequisiteStatus, HostSubstrateFixture, PreflightError,
-    HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
+    HOST_PREREQUISITE_RESULT_SCHEMA_VERSION, REPAIR_CGROUP_MODE,
+    REPAIR_INSTALL_FIRECRACKER_PREREQUISITES, REPAIR_KVM, REPAIR_PRIVILEGE,
+    REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
 };
 
 fn fixture_config() -> HostFeaturePreflightConfig {
@@ -700,6 +703,133 @@ fn diagnostic_maps_bad_kvm_substrate_to_repair_token() {
     );
     assert_eq!(check.final_path.as_deref(), Some(Path::new("/dev/kvm")));
     assert_eq!(check.remediation.as_ref().unwrap().id, "repair-kvm");
+}
+
+#[test]
+fn host_prerequisite_repair_catalog_covers_public_first_run_failures() {
+    let cases = [
+        (
+            "missing firecracker",
+            PreflightError::FirecrackerBinaryNotFound {
+                path: "/opt/firecracker/bin/firecracker".into(),
+            },
+            HostPrerequisiteCheckId::FirecrackerBinary,
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "wrong firecracker train",
+            PreflightError::FirecrackerVersionMismatch {
+                expected: "v1.15.1".into(),
+                actual: "v1.14.4".into(),
+                policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+            },
+            HostPrerequisiteCheckId::FirecrackerBinary,
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "firecracker cve floor",
+            PreflightError::FirecrackerCveFloorViolation {
+                expected: ">= v1.15.1".into(),
+                actual: "v1.14.4".into(),
+                cve_id: "CVE-2026-1386".into(),
+                policy_source: "crates/m80-preflight/src/cve_floor.rs",
+            },
+            HostPrerequisiteCheckId::FirecrackerBinary,
+            REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
+            "docs/security/firecracker-cve-floor.md",
+        ),
+        (
+            "missing jailer",
+            PreflightError::JailerBinaryNotFound {
+                path: "/opt/firecracker/bin/jailer".into(),
+            },
+            HostPrerequisiteCheckId::JailerBinary,
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "wrong jailer pairing",
+            PreflightError::JailerVersionMismatch {
+                expected: "v1.15.1".into(),
+                actual: "v1.14.4".into(),
+                policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+            },
+            HostPrerequisiteCheckId::JailerBinary,
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "missing seccomp filter",
+            PreflightError::FirecrackerSeccompFilterNotFound {
+                path: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+            },
+            HostPrerequisiteCheckId::FirecrackerSeccompFilter,
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "kvm missing",
+            PreflightError::KvmUnavailable {
+                path: "/dev/kvm".into(),
+            },
+            HostPrerequisiteCheckId::Kvm,
+            REPAIR_KVM,
+            "docs/ops/host-setup.md",
+        ),
+        (
+            "kvm not writable",
+            PreflightError::KvmNotWritable {
+                path: "/dev/kvm".into(),
+            },
+            HostPrerequisiteCheckId::Kvm,
+            REPAIR_KVM,
+            "docs/ops/host-setup.md",
+        ),
+        (
+            "unsupported cgroup mode",
+            PreflightError::InvalidCgroupMode {
+                actual: "legacy-v1".into(),
+            },
+            HostPrerequisiteCheckId::CgroupMode,
+            REPAIR_CGROUP_MODE,
+            "docs/ops/host-setup.md",
+        ),
+        (
+            "cgroup unavailable",
+            PreflightError::CgroupV2Unavailable,
+            HostPrerequisiteCheckId::CgroupMode,
+            REPAIR_CGROUP_MODE,
+            "docs/ops/host-setup.md",
+        ),
+        (
+            "privilege missing",
+            PreflightError::PrivilegeUnavailable {
+                missing_caps: vec![Capability::CAP_NET_ADMIN],
+            },
+            HostPrerequisiteCheckId::Privilege,
+            REPAIR_PRIVILEGE,
+            "docs/ops/host-setup.md",
+        ),
+    ];
+
+    for (name, err, expected_check_id, expected_token, expected_policy) in cases {
+        let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+        let remediation = check.remediation.as_ref().unwrap();
+
+        assert_eq!(check.check_id, expected_check_id, "{name}");
+        assert_eq!(remediation.id, expected_token, "{name}");
+        assert_eq!(
+            remediation.policy_link.as_deref(),
+            Some(expected_policy),
+            "{name}"
+        );
+        assert!(
+            remediation.command.is_none(),
+            "operator-owned prerequisite {name} should point to policy, not an invented command"
+        );
+    }
 }
 
 #[test]

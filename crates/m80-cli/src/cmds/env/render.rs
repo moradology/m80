@@ -178,6 +178,11 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
     if let Some(error) = &dump.preflight.error {
         writeln!(out, "  error: {error}").unwrap();
     }
+    if let Some(failure) = &dump.preflight.host_prerequisite_failure {
+        for line in super::super::preflight::render_host_prerequisite_failure(failure).lines() {
+            writeln!(out, "  {line}").unwrap();
+        }
+    }
     out
 }
 

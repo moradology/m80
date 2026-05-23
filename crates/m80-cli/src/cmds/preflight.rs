@@ -6,7 +6,7 @@ use std::sync::Arc;
 use m80_firecracker::{Backend, ConfigError, EffectiveConfig, FcError};
 use m80_preflight::{
     CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, HostPrerequisiteCheck,
-    HostPrerequisiteCheckId, PreflightError,
+    HostPrerequisiteCheckId, PreflightError, REPAIR_REINSTALL_M80_RELEASE,
 };
 use serde::Serialize;
 
@@ -382,7 +382,14 @@ fn attach_m80_owned_repair_command(
     let Some(remediation) = &mut check.remediation else {
         return;
     };
-    remediation.id = "reinstall-m80-release".to_owned();
+    attach_m80_owned_repair_command_for_tag(remediation, tag);
+}
+
+pub(super) fn attach_m80_owned_repair_command_for_tag(
+    remediation: &mut m80_preflight::HostPrerequisiteRemediation,
+    tag: &str,
+) {
+    remediation.id = REPAIR_REINSTALL_M80_RELEASE.to_owned();
     remediation.command = Some(format!(
         "curl -fsSL {} | sudo sh",
         release_urls::release_install_url(tag)

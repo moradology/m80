@@ -24,6 +24,8 @@ fn env_json_on_failed_preflight_stable_schema() {
     let output = m80()
         .args(["--json", "env"])
         .env("M80_FIRECRACKER_BIN", "/definitely/missing/firecracker")
+        .env("M80_JAIL_UID", "65534")
+        .env("M80_JAIL_GID", "65534")
         .output()
         .unwrap();
 
@@ -54,6 +56,14 @@ fn env_json_on_failed_preflight_stable_schema() {
             .map(Vec::len),
         Some(0),
         "failed preflight must use an empty checks array: {parsed}"
+    );
+    assert_eq!(
+        preflight["host_prerequisite_failure"]["remediation"]["id"], "repair-privilege",
+        "env must expose the same remediation token as preflight JSON/text: {parsed}"
+    );
+    assert_eq!(
+        preflight["host_prerequisite_failure"]["remediation"]["policy_link"],
+        "docs/ops/host-setup.md"
     );
 }
 

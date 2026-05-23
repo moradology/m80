@@ -116,5 +116,6 @@ pub(super) struct RunRootDump {
 pub(super) struct PreflightDump {
     pub(super) ok: bool,
     pub(super) error: Option<String>,
+    pub(super) host_prerequisite_failure: Option<m80_preflight::HostPrerequisiteCheck>,
     pub(super) checks: Vec<m80_preflight::CheckRow>,
 }

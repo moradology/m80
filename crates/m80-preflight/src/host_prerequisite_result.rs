@@ -20,6 +20,24 @@ const BINARY_INSTALLATION_DOC: &str = "docs/ops/binary-installation.md";
 const HOST_PREREQUISITE_POLICY_DOC: &str = "docs/behaviors/release/host-prerequisite-policy.md";
 const FIRECRACKER_CVE_FLOOR_DOC: &str = "docs/security/firecracker-cve-floor.md";
 
+/// Operator must install or repair the official Firecracker, jailer, or
+/// Firecracker seccomp filter prerequisites named by the policy doc.
+pub const REPAIR_INSTALL_FIRECRACKER_PREREQUISITES: &str = "install-firecracker-prerequisites";
+/// Operator must make `/dev/kvm` present and writable for the run identity.
+pub const REPAIR_KVM: &str = "repair-kvm";
+/// Operator must run on the documented cgroup mode or disable cgroup checks.
+pub const REPAIR_CGROUP_MODE: &str = "repair-cgroup-mode";
+/// Operator must run m80 with the documented root/capability posture.
+pub const REPAIR_PRIVILEGE: &str = "repair-privilege";
+/// Operator must upgrade the official Firecracker train past the active CVE floor.
+pub const REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR: &str = "upgrade-firecracker-cve-floor";
+/// Reinstall m80-owned helpers or regenerate the installed host-binaries manifest.
+pub const REPAIR_HOST_BINARIES_MANIFEST: &str = "repair-host-binaries-manifest";
+/// Generic host posture fallback for substrate failures outside a tighter token.
+pub const REPAIR_HOST_SETUP: &str = "repair-host-setup";
+/// Reinstall the pinned m80 release that owns a broken m80 helper.
+pub const REPAIR_REINSTALL_M80_RELEASE: &str = "reinstall-m80-release";
+
 /// Machine-readable host-prerequisite proof shared by install, preflight,
 /// diagnostics, and release proof artifacts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -533,17 +551,17 @@ fn check_id_for_system_operation(operation: &str) -> HostPrerequisiteCheckId {
 fn remediation_for_preflight_error(error: &PreflightError) -> HostPrerequisiteRemediation {
     match error {
         PreflightError::KvmUnavailable { .. } | PreflightError::KvmNotWritable { .. } => {
-            HostPrerequisiteRemediation::policy_link("repair-kvm", HOST_SETUP_DOC)
+            HostPrerequisiteRemediation::policy_link(REPAIR_KVM, HOST_SETUP_DOC)
         }
         PreflightError::CgroupV2Unavailable | PreflightError::InvalidCgroupMode { .. } => {
-            HostPrerequisiteRemediation::policy_link("repair-cgroup-mode", HOST_SETUP_DOC)
+            HostPrerequisiteRemediation::policy_link(REPAIR_CGROUP_MODE, HOST_SETUP_DOC)
         }
         PreflightError::PrivilegeUnavailable { .. } | PreflightError::CapabilityRead(_) => {
-            HostPrerequisiteRemediation::policy_link("repair-privilege", HOST_SETUP_DOC)
+            HostPrerequisiteRemediation::policy_link(REPAIR_PRIVILEGE, HOST_SETUP_DOC)
         }
         PreflightError::FirecrackerCveFloorViolation { .. } => {
             HostPrerequisiteRemediation::policy_link(
-                "upgrade-firecracker-cve-floor",
+                REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
                 FIRECRACKER_CVE_FLOOR_DOC,
             )
         }
@@ -557,7 +575,7 @@ fn remediation_for_preflight_error(error: &PreflightError) -> HostPrerequisiteRe
         | PreflightError::JailerVersionCommandFailed { .. }
         | PreflightError::JailerVersionOutputMalformed { .. }
         | PreflightError::JailerVersionMismatch { .. } => HostPrerequisiteRemediation::policy_link(
-            "install-firecracker-prerequisites",
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
             HOST_PREREQUISITE_POLICY_DOC,
         ),
         PreflightError::HostBinaryManifest(_)
@@ -577,11 +595,11 @@ fn remediation_for_preflight_error(error: &PreflightError) -> HostPrerequisiteRe
         | PreflightError::HostLaunchMaterialPermission { .. }
         | PreflightError::HostLaunchMaterialVersionMismatch { .. } => {
             HostPrerequisiteRemediation::policy_link(
-                "repair-host-binaries-manifest",
+                REPAIR_HOST_BINARIES_MANIFEST,
                 BINARY_INSTALLATION_DOC,
             )
         }
-        _ => HostPrerequisiteRemediation::policy_link("repair-host-setup", HOST_SETUP_DOC),
+        _ => HostPrerequisiteRemediation::policy_link(REPAIR_HOST_SETUP, HOST_SETUP_DOC),
     }
 }
 

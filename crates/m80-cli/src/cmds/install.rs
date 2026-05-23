@@ -35,7 +35,11 @@ fn cmd_install_with_identity(
         Ok(plan) => plan,
         Err(err) => {
             let err = with_install_retry_context(err, &args);
-            return Ok(render_install_error(&err, json_mode));
+            return Ok(render_install_error(
+                &err,
+                json_mode,
+                install_release_tag_hint(&args),
+            ));
         }
     };
 
@@ -50,7 +54,12 @@ fn cmd_install_with_identity(
                 } else {
                     err
                 };
-                return Ok(errors::render_error(&err, json_mode));
+                let err = InstallError::Fc(err);
+                return Ok(render_install_error(
+                    &err,
+                    json_mode,
+                    install_release_tag_hint(&args),
+                ));
             }
         };
         render_layout_summary(&summary, json_mode);
@@ -70,6 +79,18 @@ fn with_install_retry_context(err: InstallError, args: &InstallArgs) -> InstallE
         )),
         other => other,
     }
+}
+
+fn install_release_tag_hint(args: &InstallArgs) -> Option<&str> {
+    args.release_tag
+        .as_deref()
+        .or(args.bootstrap_tag.as_deref())
+        .filter(|tag| release_tag_is_url_safe(tag))
+        .or_else(|| {
+            args.bundle_url
+                .as_deref()
+                .and_then(crate::release_urls::release_tag_from_download_url)
+        })
 }
 
 fn install_plan(
@@ -638,14 +659,60 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
     lines
 }
 
-fn render_install_error(err: &InstallError, json_mode: bool) -> i32 {
+fn render_install_error(
+    err: &InstallError,
+    json_mode: bool,
+    release_tag_hint: Option<&str>,
+) -> i32 {
     match err {
-        InstallError::Fc(err) => errors::render_error(err, json_mode),
+        InstallError::Fc(err) => {
+            if json_mode {
+                let mut envelope = errors::envelope(err);
+                if let (Some(tag), Some(failure)) = (
+                    release_tag_hint,
+                    envelope.host_prerequisite_failure.as_mut(),
+                ) {
+                    attach_install_repair_context(failure, tag);
+                }
+                eprintln!("{}", json::to_pretty(&envelope));
+                errors::exit_code_for(err)
+            } else {
+                if let m80_firecracker::FcError::Preflight(preflight) = err {
+                    if let Some(failure) =
+                        m80_preflight::HostPrerequisiteCheck::from_preflight_error(preflight)
+                    {
+                        let mut failure = failure;
+                        if let Some(tag) = release_tag_hint {
+                            attach_install_repair_context(&mut failure, tag);
+                        }
+                        eprint!(
+                            "{}",
+                            super::preflight::render_host_prerequisite_failure(&failure)
+                        );
+                    }
+                }
+                errors::render_error(err, json_mode)
+            }
+        }
         InstallError::AssetIndex(err) => render_asset_index_error(err, json_mode),
         InstallError::ReleaseTransition(report) => {
             render_release_transition_error(report, json_mode)
         }
     }
+}
+
+fn attach_install_repair_context(failure: &mut m80_preflight::HostPrerequisiteCheck, tag: &str) {
+    if !matches!(
+        failure.check_id,
+        m80_preflight::HostPrerequisiteCheckId::JailerHardeningWrapper
+            | m80_preflight::HostPrerequisiteCheckId::NetworkHelper
+    ) {
+        return;
+    }
+    let Some(remediation) = &mut failure.remediation else {
+        return;
+    };
+    super::preflight::attach_m80_owned_repair_command_for_tag(remediation, tag);
 }
 
 fn render_asset_index_error(err: &release_asset_index::AssetIndexFailure, json_mode: bool) -> i32 {

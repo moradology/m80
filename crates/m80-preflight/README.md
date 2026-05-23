@@ -225,6 +225,13 @@ which is the right place for a security review to start.
   order and name the first missing, duplicate, or out-of-order id. Use
   `from_success_rows()` or `from_discovery()` only for partial fixtures and
   focused projections.
+- Host-prerequisite repair token constants:
+  `REPAIR_INSTALL_FIRECRACKER_PREREQUISITES`, `REPAIR_KVM`,
+  `REPAIR_CGROUP_MODE`, `REPAIR_PRIVILEGE`,
+  `REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR`,
+  `REPAIR_HOST_BINARIES_MANIFEST`, `REPAIR_HOST_SETUP`, and
+  `REPAIR_REINSTALL_M80_RELEASE`. They are the audited remediation ids shared
+  by install, preflight, diagnostics, and release proof rendering.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.

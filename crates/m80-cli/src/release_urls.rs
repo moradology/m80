@@ -46,6 +46,17 @@ pub(crate) fn release_install_url(release_tag: &str) -> String {
     release_asset_url(release_tag, "install.sh")
 }
 
+pub(crate) fn release_tag_from_download_url(url: &str) -> Option<&str> {
+    let prefix = format!("https://github.com{}", release_download_path_prefix());
+    let rest = url.strip_prefix(&prefix)?;
+    let (tag, _) = rest.split_once('/')?;
+    if tag.is_empty() {
+        None
+    } else {
+        Some(tag)
+    }
+}
+
 pub(crate) fn latest_install_url() -> String {
     latest_asset_url("install.sh")
 }
@@ -132,6 +143,26 @@ mod tests {
         assert_eq!(
             latest_install_url(),
             "https://github.com/moradology/m80/releases/latest/download/install.sh"
+        );
+    }
+
+    #[test]
+    fn release_tag_from_download_url_accepts_public_pinned_assets() {
+        assert_eq!(
+            release_tag_from_download_url(
+                "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh"
+            ),
+            Some("v0.2.11")
+        );
+        assert_eq!(
+            release_tag_from_download_url(
+                "https://github.com/moradology/m80/releases/latest/download/install.sh"
+            ),
+            None
+        );
+        assert_eq!(
+            release_tag_from_download_url("file:///tmp/m80-linux-x86_64.tar.gz"),
+            None
         );
     }
 

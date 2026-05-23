@@ -39,7 +39,10 @@ fn collect_env_dump() -> EnvDump {
     let runtime_profile = runtime_profile_dump(runtime_profile_result.as_ref());
     let artifacts = artifact_dump(&runtime_profile);
     let run_root = run_root_dump(config_result.as_ref().ok());
-    let preflight = preflight_dump(config_result.as_ref().ok());
+    let preflight = preflight_dump(
+        config_result.as_ref().ok(),
+        runtime_profile_result.as_ref().ok(),
+    );
     let firecracker = firecracker_dump(&runtime_profile);
 
     EnvDump {
@@ -356,11 +359,15 @@ fn run_root_dump(effective: Option<&EffectiveConfig>) -> RunRootDump {
     }
 }
 
-fn preflight_dump(effective: Option<&EffectiveConfig>) -> PreflightDump {
+fn preflight_dump(
+    effective: Option<&EffectiveConfig>,
+    runtime_profile: Option<&RuntimeProfile>,
+) -> PreflightDump {
     let Some(effective) = effective else {
         return PreflightDump {
             ok: false,
             error: Some("effective config unavailable".to_owned()),
+            host_prerequisite_failure: None,
             checks: Vec::new(),
         };
     };
@@ -368,13 +375,28 @@ fn preflight_dump(effective: Option<&EffectiveConfig>) -> PreflightDump {
         Ok(discovery) => PreflightDump {
             ok: true,
             error: None,
+            host_prerequisite_failure: None,
             checks: discovery.report,
         },
-        Err(e) => PreflightDump {
-            ok: false,
-            error: Some(e.to_string()),
-            checks: Vec::new(),
-        },
+        Err(e) => {
+            let runtime_profile = runtime_profile.map(profile::runtime_profile_report);
+            PreflightDump {
+                ok: false,
+                error: Some(e.to_string()),
+                host_prerequisite_failure: runtime_profile
+                    .as_ref()
+                    .and_then(|runtime_profile| {
+                        super::preflight::host_prerequisite_failure(&e, runtime_profile)
+                    })
+                    .or_else(|| match &e {
+                        m80_firecracker::FcError::Preflight(preflight) => {
+                            m80_preflight::HostPrerequisiteCheck::from_preflight_error(preflight)
+                        }
+                        _ => None,
+                    }),
+                checks: Vec::new(),
+            }
+        }
     }
 }
 

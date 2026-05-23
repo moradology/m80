@@ -242,6 +242,7 @@ fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {
             detail: err.detail,
             exit_code,
             target_ready: err.target_ready,
+            host_prerequisite_failure: None,
         };
         eprintln!("{}", json::to_pretty(&env));
     } else if let Some(request_id) = err.request_id {

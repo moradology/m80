@@ -139,6 +139,9 @@ pub use host_prerequisite_result::{
     HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
     HostPrerequisiteOwner, HostPrerequisiteRemediation, HostPrerequisiteResult,
     HostPrerequisiteResultError, HostPrerequisiteStatus, HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
+    REPAIR_CGROUP_MODE, REPAIR_HOST_BINARIES_MANIFEST, REPAIR_HOST_SETUP,
+    REPAIR_INSTALL_FIRECRACKER_PREREQUISITES, REPAIR_KVM, REPAIR_PRIVILEGE,
+    REPAIR_REINSTALL_M80_RELEASE, REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
 };
 pub use pinned_rootfs::PinnedRootfs;
 pub use row::CheckRow;

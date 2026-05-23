@@ -759,6 +759,46 @@ fn local_fixture_release_shaped_url_does_not_select_release_tag() {
     assert_eq!(tag, None);
 }
 
+#[test]
+fn install_repair_context_uses_explicit_release_tag_before_bundle_url() {
+    let args = InstallArgs {
+        release_tag: Some("v2".to_owned()),
+        bundle_url: Some(
+            "https://github.com/moradology/m80/releases/download/v1/m80-linux-x86_64.tar.gz"
+                .to_owned(),
+        ),
+        bootstrap_tag: None,
+        install_root: PathBuf::from("/tmp/m80-install"),
+        bin_dir: None,
+        dry_run: false,
+        repair_stale_install_lock: false,
+        adopt_existing_config: false,
+    };
+
+    assert_eq!(install_release_tag_hint(&args), Some("v2"));
+}
+
+#[test]
+fn install_repair_context_reuses_m80_owned_helper_token() {
+    let err = m80_preflight::PreflightError::NetHelperBinaryNotFound {
+        path: "/opt/m80/versions/v1/bin/m80-net-helper".into(),
+    };
+    let mut failure = m80_preflight::HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    attach_install_repair_context(&mut failure, "v1");
+
+    let remediation = failure.remediation.as_ref().unwrap();
+    assert_eq!(remediation.id, m80_preflight::REPAIR_REINSTALL_M80_RELEASE);
+    assert_eq!(
+        remediation.command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1/install.sh | sudo sh")
+    );
+    assert_eq!(
+        remediation.policy_link.as_deref(),
+        Some("docs/ops/binary-installation.md")
+    );
+}
+
 fn asset_index_diagnostic(err: &InstallError) -> &release_asset_index::AssetIndexDiagnostic {
     match err {
         InstallError::AssetIndex(err) => err.diagnostic(),

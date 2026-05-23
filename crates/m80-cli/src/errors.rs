@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use m80_firecracker::{ConfigError, FcError};
+use m80_preflight::HostPrerequisiteCheck;
 
 use crate::json;
 use crate::request_id;
@@ -139,6 +140,9 @@ pub(crate) struct ErrorEnvelope {
     /// Number of warm slots that will be ready, when the error is `PoolEmpty`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) target_ready: Option<usize>,
+    /// Structured host-prerequisite failure for preflight errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) host_prerequisite_failure: Option<HostPrerequisiteCheck>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +169,10 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
         detail: err.to_string(),
         exit_code: exit_code_for(err),
         target_ready,
+        host_prerequisite_failure: match err {
+            FcError::Preflight(preflight) => HostPrerequisiteCheck::from_preflight_error(preflight),
+            _ => None,
+        },
     }
 }
 
@@ -319,6 +327,28 @@ mod tests {
             path: "/dev/kvm".into(),
         });
         assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn preflight_envelope_carries_host_prerequisite_repair_token() {
+        use m80_preflight::PreflightError;
+        let err = FcError::Preflight(PreflightError::KvmUnavailable {
+            path: "/dev/kvm".into(),
+        });
+
+        let env = envelope(&err);
+
+        let failure = env
+            .host_prerequisite_failure
+            .expect("preflight envelope should carry host prerequisite failure");
+        assert_eq!(
+            failure.check_id,
+            m80_preflight::HostPrerequisiteCheckId::Kvm
+        );
+        assert_eq!(
+            failure.remediation.as_ref().unwrap().id,
+            m80_preflight::REPAIR_KVM
+        );
     }
 
     #[test]
