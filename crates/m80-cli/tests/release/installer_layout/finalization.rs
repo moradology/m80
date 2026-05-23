@@ -146,7 +146,11 @@ fn install_bundle_layout_profile_failure_leaves_previous_active_and_profile() {
     let profile_path = install_root.join("profiles/default.toml");
     fs::create_dir_all(profile_path.parent().unwrap()).unwrap();
     fs::write(&profile_path, "description = \"old profile\"\n").unwrap();
-    fs::write(install_root.join("config.toml"), "surprise = true\n").unwrap();
+    fs::write(
+        install_root.join("config.toml"),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n",
+    )
+    .unwrap();
 
     let output = run_install(&bundle, &install_root, Some(&host), &[], &[]);
 
@@ -154,7 +158,7 @@ fn install_bundle_layout_profile_failure_leaves_previous_active_and_profile() {
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
-        stderr.contains("unknown config key"),
+        stderr.contains("existing m80 profile would be overwritten"),
         "unexpected stderr: {stderr}"
     );
     assert_eq!(
@@ -164,6 +168,10 @@ fn install_bundle_layout_profile_failure_leaves_previous_active_and_profile() {
     assert_eq!(
         fs::read_to_string(profile_path).unwrap(),
         "description = \"old profile\"\n"
+    );
+    assert_eq!(
+        fs::read_to_string(install_root.join("config.toml")).unwrap(),
+        "default_profile = 'operator'\nrun_root = '/operator/run'\n"
     );
 }
 

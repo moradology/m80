@@ -244,6 +244,8 @@ fn run_quickstart(
         release_tag: release_tag_from_artifact_url(artifact_url),
         m80_version: identity.binary_version,
         host_binaries_manifest: &host_binaries_manifest,
+        adopt_existing_config: false,
+        adoption_command: "m80 install --adopt-existing-config".to_owned(),
     })?;
 
     if !no_run {

@@ -8,7 +8,7 @@ use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
 
 use super::super::quickstart::profile_writer::{
-    write_installed_default_profile, InstalledDefaultProfile,
+    write_installed_default_profile, InstalledDefaultProfile, InstalledProfileTransaction,
 };
 use super::InstallPlan;
 use bundle::{
@@ -233,6 +233,8 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     })?;
     let selector_paths = install_selector_paths(&install_root);
     let default_profile = selector_paths.default_profile_path();
+    let mut selector_transaction =
+        InstalledProfileTransaction::capture(&default_profile, &selector_paths.config_path)?;
     let profile_path = write_installed_default_profile(InstalledDefaultProfile {
         artifact_dir: &final_dir.join("artifacts"),
         run_root: &run_root,
@@ -242,13 +244,28 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         release_tag: Some(metadata.release_tag.clone()),
         m80_version: plan.binary_version.clone(),
         host_binaries_manifest: &host_binaries_manifest,
+        adopt_existing_config: plan.adopt_existing_config,
+        adoption_command: adoption_command(bundle_url, &install_root),
     })?;
-    maybe_inject_interruption_after_profile()?;
-    let preflight_gate = verify_preflight_gate(bundle_url)?;
-    let handoff = install_path_handoff(&final_dir, Path::new(&plan.bin_dir))?;
+    let finalization = (|| {
+        maybe_inject_interruption_after_profile()?;
+        let preflight_gate = verify_preflight_gate(bundle_url)?;
+        let handoff = install_path_handoff(&final_dir, Path::new(&plan.bin_dir))?;
+        Ok((preflight_gate, handoff))
+    })();
+    let (preflight_gate, handoff) = match finalization {
+        Ok(finalization) => finalization,
+        Err(err) => {
+            selector_transaction.rollback();
+            return Err(err);
+        }
+    };
 
     let active_pointer = PathBuf::from(&plan.active_pointer);
-    flip_active_pointer(&active_pointer, &final_dir)?;
+    if let Err(err) = flip_active_pointer(&active_pointer, &final_dir) {
+        selector_transaction.rollback();
+        return Err(err);
+    }
 
     let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
     let release_material = verified_official_bundle.as_ref().map(|verified_bundle| {
@@ -282,6 +299,18 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         release_material,
         reinstall: None,
     })
+}
+
+fn adoption_command(bundle_url: &str, install_root: &Path) -> String {
+    format!(
+        "m80 install --bundle-url {} --install-root {} --adopt-existing-config",
+        shell_single_quote(bundle_url),
+        shell_single_quote(install_root.display())
+    )
+}
+
+fn shell_single_quote(value: impl std::fmt::Display) -> String {
+    format!("'{}'", value.to_string().replace('\'', "'\\''"))
 }
 
 pub(super) fn with_bundle_url_retry_context(

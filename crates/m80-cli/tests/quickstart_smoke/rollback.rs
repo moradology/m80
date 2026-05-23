@@ -55,7 +55,7 @@ fn quickstart_rolls_back_symlinked_profile_target_when_config_write_fails() {
 }
 
 #[test]
-fn quickstart_rejects_unknown_existing_config_key_before_profile_commit() {
+fn quickstart_rejects_existing_config_before_profile_commit() {
     let dir = tempfile::tempdir().unwrap();
     let tarball = write_release_tarball(&dir);
     let paths = install_paths(&dir, "bad-config");
@@ -63,6 +63,7 @@ fn quickstart_rejects_unknown_existing_config_key_before_profile_commit() {
     let profile_path = paths.profile_dir.join("default.toml");
     let stale_profile = "kernel_image = \"/old/vmlinux\"\nrootfs_image = \"/old/rootfs.ext4\"\n";
     std::fs::write(&profile_path, stale_profile).unwrap();
+    std::fs::remove_file(&profile_path).unwrap();
     std::fs::write(&paths.config_path, "unknown_key = true\n").unwrap();
 
     let output = m80()
@@ -73,11 +74,12 @@ fn quickstart_rejects_unknown_existing_config_key_before_profile_commit() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("unknown config key"),
-        "quickstart should report the config key that would make the next run fail; stderr={stderr}"
+        stderr.contains("existing m80 config would be overwritten"),
+        "quickstart should preserve the existing config; stderr={stderr}"
     );
     assert_eq!(
-        std::fs::read_to_string(profile_path).unwrap(),
-        stale_profile
+        std::fs::read_to_string(&paths.config_path).unwrap(),
+        "unknown_key = true\n"
     );
+    assert!(!profile_path.exists());
 }

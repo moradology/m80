@@ -23,6 +23,7 @@ fn args_with_release_tag(tag: &str) -> InstallArgs {
         bin_dir: None,
         dry_run: true,
         repair_stale_install_lock: false,
+        adopt_existing_config: false,
     }
 }
 
@@ -35,6 +36,7 @@ fn args_with_bundle_url(url: &str) -> InstallArgs {
         bin_dir: None,
         dry_run: true,
         repair_stale_install_lock: false,
+        adopt_existing_config: false,
     }
 }
 

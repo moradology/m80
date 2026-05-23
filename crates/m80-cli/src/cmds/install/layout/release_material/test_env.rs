@@ -39,6 +39,7 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
         active_pointer: install_root.join("active").display().to_string(),
         active_pointer_changed: false,
         repair_stale_install_lock: false,
+        adopt_existing_config: false,
         source: SourcePlan {
             kind: SourceKind::BundleUrl,
             selector: bundle_url.clone(),

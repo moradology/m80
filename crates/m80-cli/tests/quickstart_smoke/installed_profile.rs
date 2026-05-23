@@ -45,7 +45,7 @@ fn quickstart_profile_uses_installed_manifest_kernel_kind() {
 }
 
 #[test]
-fn quickstart_overwrites_stale_profile_and_config() {
+fn quickstart_rejects_stale_profile_and_config_without_silent_overwrite() {
     let dir = tempfile::tempdir().unwrap();
     let tarball = write_release_tarball(&dir);
     let paths = install_paths(&dir, "stale");
@@ -57,24 +57,22 @@ fn quickstart_overwrites_stale_profile_and_config() {
     )
     .unwrap();
 
-    m80()
+    let output = m80()
         .args(quickstart_no_run_args(&tarball, &paths))
-        .assert()
-        .success();
+        .output()
+        .unwrap();
 
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("existing m80 profile would be overwritten"),
+        "{stderr}"
+    );
     let profile_text = std::fs::read_to_string(paths.profile_dir.join("default.toml")).unwrap();
-    assert!(!profile_text.contains("stale = true"));
-    let profile = profile_text.parse::<toml::Value>().unwrap();
-    assert_eq!(
-        toml_str(&profile, "artifact_dir"),
-        paths.dst.to_str().unwrap()
-    );
+    assert!(profile_text.contains("stale = true"));
     let config = read_toml(&paths.config_path);
-    assert_eq!(toml_str(&config, "default_profile"), "default");
-    assert_eq!(
-        toml_str(&config, "run_root"),
-        paths.run_root.to_str().unwrap()
-    );
+    assert_eq!(toml_str(&config, "default_profile"), "old");
+    assert_eq!(toml_str(&config, "run_root"), "/old");
 }
 
 #[test]

@@ -330,6 +330,7 @@ fn parse_install_release_tag_source() {
             bin_dir,
             dry_run,
             repair_stale_install_lock,
+            adopt_existing_config,
         }) => {
             assert_eq!(release_tag.as_deref(), Some("v0.1.0"));
             assert!(bundle_url.is_none());
@@ -338,6 +339,7 @@ fn parse_install_release_tag_source() {
             assert!(bin_dir.is_none());
             assert!(!dry_run);
             assert!(!repair_stale_install_lock);
+            assert!(!adopt_existing_config);
         }
         _ => panic!("expected Install"),
     }

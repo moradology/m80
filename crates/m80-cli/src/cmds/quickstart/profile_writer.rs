@@ -9,14 +9,6 @@ use serde::Serialize;
 const DEFAULT_PROFILE_NAME: &str = "default";
 const DEFAULT_PROFILE_FILE: &str = "default.toml";
 const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
-const CONFIG_KEYS: &[&str] = &[
-    "default_profile",
-    "max_concurrent_vms",
-    "run_root",
-    "jail_uid",
-    "jail_gid",
-    "cgroup_mode",
-];
 
 pub(in crate::cmds) struct InstalledDefaultProfile<'a> {
     pub(in crate::cmds) artifact_dir: &'a Path,
@@ -27,6 +19,8 @@ pub(in crate::cmds) struct InstalledDefaultProfile<'a> {
     pub(in crate::cmds) release_tag: Option<String>,
     pub(in crate::cmds) m80_version: String,
     pub(in crate::cmds) host_binaries_manifest: &'a Path,
+    pub(in crate::cmds) adopt_existing_config: bool,
+    pub(in crate::cmds) adoption_command: String,
 }
 
 #[derive(Serialize)]
@@ -58,8 +52,24 @@ pub(in crate::cmds) fn write_installed_default_profile(
     let profile_path = input.profile_dir.join(DEFAULT_PROFILE_FILE);
     let mut transaction = InstalledProfileTransaction::capture(&profile_path, input.config_path)?;
     let result = (|| {
-        write_profile_file(&profile_path, &profile_toml(&input)?)?;
-        write_config_file(input.config_path, input.run_root)?;
+        let profile_contents = profile_toml(&input)?;
+        let config_contents = config_toml(input.run_root)?;
+        ensure_selector_write_allowed(
+            "profile",
+            &profile_path,
+            &profile_contents,
+            input.adopt_existing_config,
+            &input.adoption_command,
+        )?;
+        ensure_selector_write_allowed(
+            "config",
+            input.config_path,
+            &config_contents,
+            input.adopt_existing_config,
+            &input.adoption_command,
+        )?;
+        write_profile_file(&profile_path, &profile_contents)?;
+        write_profile_file(input.config_path, &config_contents)?;
         Ok(())
     })();
     if let Err(err) = result {
@@ -120,45 +130,8 @@ fn write_profile_file(path: &Path, contents: &str) -> Result<(), FcError> {
     })
 }
 
-fn write_config_file(path: &Path, run_root: &Path) -> Result<(), FcError> {
-    let mut table = if path.exists() {
-        let raw = fs::read_to_string(path).map_err(|source| FcError::PathIo {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        let value = toml::from_str::<toml::Value>(&raw).map_err(|source| {
-            FcError::Config(m80_firecracker::ConfigError::TomlSyntax {
-                layer: "m80 quickstart config",
-                path: path.to_path_buf(),
-                source,
-            })
-        })?;
-        match value {
-            toml::Value::Table(table) => {
-                for key in table.keys() {
-                    if !CONFIG_KEYS.contains(&key.as_str()) {
-                        return Err(FcError::Config(
-                            m80_firecracker::ConfigError::InvalidValue {
-                                field: "config key",
-                                reason: format!("unknown config key {key:?} in {}", path.display()),
-                            },
-                        ));
-                    }
-                }
-                table
-            }
-            _ => {
-                return Err(FcError::Config(
-                    m80_firecracker::ConfigError::InvalidValue {
-                        field: "config root",
-                        reason: format!("{} must be a TOML table", path.display()),
-                    },
-                ));
-            }
-        }
-    } else {
-        toml::map::Map::new()
-    };
+fn config_toml(run_root: &Path) -> Result<String, FcError> {
+    let mut table = toml::map::Map::new();
     table.insert(
         "default_profile".to_owned(),
         toml::Value::String(DEFAULT_PROFILE_NAME.to_owned()),
@@ -167,28 +140,74 @@ fn write_config_file(path: &Path, run_root: &Path) -> Result<(), FcError> {
         "run_root".to_owned(),
         toml::Value::String(run_root.display().to_string()),
     );
-    let contents =
-        toml::to_string_pretty(&toml::Value::Table(table)).map_err(|source| FcError::Json {
-            context: "serialize installed default config",
-            source: serde_json::Error::io(io::Error::new(io::ErrorKind::Other, source)),
-        })?;
-    write_profile_file(path, &contents)
+    toml::to_string_pretty(&toml::Value::Table(table)).map_err(|source| FcError::Json {
+        context: "serialize installed default config",
+        source: serde_json::Error::io(io::Error::new(io::ErrorKind::Other, source)),
+    })
 }
 
-struct InstalledProfileTransaction {
+fn ensure_selector_write_allowed(
+    kind: &str,
+    path: &Path,
+    proposed_contents: &str,
+    adopt_existing_config: bool,
+    adoption_command: &str,
+) -> Result<(), FcError> {
+    let existing = match fs::read_to_string(path) {
+        Ok(existing) => existing,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    if existing == proposed_contents || adopt_existing_config {
+        return Ok(());
+    }
+    Err(FcError::Config(
+        m80_firecracker::ConfigError::InvalidValue {
+            field: "install.config_preservation",
+            reason: format!(
+                "existing m80 {kind} would be overwritten: old_path={} proposed_path={}; adoption command: {}; backup command: cp -a {} {}",
+                path.display(),
+                path.display(),
+                adoption_command,
+                shell_single_quote(path),
+                shell_single_quote(&backup_path(path))
+            ),
+        },
+    ))
+}
+
+fn backup_path(path: &Path) -> PathBuf {
+    let mut backup = path.as_os_str().to_os_string();
+    backup.push(".backup");
+    PathBuf::from(backup)
+}
+
+fn shell_single_quote(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
+pub(in crate::cmds) struct InstalledProfileTransaction {
     profile: PathBackup,
     config: PathBackup,
 }
 
 impl InstalledProfileTransaction {
-    fn capture(profile_path: &Path, config_path: &Path) -> Result<Self, FcError> {
+    pub(in crate::cmds) fn capture(
+        profile_path: &Path,
+        config_path: &Path,
+    ) -> Result<Self, FcError> {
         Ok(Self {
             profile: PathBackup::capture(profile_path)?,
             config: PathBackup::capture(config_path)?,
         })
     }
 
-    fn rollback(&mut self) {
+    pub(in crate::cmds) fn rollback(&mut self) {
         let _ = self.profile.restore();
         let _ = self.config.restore();
     }

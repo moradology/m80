@@ -280,6 +280,25 @@ bytes with `sudo`. It prints the release tag, source commit,
 handoff. See
 `docs/behaviors/release/verified-install-handoff.md`.
 
+## Existing Config And Profile Cutover
+
+`m80 install` owns the generated default selector files for the installed
+product: `/etc/m80/config.toml` plus `/etc/m80/profiles/default.toml` for the
+default root, or `<install-root>/config.toml` plus
+`<install-root>/profiles/default.toml` for install-root fixtures. The installer
+writes those files only when they do not exist, or when their bytes already
+match the generated installed selector.
+
+If either file exists with operator-owned contents, install fails before active
+state is changed. The diagnostic names the existing path, the proposed path, and
+two exact choices: rerun the same install command with
+`--adopt-existing-config`, or back up the file with the printed `cp -a` command
+and rerun. Adoption is a hard cutover; m80 does not merge operator keys into the
+generated installed selector. If a later finalization step fails after adoption,
+the previous config/profile bytes are restored before the command exits.
+The behavior contract is recorded in
+`docs/behaviors/release/install-config-preservation.md`.
+
 ## Installed Status Evidence
 
 Release evidence captures include the installed status JSON from the candidate

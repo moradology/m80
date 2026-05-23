@@ -527,6 +527,10 @@ pub struct InstallArgs {
     /// Remove a stale install-state lock whose owner process is no longer running.
     #[arg(long = "repair-stale-install-lock")]
     pub repair_stale_install_lock: bool,
+
+    /// Replace an existing m80 config/default profile during install.
+    #[arg(long = "adopt-existing-config")]
+    pub adopt_existing_config: bool,
 }
 
 /// Arguments for `m80 install-status`.
