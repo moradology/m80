@@ -105,6 +105,9 @@ binaries, pull OCI images, or install packages implicitly.
   concise next action plus per-diagnostic reinstall and manual rollback
   commands when a safe command can be derived. `m80 --json install-status`
   emits the stable JSON contract for scripts and release freshness checks.
+  There is no `m80 rollback` command in this tranche; older install targets are
+  refused by default, and rollback is limited to the status-rendered manual
+  active-pointer command for an already-installed previous version.
 - `m80 update --check [--install-root <path>] [--profile <name>]` - reads the
   active install state, installed proof-cache summary, and bounded latest
   freshness metadata without writing the install root. It reports finite

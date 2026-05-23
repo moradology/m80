@@ -341,6 +341,9 @@ The version directory, `bundle.json`, generated profile fields,
 `artifacts/install-provenance.json`, `artifacts/host-binaries.manifest.json`,
 and `artifacts/release-proof-cache/manifest.json` are installer-generated
 state. Do not hand-edit those files; reinstall the affected release instead.
+There is no `m80 rollback` command in this tranche; downgrade-by-install stays
+refused by default, and explicit rollback is limited to this status-rendered
+manual active-pointer move for an already-installed version.
 
 ## Transaction Ordering
 

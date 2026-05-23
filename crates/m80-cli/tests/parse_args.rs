@@ -893,6 +893,15 @@ fn parse_removed_snapshot_subcommand_fails() {
     assert!(result.is_err(), "snapshot is not a process facade command");
 }
 
+#[test]
+fn parse_rollback_subcommand_is_not_public_surface() {
+    let result = Cli::try_parse_from(["m80", "rollback", "v1.2.2"]);
+    assert!(
+        result.is_err(),
+        "rollback is status-rendered manual repair, not a CLI command"
+    );
+}
+
 // ---- unknown subcommand fails ----
 
 #[test]

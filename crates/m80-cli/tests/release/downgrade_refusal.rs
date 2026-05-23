@@ -13,9 +13,13 @@ fn downgrade_refusal_doc_names_policy_and_json_contract() {
         "`requested_tag`",
         "`observed_ordering=target_older`",
         "`rollback_command`",
+        "does not ship a `m80 rollback` command",
+        "Rollback is intentionally separate from downgrade-by-install",
+        "sudo ln -sfnT -- '<install-root>/versions/<previous-tag>' '<install-root>/active'",
         "`release_tag_source_refuses_downgrade_before_index_fetch`",
         "`official_bundle_url_refuses_downgrade_before_attestation_preflight`",
         "`missing_active_metadata_still_refuses_older_target_by_pointer_tag`",
+        "`parse_rollback_subcommand_is_not_public_surface`",
     ] {
         assert!(doc.contains(required), "doc missing {required:?}");
     }

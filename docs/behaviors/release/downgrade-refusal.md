@@ -26,9 +26,23 @@ Human diagnostics include:
 
 JSON diagnostics use the `ReleaseTransition` variant with `code`,
 `active_tag`, `requested_tag`, `expected_ordering`, `observed_ordering`,
-`reinstall_active_command`, and `rollback_command`. `rollback_command` is null
-until m80 ships an explicit rollback command; accidental downgrade does not get
-an implicit override.
+`reinstall_active_command`, and `rollback_command`. `rollback_command` is null:
+this tranche does not ship a `m80 rollback` command, and accidental downgrade
+does not get an implicit override.
+
+Rollback is intentionally separate from downgrade-by-install. Installing an
+older tag is refused by default even when that tag already exists locally.
+The only supported rollback surface in this tranche is the read-only
+`m80 install-status` diagnostic for stale installed state. When it can name an
+already-installed previous version directory, it prints the manual active
+pointer command:
+
+```text
+sudo ln -sfnT -- '<install-root>/versions/<previous-tag>' '<install-root>/active'
+```
+
+That command moves only the active pointer. It does not fetch a bundle, rewrite
+profiles, rewrite proof-cache material, or bless tampered release bytes.
 
 If the active pointer is missing, the policy treats the operation as a first
 install and does not block the target. If the active pointer names a stable tag
@@ -45,4 +59,5 @@ Tests:
 - `missing_active_pointer_does_not_block_first_install`;
 - `release_tag_source_rejects_prerelease_tag_before_index_fetch`;
 - `bootstrap_tag_source_rejects_prerelease_tag_before_index_fetch`;
+- `parse_rollback_subcommand_is_not_public_surface`;
 - `downgrade_refusal_doc_names_policy_and_json_contract`.
