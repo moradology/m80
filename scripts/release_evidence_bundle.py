@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 KIND = "m80_release_evidence_bundle"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
@@ -42,6 +42,7 @@ TOP_LEVEL_FIELDS = {
     "workflow_only_artifacts",
     "proofs",
     "host_binaries",
+    "release_identity",
     "redaction",
 }
 FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
@@ -57,6 +58,19 @@ HOST_BINARIES_FIELDS = {
     "firecracker_version",
     "jailer_version",
     "install_root_classification",
+}
+RELEASE_IDENTITY_FIELDS = {
+    "lane_id",
+    "substrate",
+    "requested_tag",
+    "resolved_install_tag",
+    "m80_version",
+    "m80_release_tag",
+    "bundle_release_tag",
+    "bundle_m80_version",
+    "manifest_schema_version",
+    "guest_protocol_version",
+    "bundle_metadata",
 }
 REDACTION_FIELDS = {"policy", "forbidden"}
 REDACTION_FORBIDDEN = ["absolute-host-paths", "secrets", "tokens", "environment-dumps"]
@@ -220,6 +234,13 @@ def build_bundle(
             proof_inputs=proof_inputs,
             workflow_by_name=workflow_by_name,
         ),
+        "release_identity": release_identity_summaries(
+            dist_dir=dist_dir,
+            proof_inputs=proof_inputs,
+            release_tag=release_tag,
+            resolved_install_tag=resolved_install_tag,
+            m80_version=m80_version,
+        ),
         "redaction": {
             "policy": "Evidence names flat release files and sha256 digests only; host paths, secrets, tokens, and environment dumps are forbidden.",
             "forbidden": list(REDACTION_FORBIDDEN),
@@ -310,6 +331,18 @@ def verify_bundle(
     require(
         observed_host_binaries == expected_host_binaries,
         "release evidence bundle host_binaries mismatch",
+    )
+    expected_release_identity = release_identity_summaries(
+        dist_dir=dist_dir,
+        proof_inputs=proof_inputs,
+        release_tag=release_tag,
+        resolved_install_tag=resolved_install_tag,
+        m80_version=m80_version,
+    )
+    observed_release_identity = normalized_release_identity(bundle["release_identity"])
+    require(
+        observed_release_identity == expected_release_identity,
+        "release evidence bundle release_identity mismatch",
     )
     required = set(required_lane_ids)
     missing = set(missing_lane_ids)
@@ -561,6 +594,194 @@ def normalized_host_binaries(value: object) -> list[dict[str, Any]]:
     return sorted(result, key=lambda row: row["lane_id"])
 
 
+def release_identity_summaries(
+    *,
+    dist_dir: Path,
+    proof_inputs: dict[str, Path],
+    release_tag: str,
+    resolved_install_tag: str,
+    m80_version: str,
+) -> list[dict[str, Any]]:
+    rows = []
+    for lane_id, proof_path in sorted(proof_inputs.items()):
+        proof = read_json(proof_path, f"{lane_id} quickstart proof")
+        release = require_object(proof.get("release"), f"{lane_id} quickstart proof release")
+        require_exact_fields(
+            release,
+            {"requested", "resolved_tag", "install_url"},
+            f"{lane_id} quickstart proof release",
+        )
+        requested_tag = require_nonempty_string(release["requested"], f"{lane_id} quickstart proof release requested")
+        proof_resolved_tag = require_nonempty_string(
+            release["resolved_tag"],
+            f"{lane_id} quickstart proof release resolved_tag",
+        )
+        require(
+            proof_resolved_tag == resolved_install_tag,
+            f"{lane_id} resolved install tag mismatch: expected {resolved_install_tag}, got {proof_resolved_tag}; source={proof_path.name}; repair=rerun quickstart proof for {resolved_install_tag}",
+        )
+        require(
+            requested_tag == "latest" or requested_tag == proof_resolved_tag,
+            f"{lane_id} requested tag mismatch: expected latest or {proof_resolved_tag}, got {requested_tag}; source={proof_path.name}; repair=rerun quickstart proof",
+        )
+        require(
+            proof_resolved_tag != "latest",
+            f"{lane_id} resolved install tag must be concrete, got latest; source={proof_path.name}; repair=resolve latest once before proof",
+        )
+
+        m80 = require_object(proof.get("m80"), f"{lane_id} quickstart proof m80")
+        require_exact_fields(
+            m80,
+            {"version", "release_tag", "version_status"},
+            f"{lane_id} quickstart proof m80",
+        )
+        proof_m80_version = require_nonempty_string(m80["version"], f"{lane_id} quickstart proof m80 version")
+        proof_m80_release_tag = require_nonempty_string(
+            m80["release_tag"],
+            f"{lane_id} quickstart proof m80 release_tag",
+        )
+        require(
+            proof_m80_version == m80_version,
+            f"{lane_id} m80 version mismatch: expected {m80_version}, got {proof_m80_version}; source={proof_path.name}; repair=rebuild release bundle",
+        )
+        require(
+            proof_m80_release_tag == release_tag,
+            f"{lane_id} m80 release_tag mismatch: expected {release_tag}, got {proof_m80_release_tag}; source={proof_path.name}; repair=rebuild release bundle",
+        )
+        require(
+            m80["version_status"] == "release",
+            f"{lane_id} m80 version_status mismatch: expected release, got {m80['version_status']}; source={proof_path.name}; repair=use release binary",
+        )
+
+        bundle = require_object(proof.get("bundle"), f"{lane_id} quickstart proof bundle")
+        require_exact_fields(
+            bundle,
+            {"metadata_path", "release_tag", "m80_version", "guest_protocol_version", "manifest_schema_version"},
+            f"{lane_id} quickstart proof bundle",
+        )
+        metadata_rel = require_relative_artifact_path(
+            bundle["metadata_path"],
+            f"{lane_id} quickstart proof bundle metadata_path",
+        )
+        require(len(Path(metadata_rel).parts) == 1, f"{lane_id} bundle metadata must be a flat artifact")
+        metadata_path = (proof_path.parent / metadata_rel).resolve()
+        metadata_ref = file_ref(dist_dir, metadata_path, f"{lane_id} bundle metadata")
+        metadata = read_json(metadata_path, f"{lane_id} bundle metadata")
+        bundle_release_tag = require_nonempty_string(
+            bundle["release_tag"],
+            f"{lane_id} quickstart proof bundle release_tag",
+        )
+        bundle_m80_version = require_nonempty_string(
+            bundle["m80_version"],
+            f"{lane_id} quickstart proof bundle m80_version",
+        )
+        require(
+            bundle_release_tag == release_tag,
+            f"{lane_id} bundle release_tag mismatch: expected {release_tag}, got {bundle_release_tag}; source={proof_path.name}; repair=rebuild release bundle",
+        )
+        require(
+            bundle_m80_version == m80_version,
+            f"{lane_id} bundle m80_version mismatch: expected {m80_version}, got {bundle_m80_version}; source={proof_path.name}; repair=rebuild release bundle",
+        )
+        manifest_schema_version = require_positive_int(
+            bundle["manifest_schema_version"],
+            f"{lane_id} quickstart proof bundle manifest_schema_version",
+        )
+        guest_protocol_version = require_positive_int(
+            bundle["guest_protocol_version"],
+            f"{lane_id} quickstart proof bundle guest_protocol_version",
+        )
+        require(
+            metadata.get("release_tag") == bundle_release_tag,
+            f"{lane_id} bundle metadata release_tag mismatch: expected {bundle_release_tag}, got {metadata.get('release_tag')}; source={metadata_ref['name']}; repair=rebuild release bundle",
+        )
+        require(
+            metadata.get("m80_version") == bundle_m80_version,
+            f"{lane_id} bundle metadata m80_version mismatch: expected {bundle_m80_version}, got {metadata.get('m80_version')}; source={metadata_ref['name']}; repair=rebuild release bundle",
+        )
+        require(
+            metadata.get("manifest_schema_version") == manifest_schema_version,
+            f"{lane_id} bundle metadata manifest_schema_version mismatch: expected {manifest_schema_version}, got {metadata.get('manifest_schema_version')}; source={metadata_ref['name']}; repair=rebuild release bundle",
+        )
+        require(
+            metadata.get("guest_protocol_version") == guest_protocol_version,
+            f"{lane_id} bundle metadata guest_protocol_version mismatch: expected {guest_protocol_version}, got {metadata.get('guest_protocol_version')}; source={metadata_ref['name']}; repair=rebuild release bundle",
+        )
+        rows.append(
+            {
+                "lane_id": lane_id,
+                "substrate": PROOF_SUBSTRATES_BY_LANE[lane_id],
+                "requested_tag": requested_tag,
+                "resolved_install_tag": proof_resolved_tag,
+                "m80_version": proof_m80_version,
+                "m80_release_tag": proof_m80_release_tag,
+                "bundle_release_tag": bundle_release_tag,
+                "bundle_m80_version": bundle_m80_version,
+                "manifest_schema_version": manifest_schema_version,
+                "guest_protocol_version": guest_protocol_version,
+                "bundle_metadata": metadata_ref,
+            }
+        )
+    return rows
+
+
+def normalized_release_identity(value: object) -> list[dict[str, Any]]:
+    rows = require_list(value, "release evidence bundle release_identity")
+    result = []
+    for row in rows:
+        require(isinstance(row, dict), "release evidence bundle release_identity row must be an object")
+        require_exact_fields(row, RELEASE_IDENTITY_FIELDS, "release evidence bundle release_identity row")
+        lane_id = require_lane_id(row["lane_id"], "release evidence bundle release_identity lane_id")
+        expected_substrate = PROOF_SUBSTRATES_BY_LANE.get(lane_id)
+        require(expected_substrate is not None, f"release evidence bundle release_identity {lane_id} lane unknown")
+        require(row["substrate"] == expected_substrate, f"release evidence bundle release_identity {lane_id} substrate mismatch")
+        result.append(
+            {
+                "lane_id": lane_id,
+                "substrate": row["substrate"],
+                "requested_tag": require_nonempty_string(
+                    row["requested_tag"],
+                    f"release evidence bundle release_identity {lane_id} requested_tag",
+                ),
+                "resolved_install_tag": require_nonempty_string(
+                    row["resolved_install_tag"],
+                    f"release evidence bundle release_identity {lane_id} resolved_install_tag",
+                ),
+                "m80_version": require_nonempty_string(
+                    row["m80_version"],
+                    f"release evidence bundle release_identity {lane_id} m80_version",
+                ),
+                "m80_release_tag": require_nonempty_string(
+                    row["m80_release_tag"],
+                    f"release evidence bundle release_identity {lane_id} m80_release_tag",
+                ),
+                "bundle_release_tag": require_nonempty_string(
+                    row["bundle_release_tag"],
+                    f"release evidence bundle release_identity {lane_id} bundle_release_tag",
+                ),
+                "bundle_m80_version": require_nonempty_string(
+                    row["bundle_m80_version"],
+                    f"release evidence bundle release_identity {lane_id} bundle_m80_version",
+                ),
+                "manifest_schema_version": require_positive_int(
+                    row["manifest_schema_version"],
+                    f"release evidence bundle release_identity {lane_id} manifest_schema_version",
+                ),
+                "guest_protocol_version": require_positive_int(
+                    row["guest_protocol_version"],
+                    f"release evidence bundle release_identity {lane_id} guest_protocol_version",
+                ),
+                "bundle_metadata": normalized_file_ref(
+                    row["bundle_metadata"],
+                    f"release evidence bundle release_identity {lane_id} bundle_metadata",
+                ),
+            }
+        )
+    lane_ids = [row["lane_id"] for row in result]
+    require(len(lane_ids) == len(set(lane_ids)), "release evidence bundle release_identity duplicate lane_id")
+    return sorted(result, key=lambda row: row["lane_id"])
+
+
 def install_root_classification(proof: dict[str, Any]) -> str:
     substrate = proof.get("proof_kind")
     if substrate == "hostless":
@@ -702,6 +923,11 @@ def require_list(value: object, label: str) -> list[object]:
 
 def require_non_negative_int(value: object, label: str) -> None:
     require(isinstance(value, int) and value >= 0, f"{label} must be a non-negative integer")
+
+
+def require_positive_int(value: object, label: str) -> int:
+    require(isinstance(value, int) and value > 0, f"{label} must be a positive integer")
+    return value
 
 
 def require_positive_int_string(value: object, label: str) -> None:

@@ -2280,7 +2280,7 @@ class ReleaseBundleTest(unittest.TestCase):
             bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
-            self.assertEqual(bundle["schema_version"], 3)
+            self.assertEqual(bundle["schema_version"], 4)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
             self.assertEqual(bundle["release_tag"], "v0.2.11")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
@@ -2340,8 +2340,46 @@ class ReleaseBundleTest(unittest.TestCase):
                     }
                 ],
             )
+            metadata_ref = {
+                "name": METADATA_NAME,
+                "sha256": f"sha256:{sha256(out_dir / METADATA_NAME)}",
+                "size_bytes": (out_dir / METADATA_NAME).stat().st_size,
+            }
+            self.assertEqual(
+                bundle["release_identity"],
+                [
+                    {
+                        "bundle_metadata": metadata_ref,
+                        "bundle_m80_version": "v0.2.11",
+                        "bundle_release_tag": "v0.2.11",
+                        "guest_protocol_version": 1,
+                        "lane_id": "hostless-quickstart",
+                        "m80_release_tag": "v0.2.11",
+                        "m80_version": "v0.2.11",
+                        "manifest_schema_version": 5,
+                        "requested_tag": "v0.2.11",
+                        "resolved_install_tag": "v0.2.11",
+                        "substrate": "hostless",
+                    }
+                ],
+            )
             self.assertNotIn("/tmp/m80-hostless-install-root", json.dumps(bundle))
             self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
+
+    def test_release_evidence_bundle_accepts_latest_resolved_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["release"]["requested"] = "latest"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            run_release_evidence_bundle(out_dir, "--write")
+            bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+
+            self.assertEqual(bundle["release_identity"][0]["requested_tag"], "latest")
+            self.assertEqual(bundle["release_identity"][0]["resolved_install_tag"], "v0.2.11")
 
     def test_release_evidence_bundle_writes_real_kvm_host_binaries_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2506,6 +2544,100 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("redaction.policy leaks absolute host path", result.stderr)
+
+    def test_release_evidence_bundle_rejects_wrong_resolved_install_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["release"]["resolved_tag"] = "v9.9.9"
+            proof["release"]["requested"] = "v9.9.9"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("resolved install tag mismatch: expected v0.2.11, got v9.9.9", result.stderr)
+            self.assertIn("source=m80-quickstart-proof-hostless.json", result.stderr)
+
+    def test_release_evidence_bundle_rejects_mutable_latest_as_resolved_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["release"]["resolved_tag"] = "latest"
+            proof["release"]["requested"] = "latest"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--write",
+                "--resolved-install-tag",
+                "latest",
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("resolved install tag must be concrete, got latest", result.stderr)
+            self.assertIn("repair=resolve latest once before proof", result.stderr)
+
+    def test_release_evidence_bundle_rejects_m80_version_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["m80"]["version"] = "v9.9.9"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80 version mismatch: expected v0.2.11, got v9.9.9", result.stderr)
+            self.assertIn("repair=rebuild release bundle", result.stderr)
+
+    def test_release_evidence_bundle_rejects_bundle_version_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["bundle"]["m80_version"] = "v9.9.9"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle m80_version mismatch: expected v0.2.11, got v9.9.9", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_schema_protocol_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            metadata_path = out_dir / METADATA_NAME
+            metadata = json.loads(metadata_path.read_text())
+            metadata["manifest_schema_version"] = 99
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle metadata manifest_schema_version mismatch: expected 5, got 99", result.stderr)
+            self.assertIn(f"source={METADATA_NAME}", result.stderr)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            metadata_path = out_dir / METADATA_NAME
+            metadata = json.loads(metadata_path.read_text())
+            metadata["guest_protocol_version"] = 99
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle metadata guest_protocol_version mismatch: expected 1, got 99", result.stderr)
+            self.assertIn(f"source={METADATA_NAME}", result.stderr)
 
     def test_release_evidence_bundle_rejects_stale_quickstart_proof_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_release_identity_proof",
+  "bead_id": "m80-o3uh9.13.39.2.2",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures and policy gates validated normalized release-identity collection without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.2 && br dep cycles --json && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 265 tests in 59.747s OK; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.998s OK; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.965s OK; verify-release-tracker-policy ok; br lint ok; br dep cycles count=0; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 265 tests in 59.747s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.998s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.2 && br dep cycles --json && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 46 tests in 2.965s\\n\\nOK\\nrelease tracker policy ok: docs/behaviors/release/release-tracker-policy.json\\nNo template warnings found (1 issues checked)\\ncycles: []\\ncount: 0",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "release evidence bundle schema_version is 4",
+    "release_identity rows are built from quickstart proof release, m80, and bundle fields plus the digest-bound bundle metadata file",
+    "clean pinned install evidence is accepted",
+    "clean latest-resolved install evidence is accepted only after latest resolves to v0.2.11",
+    "wrong resolved install tag fails before evidence is accepted and names expected tag, observed tag, source proof, and repair command",
+    "mutable latest as resolved_install_tag fails before evidence is accepted and names the source proof and repair command",
+    "m80 version mismatch fails before evidence is accepted and names expected version, observed version, source proof, and repair command",
+    "bundle m80_version mismatch fails before evidence is accepted and names expected version, observed version, source proof, and repair command",
+    "stale bundle metadata manifest_schema_version fails before evidence is accepted and names expected version, observed version, source file, and repair command",
+    "stale bundle metadata guest_protocol_version fails before evidence is accepted and names expected version, observed version, source file, and repair command",
+    "behavior docs identify release_identity as a normalized release identity input, not informational log text"
+  ]
+}
