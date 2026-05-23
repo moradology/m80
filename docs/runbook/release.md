@@ -889,7 +889,11 @@ digests, browser download URLs, and timestamps for the bytes GitHub is serving.
 The digest is computed from the re-downloaded file, not from the local dist
 directory. Missing metadata, duplicate asset names, stale bytes, or incomplete
 redownloads fail before any later latest-promotion gate can trust the remote
-state. The behavior contract lives in
+state. The same step runs rerun preflight mode against the upload manifest,
+`m80-release-build.json`, and `m80-release-publish-decision.json`, so an
+existing public release is accepted only when the remote asset names, ids,
+sizes, digests, release tag, source commit, and receipt digests still match the
+current build handoff and publish decision. The behavior contract lives in
 `docs/behaviors/release/remote-asset-inventory.md`.
 
 Before latest promotion, the publish job captures the current public release

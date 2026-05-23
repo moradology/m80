@@ -675,9 +675,13 @@ jobs:
           scripts/release_remote_asset_inventory.py \
             --redownload-dir "$REDOWNLOAD_DIR" \
             --manifest "$UPLOAD_DIR/m80-release-upload-manifest.json" \
+            --build-handoff "$UPLOAD_DIR/m80-release-build.json" \
+            --publish-receipt "$UPLOAD_DIR/m80-release-publish-decision.json" \
             --release-metadata "$REDOWNLOAD_DIR/github-release.json" \
             --release-assets-metadata "$REDOWNLOAD_DIR/github-release-assets.json" \
             --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --require-rerun-preflight \
             --write
           scripts/verify-install-handoff.py \
             "$REDOWNLOAD_DIR" \

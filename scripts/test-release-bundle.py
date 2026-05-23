@@ -2371,6 +2371,212 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("duplicate asset id", result.stderr)
 
+    def test_remote_release_rerun_preflight_accepts_matching_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_remote_release_rerun_preflight_rejects_partial_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            missing = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            (redownload / missing).unlink()
+            metadata = write_remote_release_metadata(out_dir, redownload, omit_name=missing)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("remote release asset metadata set mismatch", result.stderr)
+            self.assertIn(missing, result.stderr)
+            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+
+    def test_remote_release_rerun_preflight_rejects_extra_remote_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            payload = json.loads(metadata.read_text())
+            payload["assets"].append(
+                {
+                    "id": 99999,
+                    "name": "unexpected.txt",
+                    "size": 1,
+                    "browser_download_url": "https://github.com/moradology/m80/releases/download/v0.2.11/unexpected.txt",
+                    "created_at": "2026-05-21T00:00:00Z",
+                    "updated_at": "2026-05-21T00:00:01Z",
+                }
+            )
+            metadata.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("remote release asset metadata set mismatch", result.stderr)
+            self.assertIn("unexpected.txt", result.stderr)
+            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+
+    def test_remote_release_rerun_preflight_rejects_manual_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            stale = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            stale_path = redownload / stale
+            stale_path.write_bytes(b"x" * stale_path.stat().st_size)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"remote release asset {stale} sha256 mismatch", result.stderr)
+            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+
+    def test_remote_release_rerun_preflight_rejects_stale_publish_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            receipt_path = out_dir / PUBLISH_RECEIPT_NAME
+            receipt = json.loads(receipt_path.read_text())
+            receipt["public_assets"][0]["sha256"] = "0" * 64
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(receipt_path),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish decision receipt public_assets mismatch upload manifest", result.stderr)
+            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+
+    def test_remote_release_rerun_preflight_rejects_duplicate_remote_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload, duplicate_first=True)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate asset name", result.stderr)
+            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tarball = package_fixture(Path(tmp))

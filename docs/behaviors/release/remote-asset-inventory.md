@@ -23,6 +23,19 @@ or has a stale digest. That catches API pagination/truncation gaps and local
 redownload failures before later rerun or latest-promotion gates can trust the
 release state.
 
+Rerun preflight mode adds the local release decision inputs to that comparison:
+the upload manifest, `m80-release-build.json`, and
+`m80-release-publish-decision.json`. The remote inventory asset set must match
+the upload manifest exactly, and every remote row's name, kind, size, and digest
+must match both the upload manifest and publish receipt. The build handoff must
+name the same release tag and source commit, its own downloaded bytes must match
+the remote inventory row, and its `bundle_metadata_sha256` must match the
+remote bundle metadata row. A stale receipt, partial upload, duplicate remote
+name/id, or manual asset replacement fails before latest-promotion authority can
+move. The failure prints the safe recovery path: delete the bad release or
+publish a new tag; the protected publish job does not clobber or overwrite
+mismatched public assets.
+
 The inventory is uploaded as a workflow artifact named
 `m80-release-remote-assets-<run_id>` and is also included in failed publish
 diagnostics when it exists.

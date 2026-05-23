@@ -15,6 +15,8 @@ SCHEMA_VERSION = 1
 KIND = "m80_release_remote_asset_inventory"
 INVENTORY_NAME = "m80-release-remote-assets.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
+BUILD_HANDOFF_NAME = "m80-release-build.json"
+PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 
 TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -35,8 +37,51 @@ ASSET_FIELDS = {
     "updated_at",
 }
 PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subject"}
+BUILD_HANDOFF_FIELDS = {
+    "schema_version",
+    "release_tag",
+    "source_commit",
+    "rust_toolchain",
+    "target",
+    "target_triples",
+    "m80_package_version",
+    "image_kind",
+    "cargo_lock_sha256",
+    "builder_identity",
+    "builder_os_image",
+    "apt_packages",
+    "container_digest",
+    "bundle_metadata_name",
+    "bundle_metadata_sha256",
+}
+PUBLISH_RECEIPT_FIELDS = {
+    "schema_version",
+    "kind",
+    "decision",
+    "release_tag",
+    "commit_sha",
+    "workflow_run_id",
+    "workflow_run_attempt",
+    "actor",
+    "repository",
+    "github_ref",
+    "environment_approval_id",
+    "generated_at",
+    "artifact_manifest",
+    "artifact_manifest_digest",
+    "proof_ledger",
+    "proof_ledger_digest",
+    "token_authority",
+    "token_authority_digest",
+    "quickstart_proofs",
+    "public_assets",
+    "failure_reason",
+}
+FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 DIST_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 
 
@@ -51,6 +96,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="optional paginated GitHub release assets JSON from releases/<id>/assets",
     )
+    parser.add_argument("--build-handoff", type=Path, help=f"default: <redownload-dir>/{BUILD_HANDOFF_NAME}")
+    parser.add_argument("--publish-receipt", type=Path, help=f"default: <redownload-dir>/{PUBLISH_RECEIPT_NAME}")
+    parser.add_argument("--commit-sha", help="release commit expected by the build handoff and publish receipt")
+    parser.add_argument(
+        "--require-rerun-preflight",
+        action="store_true",
+        help="compare remote inventory against local manifest, build handoff, and publish receipt",
+    )
     parser.add_argument("--inventory", type=Path, help=f"default: <redownload-dir>/{INVENTORY_NAME}")
     parser.add_argument("--generated-at", default=None)
     parser.add_argument("--write", action="store_true")
@@ -63,30 +116,54 @@ def main() -> int:
     manifest_path = (args.manifest or redownload_dir / UPLOAD_MANIFEST_NAME).resolve()
     metadata_path = args.release_metadata.resolve()
     assets_metadata_path = args.release_assets_metadata.resolve() if args.release_assets_metadata else None
+    build_handoff_path = (args.build_handoff or redownload_dir / BUILD_HANDOFF_NAME).resolve()
+    publish_receipt_path = (args.publish_receipt or redownload_dir / PUBLISH_RECEIPT_NAME).resolve()
     inventory_path = (args.inventory or redownload_dir / INVENTORY_NAME).resolve()
 
-    if args.write:
-        inventory = build_inventory(
+    try:
+        if args.write:
+            inventory = build_inventory(
+                redownload_dir=redownload_dir,
+                release_tag=args.release_tag,
+                manifest_path=manifest_path,
+                metadata_path=metadata_path,
+                assets_metadata_path=assets_metadata_path,
+                generated_at=args.generated_at,
+            )
+            write_json(inventory_path, inventory)
+
+        inventory = read_json(inventory_path, "remote release asset inventory")
+        verify_inventory(
+            inventory,
             redownload_dir=redownload_dir,
             release_tag=args.release_tag,
             manifest_path=manifest_path,
             metadata_path=metadata_path,
             assets_metadata_path=assets_metadata_path,
-            generated_at=args.generated_at,
         )
-        write_json(inventory_path, inventory)
-
-    inventory = read_json(inventory_path, "remote release asset inventory")
-    verify_inventory(
-        inventory,
-        redownload_dir=redownload_dir,
-        release_tag=args.release_tag,
-        manifest_path=manifest_path,
-        metadata_path=metadata_path,
-        assets_metadata_path=assets_metadata_path,
-    )
+        if args.require_rerun_preflight:
+            verify_rerun_preflight(
+                inventory,
+                redownload_dir=redownload_dir,
+                release_tag=args.release_tag,
+                commit_sha=args.commit_sha,
+                manifest_path=manifest_path,
+                build_handoff_path=build_handoff_path,
+                publish_receipt_path=publish_receipt_path,
+            )
+    except SystemExit as exc:
+        if not args.require_rerun_preflight or isinstance(exc.code, int):
+            raise
+        raise SystemExit(f"{exc}\n{rerun_preflight_recovery(args.release_tag)}") from exc
     print(f"remote release asset inventory ok: {inventory_path}")
     return 0
+
+
+def rerun_preflight_recovery(release_tag: str) -> str:
+    return (
+        f"repair: delete the bad {release_tag} release or publish a new tag; "
+        "the protected publish job will not clobber, overwrite, or trust mismatched public assets"
+    )
 
 
 def build_inventory(
@@ -151,6 +228,55 @@ def verify_inventory(
     require(observed_assets == expected_assets, "remote release asset inventory assets mismatch")
 
 
+def verify_rerun_preflight(
+    inventory: dict,
+    *,
+    redownload_dir: Path,
+    release_tag: str,
+    commit_sha: str | None,
+    manifest_path: Path,
+    build_handoff_path: Path,
+    publish_receipt_path: Path,
+) -> None:
+    require(
+        isinstance(commit_sha, str) and COMMIT_RE.fullmatch(commit_sha) is not None,
+        "rerun preflight commit-sha must be a 40-character lowercase hex commit",
+    )
+    manifest = read_json(manifest_path, "release upload manifest")
+    build_handoff = read_json(build_handoff_path, "release build handoff")
+    publish_receipt = read_json(publish_receipt_path, "release publish decision receipt")
+
+    manifest_assets = normalized_manifest_assets(manifest, release_tag)
+    inventory_assets = normalized_inventory_assets(inventory["assets"])
+    manifest_by_name = {asset["name"]: asset for asset in manifest_assets}
+    inventory_by_name = {asset["name"]: asset for asset in inventory_assets}
+    require_name_set(set(inventory_by_name), set(manifest_by_name), "rerun preflight remote inventory asset set")
+
+    for name, manifest_asset in sorted(manifest_by_name.items()):
+        inventory_asset = inventory_by_name[name]
+        for field in ("kind", "sha256", "size_bytes"):
+            require(
+                inventory_asset[field] == manifest_asset[field],
+                f"rerun preflight asset {name} {field} mismatch between remote inventory and upload manifest",
+            )
+
+    verify_build_handoff(
+        build_handoff,
+        redownload_dir=redownload_dir,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        inventory_by_name=inventory_by_name,
+    )
+    verify_publish_receipt(
+        publish_receipt,
+        manifest_path=manifest_path,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        manifest_assets=manifest_assets,
+        inventory_by_name=inventory_by_name,
+    )
+
+
 def normalized_manifest_assets(manifest: dict, release_tag: str) -> list[dict]:
     require(manifest.get("release_tag") == release_tag, "release upload manifest release_tag mismatch")
     assets = manifest.get("public_assets")
@@ -175,6 +301,106 @@ def normalized_manifest_assets(manifest: dict, release_tag: str) -> list[dict]:
             }
         )
     return result
+
+
+def verify_build_handoff(
+    build_handoff: dict,
+    *,
+    redownload_dir: Path,
+    release_tag: str,
+    commit_sha: str,
+    inventory_by_name: dict[str, dict],
+) -> None:
+    require_exact_fields(build_handoff, BUILD_HANDOFF_FIELDS, "release build handoff")
+    require(build_handoff["schema_version"] == 1, "release build handoff schema_version mismatch")
+    require(build_handoff["release_tag"] == release_tag, "release build handoff release_tag mismatch")
+    require(build_handoff["source_commit"] == commit_sha, "release build handoff source_commit mismatch")
+    metadata_name = require_dist_name(build_handoff["bundle_metadata_name"], "release build handoff bundle_metadata_name")
+    require_sha256(build_handoff["bundle_metadata_sha256"], "release build handoff bundle_metadata_sha256")
+    require(
+        metadata_name in inventory_by_name,
+        f"rerun preflight build handoff metadata asset missing from remote inventory: {metadata_name}",
+    )
+    require(
+        inventory_by_name[metadata_name]["sha256"] == build_handoff["bundle_metadata_sha256"],
+        f"rerun preflight build handoff metadata digest mismatch for {metadata_name}",
+    )
+    require_named_file_matches_inventory(
+        BUILD_HANDOFF_NAME,
+        redownload_dir=redownload_dir,
+        inventory_by_name=inventory_by_name,
+        label="release build handoff",
+    )
+
+
+def verify_publish_receipt(
+    receipt: dict,
+    *,
+    manifest_path: Path,
+    release_tag: str,
+    commit_sha: str,
+    manifest_assets: list[dict],
+    inventory_by_name: dict[str, dict],
+) -> None:
+    require_exact_fields(receipt, PUBLISH_RECEIPT_FIELDS, "release publish decision receipt")
+    require(receipt["schema_version"] == 3, "release publish decision receipt schema_version mismatch")
+    require(receipt["kind"] == "m80_release_publish_decision", "release publish decision receipt kind mismatch")
+    require(receipt["decision"] == "approved", "release publish decision receipt decision must be approved")
+    require(receipt["failure_reason"] is None, "approved release publish decision receipt must not have failure_reason")
+    require(receipt["release_tag"] == release_tag, "release publish decision receipt release_tag mismatch")
+    require(receipt["commit_sha"] == commit_sha, "release publish decision receipt commit_sha mismatch")
+    artifact_manifest = verify_file_ref(
+        receipt["artifact_manifest"],
+        path=manifest_path,
+        expected_name=UPLOAD_MANIFEST_NAME,
+        label="release publish decision receipt artifact_manifest",
+    )
+    require(
+        receipt["artifact_manifest_digest"] == artifact_manifest["sha256"],
+        "release publish decision receipt artifact_manifest_digest mismatch",
+    )
+    receipt_assets = normalized_manifest_assets(
+        {"release_tag": release_tag, "public_assets": receipt["public_assets"]},
+        release_tag,
+    )
+    require(
+        sorted(receipt_assets, key=lambda row: row["name"]) == sorted(manifest_assets, key=lambda row: row["name"]),
+        "release publish decision receipt public_assets mismatch upload manifest",
+    )
+    for asset in receipt_assets:
+        remote = inventory_by_name[asset["name"]]
+        for field in ("kind", "sha256", "size_bytes"):
+            require(
+                remote[field] == asset[field],
+                f"rerun preflight asset {asset['name']} {field} mismatch between remote inventory and publish receipt",
+            )
+
+
+def verify_file_ref(ref: object, *, path: Path, expected_name: str, label: str) -> dict:
+    require(isinstance(ref, dict), f"{label} must be an object")
+    require_exact_fields(ref, FILE_REF_FIELDS, label)
+    require(ref["name"] == expected_name, f"{label} name mismatch")
+    require_sha256_ref(ref["sha256"], f"{label} sha256")
+    require_non_negative_int(ref["size_bytes"], f"{label} size_bytes")
+    require(path.is_file(), f"{label} missing: {path}")
+    expected = file_ref(path)
+    require(ref == expected, f"{label} digest mismatch")
+    return expected
+
+
+def require_named_file_matches_inventory(
+    name: str,
+    *,
+    redownload_dir: Path,
+    inventory_by_name: dict[str, dict],
+    label: str,
+) -> None:
+    require(name in inventory_by_name, f"rerun preflight {label} asset missing from remote inventory: {name}")
+    path = redownload_dir / name
+    require(path.is_file(), f"rerun preflight {label} downloaded bytes missing: {name}")
+    asset = inventory_by_name[name]
+    require(path.stat().st_size == asset["size_bytes"], f"rerun preflight {label} size mismatch: {name}")
+    require(sha256_file(path) == asset["sha256"], f"rerun preflight {label} sha256 mismatch: {name}")
 
 
 def release_assets_payload(metadata: dict, assets_metadata_path: Path | None) -> list[object]:
@@ -346,6 +572,13 @@ def require_sha256(value: object, label: str) -> None:
     require(isinstance(value, str) and SHA256_RE.fullmatch(value) is not None, f"{label} must be a lowercase sha256")
 
 
+def require_sha256_ref(value: object, label: str) -> None:
+    require(
+        isinstance(value, str) and SHA256_REF_RE.fullmatch(value) is not None,
+        f"{label} must be sha256:<lowercase digest>",
+    )
+
+
 def require_positive_int(value: object, label: str) -> int:
     require(isinstance(value, int) and value > 0, f"{label} must be a positive integer")
     return value
@@ -392,6 +625,14 @@ def read_json_value(path: Path, label: str) -> object:
 
 def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def file_ref(path: Path) -> dict:
+    return {
+        "name": path.name,
+        "sha256": f"sha256:{sha256_file(path)}",
+        "size_bytes": path.stat().st_size,
+    }
 
 
 def sha256_file(path: Path) -> str:
