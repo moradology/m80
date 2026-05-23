@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_proof_asset_emitter_proof",
+  "bead_id": "m80-o3uh9.15.7",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release workflow and bundle tests validated release proof asset emission, upload, redownload, and verification without requiring KVM."
+  },
+  "command": "python3 scripts/test-release-bundle.py && python3 scripts/test-workflow-policy.py && python3 scripts/lint-github-workflows.py && python3 -m py_compile scripts/package-release-bundle.py scripts/verify-release-integrity.py scripts/write-release-attestation-metadata.py && cargo test -p m80-cli --test release --no-fail-fast && cargo test -p m80-cli --test release_bundle_builder --no-fail-fast && cargo fmt --all -- --check && git diff --check && br dep cycles --json",
+  "exit_status": 0,
+  "stdout": "release workflow emits m80-release-integrity.json, m80-release-integrity.attestation.jsonl, and m80-release-attestation.json; publish verifies proof assets before upload and after redownload; workflow policy and release bundle tests passed",
+  "stderr": "",
+  "observables": [
+    "tag release workflow emits m80-release-integrity.json into the release dist artifact",
+    "tag release workflow emits m80-release-integrity.attestation.jsonl into the release dist artifact",
+    "tag release workflow emits m80-release-attestation.json into the release dist artifact",
+    "build job proof-asset permissions are limited to attestation/id-token without contents write",
+    "publish job verifies release integrity material before gh release upload",
+    "redownload validation fetches proof assets and reruns the verifier against published assets",
+    "workflow and bundle tests fail if proof files disappear from upload, download, or verifier steps"
+  ],
+  "artifact_paths": [
+    "m80-release-integrity.json",
+    "m80-release-integrity.attestation.jsonl",
+    "m80-release-attestation.json"
+  ],
+  "supporting_docs": [
+    "docs/behaviors/release/release-integrity-material.md",
+    "docs/behaviors/release/release-integrity-contract.json",
+    "docs/runbook/release.md"
+  ],
+  "supporting_tests": [
+    "scripts/test-release-bundle.py",
+    "scripts/test-workflow-policy.py",
+    "scripts/lint-github-workflows.py",
+    "crates/m80-cli/tests/release.rs",
+    "crates/m80-cli/tests/release_bundle_builder.rs"
+  ]
+}
