@@ -5,7 +5,7 @@
 //! Behavior capture: bead m80-lt15.1 (CLI command contract).
 
 use clap::Parser;
-use m80_cli::args::UpdateArgs;
+use m80_cli::args::{InstallSmokeGateArg, UpdateArgs};
 use m80_cli::{
     Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, InstallArgs,
     OverlayCloneModeArg, QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
@@ -331,6 +331,7 @@ fn parse_install_release_tag_source() {
             dry_run,
             repair_stale_install_lock,
             adopt_existing_config,
+            smoke_gate,
         }) => {
             assert_eq!(release_tag.as_deref(), Some("v0.1.0"));
             assert!(bundle_url.is_none());
@@ -340,6 +341,7 @@ fn parse_install_release_tag_source() {
             assert!(!dry_run);
             assert!(!repair_stale_install_lock);
             assert!(!adopt_existing_config);
+            assert_eq!(smoke_gate, InstallSmokeGateArg::PreflightOnly);
         }
         _ => panic!("expected Install"),
     }
@@ -439,6 +441,25 @@ fn parse_install_repair_stale_install_lock_flag() {
                 Some("file:///tmp/m80-linux-x86_64.tar.gz")
             );
             assert!(args.repair_stale_install_lock);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_run_smoke_gate() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "install",
+        "--bundle-url",
+        "file:///tmp/m80-linux-x86_64.tar.gz",
+        "--smoke-gate",
+        "run-smoke",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert_eq!(args.smoke_gate, InstallSmokeGateArg::RunSmoke);
         }
         _ => panic!("expected Install"),
     }

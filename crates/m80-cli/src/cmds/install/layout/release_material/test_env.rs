@@ -3,6 +3,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::args::InstallSmokeGateArg;
+
 use super::super::super::{InstallPlan, SourceKind, SourcePlan};
 
 pub(super) fn valid_material() -> crate::release_asset_index::DirectBundleIndexMaterial {
@@ -70,6 +72,7 @@ pub(super) fn official_release_plan_for_tag(install_root: &Path, release_tag: &s
                 .to_string(),
         ),
         profile_written: false,
+        smoke_gate: InstallSmokeGateArg::PreflightOnly,
         next_command: "m80 run -- echo hello".to_owned(),
         binary_version: release_tag.to_owned(),
         binary_release_tag: Some(release_tag.to_owned()),

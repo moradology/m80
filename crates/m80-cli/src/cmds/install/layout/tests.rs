@@ -21,6 +21,24 @@ fn install_root_override_uses_root_local_selector_paths() {
 }
 
 #[test]
+fn run_smoke_command_uses_installed_binary_and_public_echo_probe() {
+    let final_dir = Path::new("/opt/m80/versions/v1.2.3");
+
+    let command = process_smoke_command(final_dir);
+
+    assert_eq!(
+        command,
+        [
+            "/opt/m80/versions/v1.2.3/bin/m80",
+            "run",
+            "--",
+            "echo",
+            "hello"
+        ]
+    );
+}
+
+#[test]
 fn local_file_url_requires_absolute_path() {
     let tmp = tempfile::tempdir().unwrap();
     let err = stage_bundle_source("file://relative.tar.gz", tmp.path()).unwrap_err();

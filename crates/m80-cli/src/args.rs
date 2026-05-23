@@ -375,6 +375,16 @@ pub enum ImageKindArg {
     Ext4,
 }
 
+/// Install-time smoke gate selected by `m80 install --smoke-gate`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallSmokeGateArg {
+    /// Verify host prerequisites only; this is hostless-fixture compatible.
+    PreflightOnly,
+    /// Require real KVM and run `m80 run -- echo hello` before activation.
+    RunSmoke,
+}
+
 impl From<ImageKindArg> for m80_image_store::ImageKind {
     fn from(value: ImageKindArg) -> Self {
         match value {
@@ -550,6 +560,10 @@ pub struct InstallArgs {
     /// Replace an existing m80 config/default profile during install.
     #[arg(long = "adopt-existing-config")]
     pub adopt_existing_config: bool,
+
+    /// Final install gate to run before activating the installed version.
+    #[arg(long = "smoke-gate", value_enum, default_value = "preflight-only")]
+    pub smoke_gate: InstallSmokeGateArg,
 }
 
 /// Arguments for `m80 install-status`.

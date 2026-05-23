@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
 
-use crate::args::InstallArgs;
+use crate::args::{InstallArgs, InstallSmokeGateArg};
 use crate::release::{VersionIdentity, VersionStatus};
 use crate::release_asset_index;
 use crate::release_policy::{
@@ -176,6 +176,7 @@ fn install_plan_from_source(
         default_profile,
         host_binaries_manifest,
         profile_written: false,
+        smoke_gate: args.smoke_gate,
         next_command: INSTALL_NEXT_COMMAND.to_owned(),
         binary_version: identity.binary_version.clone(),
         binary_release_tag: identity.release_tag.clone(),
@@ -551,6 +552,7 @@ fn render_install_plan(plan: &InstallPlan, json_mode: bool) {
                 .unwrap_or("<resolved after bundle verification>")
         );
         println!("profile_written={}", plan.profile_written);
+        println!("smoke_gate={}", plan.smoke_gate.as_str());
         println!("binary_version={}", plan.binary_version);
         println!("version_status={}", plan.version_status);
         println!("dry_run=true");
@@ -594,6 +596,7 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
         format!("active_pointer={}", summary.active_pointer),
         format!("active_pointer_flipped={}", summary.active_pointer_flipped),
         format!("profile_written={}", summary.profile_written),
+        format!("smoke_gate={}", summary.smoke_gate),
         format!(
             "host_prerequisite_status={}",
             summary.host_prerequisite_status
@@ -614,6 +617,9 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
         lines.push(format!(
             "previous_active_release_tag={previous_active_release_tag}"
         ));
+    }
+    if let Some(command) = &summary.run_smoke_command {
+        lines.push(format!("run_smoke_command={}", command.join(" ")));
     }
     if let Some(reinstall) = &summary.reinstall {
         lines.push(format!("reinstall_status={}", reinstall.status));
@@ -938,10 +944,20 @@ struct InstallPlan {
     default_profile: String,
     host_binaries_manifest: Option<String>,
     profile_written: bool,
+    smoke_gate: InstallSmokeGateArg,
     next_command: String,
     binary_version: String,
     binary_release_tag: Option<String>,
     version_status: String,
+}
+
+impl InstallSmokeGateArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PreflightOnly => "preflight-only",
+            Self::RunSmoke => "run-smoke",
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

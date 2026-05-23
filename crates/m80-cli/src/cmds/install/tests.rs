@@ -24,6 +24,7 @@ fn args_with_release_tag(tag: &str) -> InstallArgs {
         dry_run: true,
         repair_stale_install_lock: false,
         adopt_existing_config: false,
+        smoke_gate: InstallSmokeGateArg::PreflightOnly,
     }
 }
 
@@ -37,6 +38,7 @@ fn args_with_bundle_url(url: &str) -> InstallArgs {
         dry_run: true,
         repair_stale_install_lock: false,
         adopt_existing_config: false,
+        smoke_gate: InstallSmokeGateArg::PreflightOnly,
     }
 }
 
@@ -788,6 +790,7 @@ fn install_repair_context_uses_explicit_release_tag_before_bundle_url() {
         dry_run: false,
         repair_stale_install_lock: false,
         adopt_existing_config: false,
+        smoke_gate: InstallSmokeGateArg::PreflightOnly,
     };
 
     assert_eq!(install_release_tag_hint(&args), Some("v2"));

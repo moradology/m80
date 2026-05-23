@@ -78,13 +78,17 @@ impl HostPrereqFixture {
 
     fn apply(&self, cmd: &mut assert_cmd::Command) {
         clear_install_env(cmd);
+        self.apply_paths(cmd);
+        cmd.env("M80_INSTALL_HOSTLESS_FIXTURE", "1");
+    }
+
+    fn apply_paths(&self, cmd: &mut assert_cmd::Command) {
         cmd.env("M80_FIRECRACKER_BIN", &self.firecracker_bin);
         cmd.env(
             "M80_FIRECRACKER_SECCOMP_FILTER",
             &self.firecracker_seccomp_filter,
         );
         cmd.env("M80_JAILER_BIN", &self.jailer_bin);
-        cmd.env("M80_INSTALL_HOSTLESS_FIXTURE", "1");
     }
 }
 
@@ -325,9 +329,118 @@ fn install_json_success_uses_short_machine_summary_fields() {
         host_binaries_manifest.display().to_string()
     );
     assert_eq!(data["host_prerequisite_status"], "passed:hostless_fixture");
+    assert_eq!(data["smoke_gate"], "preflight-only");
     assert_eq!(data["next_command"], "m80 run -- echo hello");
     assert_eq!(data["active_pointer_flipped"], true);
     assert_eq!(data["profile_written"], true);
+}
+
+#[test]
+fn install_explicit_preflight_only_gate_accepts_hostless_fixture() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install_with_extra_args(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &["--smoke-gate", "preflight-only"],
+        &[],
+        &[],
+    );
+
+    assert!(
+        output.status.success(),
+        "install failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("smoke_gate=preflight-only"), "{stdout}");
+    assert!(
+        stdout.contains("preflight_gate=hostless_fixture"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("run_smoke_command="),
+        "preflight-only must not pretend to run the process smoke: {stdout}"
+    );
+}
+
+#[test]
+fn install_run_smoke_refuses_hostless_fixture_before_activation() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install_with_extra_args(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &["--smoke-gate", "run-smoke"],
+        &[],
+        &[],
+    );
+
+    assert!(
+        !output.status.success(),
+        "run-smoke with hostless fixture unexpectedly passed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("selected_gate=run-smoke"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("resolved_tag={}", bundle.release_tag)),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("preflight_output=hostless_fixture_refused"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("requires live KVM"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("install_root={}", install_root.display())),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--smoke-gate preflight-only"), "{stderr}");
+    assert!(
+        !install_root.join("active").exists(),
+        "failed run-smoke gate must not activate the attempted version"
+    );
+}
+
+#[test]
+fn install_preflight_only_failure_leaves_version_inactive() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install_with_extra_args(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &["--smoke-gate", "preflight-only"],
+        &[("M80_JAIL_UID", "not-a-uid")],
+        &[],
+    );
+
+    assert!(
+        !output.status.success(),
+        "preflight failure unexpectedly passed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("M80_JAIL_UID"), "{stderr}");
+    assert!(
+        !install_root.join("active").exists(),
+        "failed preflight-only gate must not activate the attempted version"
+    );
 }
 
 #[test]

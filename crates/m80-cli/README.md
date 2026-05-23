@@ -100,8 +100,12 @@ binaries, pull OCI images, or install packages implicitly.
   `code: "downgrade_refused"`, active/requested tags, observed ordering, and a
   pinned reinstall command for the current active release.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
-  `<install-root>/versions/<release_tag>`, writes profile state, and switches
-  `<install-root>/active` last. Mutating installs take
+  `<install-root>/versions/<release_tag>`, writes profile state, runs the
+  selected final gate, and switches `<install-root>/active` last.
+  `--smoke-gate preflight-only` is the default and verifies host prerequisites
+  without claiming VM-launch proof. `--smoke-gate run-smoke` requires live KVM,
+  refuses hostless fixtures, and runs `m80 run -- echo hello` before
+  activation. Mutating installs take
   `<install-root>/.install-state.lock` before staging; stale lock cleanup is
   explicit with `--repair-stale-install-lock`.
 - `m80 install-status [--install-root <path>] [--profile <name>]` - prints the
@@ -536,7 +540,9 @@ Stable surfaces:
   remote checksum mismatch, 404, truncated download cleanup, unsupported
   redirect cleanup, missing required bundle file, duplicate path, permission
   failure, dry-run no-write behavior, manifest/build-receipt relocation, and
-  install provenance.
+  install provenance. Final-gate coverage proves explicit preflight-only
+  success, preflight failure before activation, run-smoke refusal of hostless
+  fixture substitution, and run-smoke command wiring.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

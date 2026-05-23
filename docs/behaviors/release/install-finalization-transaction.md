@@ -44,11 +44,22 @@ instead of silently replacing the cache. Changed installed bytes, stale profile
 state, stale config, stale host manifest, or stale active pointer fail closed
 with the same exact `repair_command` and do not overwrite by default.
 
-CI fixtures can opt into a debug-only hostless preflight fixture mode for local
-`file://` and local HTTP fixture bundles. GitHub release bundle URLs use live
-host preflight. Local bundles without the fixture switch also use live host
-preflight before activation. The host-binaries manifest is generated from the
-final installed paths: `bin/m80`, `bin/m80-jailer-harden`,
+The final install gate is explicit. `--smoke-gate preflight-only` is the
+default and runs host prerequisite verification only. CI fixtures can opt into
+a debug-only hostless preflight fixture mode for local `file://` and local HTTP
+fixture bundles, but that result is reported as `smoke_gate=preflight-only` and
+`preflight_gate=hostless_fixture`; it is not a VM launch proof.
+
+`--smoke-gate run-smoke` requires live preflight and refuses the hostless
+fixture. After bundle verification, host-binaries manifest generation, and
+default-profile writing, it runs the installed binary as
+`m80 run -- echo hello` before active-pointer activation. A run-smoke failure
+reports `selected_gate=run-smoke`, `resolved_tag`, `preflight_output`, the
+install root, active profile, config path, profile directory, process
+stdout/stderr, and the remediation command `m80 preflight`. GitHub release
+bundle URLs use live host preflight. Local bundles without the fixture switch
+also use live host preflight before activation. The host-binaries manifest is
+generated from the final installed paths: `bin/m80`, `bin/m80-jailer-harden`,
 `bin/m80-net-helper`, the configured Firecracker binary, the configured jailer
 binary, and the configured Firecracker seccomp filter.
 
@@ -139,4 +150,8 @@ not publish a version or switch active state until all finalization gates pass.
 - `same_version_reinstall_refuses_when_active_pointer_is_missing`
 - `same_version_reinstall_change_error_names_explicit_repair_version_dir`
 - `upgrade_install_replaces_active_after_new_release_is_fully_committed`
+- `install_explicit_preflight_only_gate_accepts_hostless_fixture`
+- `install_preflight_only_failure_leaves_version_inactive`
+- `install_run_smoke_refuses_hostless_fixture_before_activation`
+- `run_smoke_command_uses_installed_binary_and_public_echo_probe`
 - `install_finalization_transaction_doc_names_state_machine_and_tests`
