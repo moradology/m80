@@ -1403,6 +1403,22 @@ jobs:
           name: m80-repository-protection-audit-${{{{ github.run_id }}}}
           path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}/m80-repository-protection-audit.json
           if-no-files-found: error
+      - name: Approve latest promotion
+        run: |
+          set -euo pipefail
+          scripts/release_latest_promotion.py \\
+            --release-tag "$GITHUB_REF_NAME" \\
+            --release-list "$REDOWNLOAD_DIR/github-releases-before-latest.json" \\
+            --publish-decision "$UPLOAD_DIR/m80-release-publish-decision.json" \\
+            --proof-ledger "$UPLOAD_DIR/m80-release-proof-ledger.jsonl" \\
+            --out "$UPLOAD_DIR/m80-latest-promotion-decision.json" \\
+            --write
+      - name: Upload latest promotion decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-latest-promotion-decision-${{{{ github.run_id }}}}
+          path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}/m80-latest-promotion-decision.json
+          if-no-files-found: error
       - name: Cleanup release publish scratch dirs
         if: always()
         run: |

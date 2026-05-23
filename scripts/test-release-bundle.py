@@ -1432,6 +1432,15 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn('"$PREPUBLISH_DIR/m80-linux-x86_64.tar.gz"', workflow)
         self.assertIn("Publish validated draft without latest promotion", workflow)
         self.assertIn("Mark validated release as latest", workflow)
+        self.assertIn("scripts/release_latest_promotion.py", workflow)
+        self.assertIn("--release-list \"$REDOWNLOAD_DIR/github-releases-before-latest.json\"", workflow)
+        self.assertIn("--publish-decision \"$UPLOAD_DIR/m80-release-publish-decision.json\"", workflow)
+        self.assertIn("--proof-ledger \"$UPLOAD_DIR/m80-release-proof-ledger.jsonl\"", workflow)
+        self.assertIn("--out \"$UPLOAD_DIR/m80-latest-promotion-decision.json\"", workflow)
+        self.assertLess(
+            workflow.index("scripts/release_latest_promotion.py"),
+            workflow.index('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag'),
+        )
         self.assertIn("python3 scripts/stable_release_channel.py", workflow)
         self.assertIn("Write no-auth public-access release readiness receipt", workflow)
         self.assertIn("scripts/release_public_access_receipt.py", workflow)
@@ -1507,6 +1516,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("${{ steps.publish-scratch.outputs.redownload_dir }}/m80-release-remote-assets.json", workflow)
         self.assertIn("m80-release-public-access-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.redownload_dir }}/release-readiness-public-access.json", workflow)
+        self.assertIn("m80-latest-promotion-decision-${{ github.run_id }}", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-latest-promotion-decision.json", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.prepublish_dir }}/**", workflow)
         for name in [
             BUNDLE_NAME,

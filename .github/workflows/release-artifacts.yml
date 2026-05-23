@@ -735,6 +735,23 @@ jobs:
             echo "no latest promotion needed for action: $publication_action"
             exit 0
           fi
+          gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --limit 100 \
+            --json tagName,isDraft,isPrerelease \
+            > "$REDOWNLOAD_DIR/github-releases-before-latest.json"
+          rollback_args=()
+          if [[ -f docs/operations/release-latest-rollback-receipt.json ]]; then
+            rollback_args+=(--rollback-receipt docs/operations/release-latest-rollback-receipt.json)
+          fi
+          scripts/release_latest_promotion.py \
+            --release-tag "$GITHUB_REF_NAME" \
+            --release-list "$REDOWNLOAD_DIR/github-releases-before-latest.json" \
+            --publish-decision "$UPLOAD_DIR/m80-release-publish-decision.json" \
+            --proof-ledger "$UPLOAD_DIR/m80-release-proof-ledger.jsonl" \
+            --out "$UPLOAD_DIR/m80-latest-promotion-decision.json" \
+            --write \
+            "${rollback_args[@]}"
           gh release edit "$GITHUB_REF_NAME" --latest --verify-tag
 
       - name: Write no-auth public-access release readiness receipt
@@ -794,6 +811,13 @@ jobs:
         with:
           name: m80-release-public-access-${{ github.run_id }}
           path: ${{ steps.publish-scratch.outputs.redownload_dir }}/release-readiness-public-access.json
+          if-no-files-found: error
+
+      - name: Upload latest promotion decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-latest-promotion-decision-${{ github.run_id }}
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-latest-promotion-decision.json
           if-no-files-found: error
 
       - name: Upload failed publish diagnostics

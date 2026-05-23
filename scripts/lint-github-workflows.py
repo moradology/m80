@@ -426,6 +426,12 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         "--environment m80-release-publish": "repository protection audit must check the protected publish environment",
         "--out \"$UPLOAD_DIR/m80-repository-protection-audit.json\"": "repository protection audit must preserve a publish evidence artifact",
         "name: m80-repository-protection-audit-${{ github.run_id }}": "publish job must upload the repository protection audit artifact",
+        "scripts/release_latest_promotion.py": "publish job must approve latest promotion before moving latest",
+        "--release-list \"$REDOWNLOAD_DIR/github-releases-before-latest.json\"": "latest promotion decision must use a fresh public release list",
+        "--publish-decision \"$UPLOAD_DIR/m80-release-publish-decision.json\"": "latest promotion decision must bind the publish decision receipt",
+        "--proof-ledger \"$UPLOAD_DIR/m80-release-proof-ledger.jsonl\"": "latest promotion decision must bind the proof ledger",
+        "--out \"$UPLOAD_DIR/m80-latest-promotion-decision.json\"": "latest promotion decision must preserve an evidence artifact",
+        "name: m80-latest-promotion-decision-${{ github.run_id }}": "publish job must upload the latest promotion decision artifact",
     }
     for token, message in required_publish_tokens.items():
         if token not in publish_text:

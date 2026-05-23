@@ -866,6 +866,23 @@ redownloads fail before any later latest-promotion gate can trust the remote
 state. The behavior contract lives in
 `docs/behaviors/release/remote-asset-inventory.md`.
 
+Before latest promotion, the publish job captures the current public release
+list and writes `m80-latest-promotion-decision.json` with
+`scripts/release_latest_promotion.py`. The normal rule is monotonic: the target
+tag must be greater than or equal to the highest public non-draft,
+non-prerelease stable tag matching `vMAJOR.MINOR.PATCH`. Drafts, prereleases,
+and prerelease suffix tags do not count as the highest stable release.
+
+Emergency rollback is explicit and auditable. Commit
+`docs/operations/release-latest-rollback-receipt.json` before the protected tag
+workflow runs. It must contain `kind: m80_release_latest_rollback_receipt`,
+`decision: approved`, the older `release_tag`, the currently highest stable
+public tag, a reason, actor, and the exact publish decision and proof ledger
+digests. Stale, missing, or mismatched rollback receipts fail before
+`gh release edit --latest`; normal releases do not need this file. The behavior
+contract lives in
+`docs/behaviors/release/latest-promotion-monotonicity.md`.
+
 After latest promotion, the publish job also writes
 `release-readiness-public-access.json` with
 `scripts/release_public_access_receipt.py` from an empty `GH_CONFIG_DIR` and
