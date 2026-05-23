@@ -58,10 +58,15 @@ pub(super) fn verify_bundle_metadata(metadata: &BundleMetadata) -> Result<(), Fc
         return Err(invalid_bundle(
             "bundle.protocol_version",
             format!(
-                "bundle protocol mismatch: m80={} guest={} binary={}",
+                "guest protocol mismatch: expected_protocol={} actual_m80_protocol={} actual_guest_protocol={} guestd_identity={} rootfs_identity={} running_m80_version={} release_tag={} repair: {}",
+                m80_proto::PROTOCOL_VERSION,
                 metadata.m80_protocol_version,
                 metadata.guest_protocol_version,
-                m80_proto::PROTOCOL_VERSION
+                guestd_identity(metadata),
+                rootfs_identity(metadata),
+                env!("CARGO_PKG_VERSION"),
+                metadata.release_tag,
+                pinned_reinstall_command(&metadata.release_tag)
             ),
         ));
     }
@@ -205,9 +210,13 @@ pub(in crate::cmds::install::layout) fn rewrite_installed_metadata(
         return Err(invalid_bundle(
             "bundle.manifest_schema_version",
             format!(
-                "bundle manifest_schema_version mismatch: expected {}, got {}",
+                "manifest schema mismatch: expected_schema={} actual_schema={} manifest_path={} running_m80_version={} selected_install_profile=default release_tag={} repair: {}",
                 metadata.manifest_schema_version,
-                manifest.schema_version()
+                manifest.schema_version(),
+                manifest_path.display(),
+                env!("CARGO_PKG_VERSION"),
+                metadata.release_tag,
+                pinned_reinstall_command(&metadata.release_tag)
             ),
         ));
     }
@@ -422,6 +431,38 @@ fn invalid_bundle(field: &'static str, reason: String) -> FcError {
     FcError::Config(ConfigError::InvalidValue { field, reason })
 }
 
+fn pinned_reinstall_command(release_tag: &str) -> String {
+    format!(
+        "curl -fsSL {} | sudo sh",
+        crate::release_urls::release_install_url(release_tag)
+    )
+}
+
+fn guestd_identity(metadata: &BundleMetadata) -> String {
+    format!(
+        "package_version={} sha256={}",
+        metadata.guestd_package_version,
+        bundle_file_sha256(metadata, "artifacts/m80-guestd")
+    )
+}
+
+fn rootfs_identity(metadata: &BundleMetadata) -> String {
+    format!(
+        "image_kind={} sha256={}",
+        metadata.image_kind,
+        bundle_file_sha256(metadata, "artifacts/output.ext4")
+    )
+}
+
+fn bundle_file_sha256<'a>(metadata: &'a BundleMetadata, path: &str) -> &'a str {
+    metadata
+        .files
+        .iter()
+        .find(|file| file.path == path)
+        .map(|file| file.sha256.as_str())
+        .unwrap_or("<missing>")
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -453,4 +494,153 @@ struct BundleFile {
     path: String,
     sha256: String,
     size_bytes: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_mismatch_names_expected_actual_guest_rootfs_and_repair() {
+        let mut metadata = fixture_metadata();
+        metadata.guest_protocol_version = m80_proto::PROTOCOL_VERSION + 1;
+
+        let err = verify_bundle_metadata(&metadata).unwrap_err().to_string();
+
+        assert!(err.contains("guest protocol mismatch"), "{err}");
+        assert!(
+            err.contains(&format!(
+                "expected_protocol={}",
+                m80_proto::PROTOCOL_VERSION
+            )),
+            "{err}"
+        );
+        assert!(
+            err.contains(&format!(
+                "actual_guest_protocol={}",
+                m80_proto::PROTOCOL_VERSION + 1
+            )),
+            "{err}"
+        );
+        assert!(
+            err.contains("guestd_identity=package_version=0.2.0"),
+            "{err}"
+        );
+        assert!(err.contains("rootfs_identity=image_kind=minimal"), "{err}");
+        assert!(
+            err.contains("running_m80_version=") && err.contains("release_tag=v0.2.0"),
+            "{err}"
+        );
+        assert!(
+            err.contains(
+                "repair: curl -fsSL https://github.com/moradology/m80/releases/download/v0.2.0/install.sh | sudo sh"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn manifest_schema_mismatch_names_path_profile_versions_and_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let artifacts = root.join("artifacts");
+        std::fs::create_dir_all(&artifacts).unwrap();
+        let manifest_path = artifacts.join("output.ext4.manifest.json");
+        std::fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "daemon_binary_path": "m80-guestd",
+  "daemon_binary_sha256": "{}",
+  "expected_firecracker_version": "v1.15.1",
+  "guest_port": 52,
+  "image_kind": "minimal",
+  "kernel_image": "vmlinux",
+  "kernel_image_sha256": "{}",
+  "kernel_kind": "stripped",
+  "no_egress_reason": null,
+  "output_rootfs_image": "output.ext4",
+  "output_rootfs_sha256": "{}",
+  "ready_marker": "M80_READY",
+  "rootfs_format": "ext4",
+  "schema_version": {},
+  "source_rootfs_image": null,
+  "source_rootfs_sha256": null
+}}"#,
+                "0".repeat(64),
+                "1".repeat(64),
+                "2".repeat(64),
+                m80_image_manifest::SCHEMA_VERSION
+            ),
+        )
+        .unwrap();
+        std::fs::write(artifacts.join("output.ext4.build-receipt.json"), "{}").unwrap();
+        let mut metadata = fixture_metadata();
+        metadata.manifest_schema_version = m80_image_manifest::SCHEMA_VERSION + 1;
+
+        let err = rewrite_installed_metadata(root, &root.join("versions/v0.2.0"), &metadata)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("manifest schema mismatch"), "{err}");
+        assert!(
+            err.contains(&format!(
+                "expected_schema={}",
+                m80_image_manifest::SCHEMA_VERSION + 1
+            )),
+            "{err}"
+        );
+        assert!(
+            err.contains(&format!(
+                "actual_schema={}",
+                m80_image_manifest::SCHEMA_VERSION
+            )),
+            "{err}"
+        );
+        assert!(
+            err.contains(&format!("manifest_path={}", manifest_path.display())),
+            "{err}"
+        );
+        assert!(err.contains("running_m80_version="), "{err}");
+        assert!(err.contains("selected_install_profile=default"), "{err}");
+        assert!(
+            err.contains("/releases/download/v0.2.0/install.sh | sudo sh"),
+            "{err}"
+        );
+    }
+
+    fn fixture_metadata() -> BundleMetadata {
+        BundleMetadata {
+            schema_version: 1,
+            release_tag: "v0.2.0".to_owned(),
+            m80_version: "0.2.0".to_owned(),
+            package_version: "0.2.0".to_owned(),
+            target: "linux-x86_64".to_owned(),
+            os: "linux".to_owned(),
+            arch: "x86_64".to_owned(),
+            image_kind: "minimal".to_owned(),
+            m80_protocol_version: m80_proto::PROTOCOL_VERSION,
+            guestd_package_version: "0.2.0".to_owned(),
+            guest_protocol_version: m80_proto::PROTOCOL_VERSION,
+            manifest_schema_version: m80_image_manifest::SCHEMA_VERSION,
+            build_receipt_schema_version: m80_image_manifest::BUILD_RECEIPT_SCHEMA_VERSION,
+            build_receipt_manifest_path: "artifacts/output.ext4.manifest.json".to_owned(),
+            install_provenance_schema_version:
+                m80_image_manifest::INSTALL_PROVENANCE_SCHEMA_VERSION,
+            install_provenance_required: true,
+            expected_firecracker_version: "v1.15.1".to_owned(),
+            files: vec![
+                BundleFile {
+                    path: "artifacts/m80-guestd".to_owned(),
+                    sha256: "a".repeat(64),
+                    size_bytes: 1,
+                },
+                BundleFile {
+                    path: "artifacts/output.ext4".to_owned(),
+                    sha256: "b".repeat(64),
+                    size_bytes: 1,
+                },
+            ],
+        }
+    }
 }

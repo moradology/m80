@@ -468,7 +468,7 @@ fn validate_bundle_url_matches_binary(
             if binary_tag == bundle_tag {
                 Ok(())
             } else {
-                Err(tag_mismatch_error(bundle_tag, binary_tag))
+                Err(tag_mismatch_error(bundle_tag, binary_tag, identity))
             }
         }
     }
@@ -478,20 +478,32 @@ fn mismatched_build_error(identity: &VersionIdentity) -> FcError {
     FcError::Config(ConfigError::InvalidValue {
         field: "install.binary",
         reason: format!(
-            "m80 binary was built with release tag {}, but this package expects {}; use a matching release binary before installing",
+            "binary-vs-bundle mismatch: binary_version={} binary_release_tag={} bundle_version={} release_tag={} repair: {}",
+            identity.binary_version,
             identity.release_tag.as_deref().unwrap_or("<missing>"),
-            identity.expected_release_tag
+            identity.expected_release_tag,
+            identity.expected_release_tag,
+            pinned_reinstall_command(&identity.expected_release_tag)
         ),
     })
 }
 
-fn tag_mismatch_error(source_tag: &str, binary_tag: &str) -> FcError {
+fn tag_mismatch_error(source_tag: &str, binary_tag: &str, identity: &VersionIdentity) -> FcError {
     FcError::Config(ConfigError::InvalidValue {
         field: "install.source",
         reason: format!(
-            "bundle/binary tag mismatch: source selects {source_tag}, but this m80 binary is {binary_tag}"
+            "bundle/binary tag mismatch: binary_version={} binary_release_tag={binary_tag} bundle_version={source_tag} release_tag={source_tag} repair: {}",
+            identity.binary_version,
+            pinned_reinstall_command(source_tag)
         ),
     })
+}
+
+fn pinned_reinstall_command(release_tag: &str) -> String {
+    format!(
+        "curl -fsSL {} | sudo sh",
+        crate::release_urls::release_install_url(release_tag)
+    )
 }
 
 fn release_tag_from_bundle_url(url: &str) -> Option<String> {

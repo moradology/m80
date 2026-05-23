@@ -629,6 +629,14 @@ fn release_tag_source_rejects_binary_tag_mismatch() {
         err.to_string().contains("bundle/binary tag mismatch"),
         "{err}"
     );
+    assert!(err.to_string().contains("binary_version=v1.2.3"), "{err}");
+    assert!(err.to_string().contains("bundle_version=v9.9.9"), "{err}");
+    assert!(err.to_string().contains("release_tag=v9.9.9"), "{err}");
+    assert!(
+        err.to_string()
+            .contains("/releases/download/v9.9.9/install.sh | sudo sh"),
+        "{err}"
+    );
     let diagnostic = asset_index_diagnostic(&err);
     assert_eq!(
         diagnostic.code,
@@ -689,6 +697,13 @@ fn bundle_url_rejects_release_binary_tag_mismatch() {
 
     assert!(
         err.to_string().contains("bundle/binary tag mismatch"),
+        "{err}"
+    );
+    assert!(err.to_string().contains("binary_version=v1.2.3"), "{err}");
+    assert!(err.to_string().contains("bundle_version=v9.9.9"), "{err}");
+    assert!(
+        err.to_string()
+            .contains("/releases/download/v9.9.9/install.sh | sudo sh"),
         "{err}"
     );
 }

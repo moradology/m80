@@ -36,6 +36,9 @@ mod install_handoff_identity;
 #[path = "release/install_state_resolver.rs"]
 mod install_state_resolver;
 
+#[path = "release/mismatch_diagnostics.rs"]
+mod mismatch_diagnostics;
+
 #[path = "release/install_cleanup.rs"]
 mod install_cleanup;
 

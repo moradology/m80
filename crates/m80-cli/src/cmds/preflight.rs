@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use m80_firecracker::{Backend, ConfigError, EffectiveConfig, FcError};
+use m80_image_manifest::ManifestError;
 use m80_preflight::{
     CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, HostPrerequisiteCheck,
     HostPrerequisiteCheckId, PreflightError, REPAIR_REINSTALL_M80_RELEASE,
@@ -205,7 +206,46 @@ fn preflight_with_runtime_profile(
         artifact_config_for_runtime_profile(&effective, runtime_profile),
         host_feature_config_from_effective(&effective).map_err(FcError::Preflight)?,
     )
-    .map_err(FcError::Preflight)
+    .map_err(|err| preflight_error_with_profile_context(err, runtime_profile))
+}
+
+pub(super) fn preflight_error_with_profile_context(
+    err: PreflightError,
+    runtime_profile: &RuntimeProfile,
+) -> FcError {
+    match err {
+        PreflightError::Manifest(ManifestError::UnsupportedSchemaVersion(actual_schema)) => {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "guest_manifest",
+                reason: format!(
+                    "manifest schema mismatch: expected_schema={} actual_schema={} manifest_path={} running_m80_version={} selected_install_profile={} repair: {}",
+                    m80_image_manifest::SCHEMA_VERSION,
+                    actual_schema,
+                    runtime_manifest_path(runtime_profile).display(),
+                    VersionIdentity::current().binary_version,
+                    runtime_profile.name,
+                    install_repair_command(&VersionIdentity::current())
+                ),
+            })
+        }
+        other => FcError::Preflight(other),
+    }
+}
+
+fn runtime_manifest_path(runtime_profile: &RuntimeProfile) -> PathBuf {
+    if let Some(path) = &runtime_profile.guest_manifest {
+        return path.clone();
+    }
+    if let Some(rootfs) = &runtime_profile.rootfs_image {
+        let mut raw = rootfs.as_os_str().to_owned();
+        raw.push(".manifest.json");
+        return PathBuf::from(raw);
+    }
+    runtime_profile
+        .artifact_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("<unknown>"))
+        .join("output.ext4.manifest.json")
 }
 
 pub(super) fn host_feature_config_from_effective(

@@ -51,9 +51,12 @@ impl AssetIndexFailure {
             diagnostic: requested.diagnostic(
                 AssetIndexDiagnosticCode::BinaryTagMismatch,
                 format!(
-                    "m80 binary was built with release tag {}, but this package expects {}; use a matching release binary before installing",
+                    "binary-vs-bundle mismatch: binary_version={} binary_release_tag={} bundle_version={} release_tag={} repair: curl -fsSL {} | sudo sh",
+                    identity.binary_version,
                     identity.release_tag.as_deref().unwrap_or("<missing>"),
-                    identity.expected_release_tag
+                    identity.expected_release_tag,
+                    identity.expected_release_tag,
+                    crate::release_urls::release_install_url(&identity.expected_release_tag)
                 ),
                 Vec::new(),
                 Vec::new(),
@@ -77,7 +80,9 @@ impl AssetIndexFailure {
             diagnostic: requested.diagnostic(
                 AssetIndexDiagnosticCode::BinaryTagMismatch,
                 format!(
-                    "bundle/binary tag mismatch: source selects {source_tag}, but this m80 binary is {binary_tag}"
+                    "bundle/binary tag mismatch: binary_version={} binary_release_tag={binary_tag} bundle_version={source_tag} release_tag={source_tag} repair: curl -fsSL {} | sudo sh",
+                    identity.binary_version,
+                    crate::release_urls::release_install_url(source_tag)
                 ),
                 Vec::new(),
                 Vec::new(),

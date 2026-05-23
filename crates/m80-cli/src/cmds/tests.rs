@@ -5,8 +5,8 @@ use super::install_status::ProofCacheStatusOutput;
 use super::preflight::{
     artifact_config_for_runtime_profile, binary_config_for_runtime_profile,
     host_feature_config_from_effective, host_prerequisite_failure,
-    render_host_prerequisite_failure, render_preflight_result, run_profile_readiness_error,
-    PreflightErrorReport, PreflightReport,
+    preflight_error_with_profile_context, render_host_prerequisite_failure,
+    render_preflight_result, run_profile_readiness_error, PreflightErrorReport, PreflightReport,
 };
 use super::{
     build_process_env, cmd_preflight, format_config_json, format_config_table,
@@ -172,6 +172,39 @@ fn run_default_env_profile_with_artifact_env_is_allowed_to_preflight() {
         &VersionIdentity::from_parts("1.2.3", None, None),
     )
     .is_none());
+}
+
+#[test]
+fn stale_manifest_schema_diagnostic_names_profile_path_versions_and_repair() {
+    let profile = installed_runtime_profile();
+    let err = preflight_error_with_profile_context(
+        PreflightError::Manifest(m80_image_manifest::ManifestError::UnsupportedSchemaVersion(
+            99,
+        )),
+        &profile,
+    );
+    let text = err.to_string();
+
+    assert!(text.contains("manifest schema mismatch"), "{text}");
+    assert!(
+        text.contains(&format!(
+            "expected_schema={}",
+            m80_image_manifest::SCHEMA_VERSION
+        )),
+        "{text}"
+    );
+    assert!(text.contains("actual_schema=99"), "{text}");
+    assert!(
+        text.contains("manifest_path=/opt/m80/versions/v1/artifacts/output.ext4.manifest.json"),
+        "{text}"
+    );
+    assert!(text.contains("running_m80_version="), "{text}");
+    assert!(text.contains("selected_install_profile=default"), "{text}");
+    assert!(
+        text.contains("dev build: create a local bundle")
+            || text.contains("curl -fsSL https://github.com/moradology/m80/releases/"),
+        "{text}"
+    );
 }
 
 #[test]
