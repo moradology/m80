@@ -63,6 +63,22 @@ fn system_root_owned_executable() -> &'static Path {
     panic!("expected a root-owned system executable with --version for host-binary tests");
 }
 
+#[cfg(target_os = "linux")]
+fn system_root_owned_non_executable() -> &'static Path {
+    for candidate in ["/etc/hosts", "/etc/passwd", "/etc/group"] {
+        let path = Path::new(candidate);
+        let Ok(meta) = fs::symlink_metadata(path) else {
+            continue;
+        };
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let mode = meta.permissions().mode() & 0o7777;
+        if meta.is_file() && meta.uid() == 0 && meta.gid() == 0 && mode & 0o111 == 0 {
+            return path;
+        }
+    }
+    panic!("expected a root-owned non-executable system file for host-binary tests");
+}
+
 fn write_host_binary_manifest(
     path: &Path,
     firecracker: &Path,
@@ -756,6 +772,100 @@ fn host_binary_manifest_rejects_unsafe_permissions() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn host_binary_manifest_rejects_non_executable_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let non_executable = system_root_owned_non_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    let m80 = manifest
+        .binaries
+        .iter_mut()
+        .find(|entry| entry.name == HostBinaryName::M80)
+        .unwrap();
+    m80.path = non_executable.to_path_buf();
+    m80.sha256 = sha256_file(non_executable);
+    m80.version = "not probed before permission rejection".to_owned();
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_fixture_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostBinaryPermission { name, path, reason } => {
+            assert_eq!(name, "m80");
+            assert_eq!(path, non_executable);
+            assert_eq!(reason, "not executable");
+        }
+        other => panic!("expected non-executable host binary rejection, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_symlink_fails_no_follow_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let m80_link = dir.path().join("m80-link");
+    std::os::unix::fs::symlink(system_binary, &m80_link).unwrap();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    let m80 = manifest
+        .binaries
+        .iter_mut()
+        .find(|entry| entry.name == HostBinaryName::M80)
+        .unwrap();
+    m80.path = m80_link.clone();
+    m80.sha256 = sha256_file(&m80_link);
+    m80.version = binary_version_stdout(&m80_link);
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_fixture_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::PathIo { path, source } => {
+            assert_eq!(path, m80_link);
+            assert_eq!(source.raw_os_error(), Some(nix::libc::ELOOP));
+        }
+        other => panic!("expected O_NOFOLLOW host binary symlink failure, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn host_binary_manifest_requires_seccomp_launch_material() {
     let dir = tempfile::tempdir().unwrap();
     let system_binary = system_root_owned_executable();
@@ -1068,6 +1178,34 @@ fn host_launch_material_symlink_fails_no_follow_open() {
         }
         other => panic!("expected O_NOFOLLOW symlink failure, got {other:?}"),
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_can_be_non_executable_and_uses_firecracker_train_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let non_executable = system_root_owned_non_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        non_executable,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: non_executable.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    verify_fixture_host_binaries(&config, &manifest_path).unwrap();
 }
 
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

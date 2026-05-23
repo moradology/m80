@@ -15,8 +15,9 @@ the manifest path because it is an install artifact, not a per-launch path knob.
 Each binary and launch-material file is opened with `O_NOFOLLOW`, hashed from
 the opened file descriptor, and compared with the manifest sha256. Preflight
 also rejects non-regular files, anything not owned `root:root`, modes broader
-than `0755`, and group/world write bits. Launch-material files must also be
-non-empty. A binary that returns the expected
+than `0755`, and group/world write bits. Host binaries must carry an execute
+bit; launch material is allowed to be non-executable and must be non-empty. A
+binary that returns the expected
 `firecracker --version` string but has different bytes fails with
 `PreflightError::BinaryHashMismatch`; a seccomp filter whose bytes changed
 fails with `PreflightError::HostLaunchMaterialHashMismatch`. Recorded versions
@@ -34,5 +35,8 @@ Evidence:
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_firecracker_version_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_non_executable_binary`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_symlink_fails_no_follow_open`
 - `crates/m80-preflight/src/binary.rs::tests::host_launch_material_hash_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_can_be_non_executable_and_uses_firecracker_train_version`
 - `crates/m80-preflight/src/binary.rs::tests::host_launch_material_symlink_fails_no_follow_open`

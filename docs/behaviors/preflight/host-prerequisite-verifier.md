@@ -91,8 +91,13 @@ in both JSON and plain text so machine consumers and operators see the same
 structured repair fields. When the selected runtime profile names a release
 tag, CLI rendering pins m80-owned helper repairs to that exact `install.sh`
 URL; operator-owned Firecracker, jailer, and seccomp repairs remain policy
-links. Full host-binary path/hash/mode population is owned by
-`m80-o3uh9.8.3.2`.
+links. Full host-binary verification is owned by `m80-o3uh9.8.3.2`: the
+manifest verifier opens final paths with `O_NOFOLLOW`, rejects symlinks and
+non-regular files, requires `root:root`, rejects group/world writable modes,
+requires an execute bit for binaries, recomputes sha256 from the opened file,
+checks live binary versions, and treats seccomp launch material as file/hash
+material whose version is the accepted Firecracker train rather than an
+executable probe.
 
 ## Fixture Knobs
 
@@ -114,7 +119,11 @@ release `m80 run -- echo hello` smoke.
 - `crates/m80-preflight/src/substrate.rs`
 - `crates/m80-preflight/src/host_prerequisite_result.rs`
 - `crates/m80-preflight/src/checks.rs`
+- `crates/m80-preflight/src/binary.rs`
 - `crates/m80-preflight/tests/host_prerequisite_result.rs`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_non_executable_binary`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_symlink_fails_no_follow_open`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_can_be_non_executable_and_uses_firecracker_train_version`
 - `crates/m80-preflight/src/substrate.rs::tests::hostless_fixture_success_is_not_real_kvm_smoke`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_missing_kvm`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_bad_kvm_permissions`

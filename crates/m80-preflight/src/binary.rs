@@ -487,6 +487,13 @@ fn verify_host_binary_permissions(
         });
     }
     let mode = metadata.permissions().mode() & 0o7777;
+    if mode & 0o111 == 0 {
+        return Err(PreflightError::HostBinaryPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "not executable",
+        });
+    }
     if mode > 0o755 || mode & 0o022 != 0 {
         return Err(PreflightError::HostBinaryPermission {
             name: entry.name.as_str(),
