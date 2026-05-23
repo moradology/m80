@@ -747,6 +747,13 @@ jobs:
           path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json
           if-no-files-found: error
 
+      - name: Upload token authority receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-token-authority-${{ github.run_id }}
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json
+          if-no-files-found: error
+
       - name: Upload release publication plan
         uses: actions/upload-artifact@v4
         with:

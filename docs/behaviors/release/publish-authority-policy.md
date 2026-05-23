@@ -33,6 +33,12 @@ observed GitHub API probes, and `failure_reason`. A successful receipt includes
 the `release_metadata` probe for the target tag and validates the receipt before
 exiting zero.
 
+Successful publish jobs upload the receipt as the
+`m80-release-token-authority-<run id>` workflow artifact. Failed publish jobs
+preserve it in the failed publish diagnostics artifact when the failure happens
+after publish scratch setup. The receipt names the token source but never stores
+token bytes, authorization headers, or raw environment maps.
+
 This is separate from `scripts/lint-github-workflows.py`. The linter catches
 static workflow drift in CI. The publish authority gate re-checks the same
 release boundary at the mutation point with the actual GitHub context variables

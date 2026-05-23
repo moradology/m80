@@ -705,6 +705,19 @@ edits; it is the static m80 authority-policy and strict workflow shell check,
 and it should run beside the pinned `actionlint` syntax/run-block gate:
 `python3 scripts/run-actionlint.py --workflow-dir .github/workflows`.
 
+The token authority receipt is uploaded as
+`m80-release-token-authority-<run id>` on success and is also present inside
+failed publish diagnostics under the publish upload directory. It records stable
+diagnostics only: actor, repository/ref, workflow path/job, run id/attempt,
+token source name, policy id/digest, and probe names/results. It must not carry
+token bytes, authorization headers, raw environment maps, or secrets. Repair by
+the field that failed: context fields mean rerun from the tag publish workflow;
+token-source or missing-token failures mean fix `GH_TOKEN` /
+`M80_RELEASE_TOKEN_SOURCE` wiring; failed `release_metadata` probes mean fix
+repository release access, tag state, or GitHub API availability; and
+`policy_digest` drift means update the policy, tests, and runbook together
+before relying on the new authority shape.
+
 Release and freshness workflow jobs also carry explicit job timeout budgets.
 Inner command timeouts remain the primary failure detector for network fetches,
 tool installation, and smoke probes; the job timeout is the final guard so a
@@ -763,11 +776,11 @@ the token authority receipt. The ledger is the durable JSONL index; the
 quickstart proof JSON is the per-lane proof payload. They are never
 interchangeable receipt fields.
 
-The receipt is uploaded as a durable workflow artifact on success and is also
-included in failed publish diagnostics when upload or post-upload verification
-fails after the receipt step. It is decision evidence, not a replacement for
-the signed release integrity predicate or attestation bundle. The behavior
-contract lives in
+The publish decision receipt is uploaded as a durable workflow artifact on
+success and is also included in failed publish diagnostics when upload or
+post-upload verification fails after the receipt step. It is decision evidence,
+not a replacement for the signed release integrity predicate or attestation
+bundle. The behavior contract lives in
 `docs/behaviors/release/publish-decision-receipt.md`.
 
 After the receipt, the publish job writes

@@ -357,6 +357,7 @@ class WorkflowPolicyTest(unittest.TestCase):
             receipt = root / "token-authority.json"
             result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True)
             payload = json.loads(receipt.read_text())
+            receipt_text = receipt.read_text()
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(payload["kind"], "m80_release_publish_token_authority")
@@ -365,6 +366,8 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertEqual(payload["release_tag"], "v0.1.0")
         self.assertEqual(payload["token_source"], "github.token")
         self.assertEqual(payload["probes"][0]["name"], "release_metadata")
+        self.assertNotIn("ghs_test_token", receipt_text)
+        self.assertNotIn("authorization", receipt_text.lower())
 
     def test_publish_authority_policy_rejects_wrong_repository(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
@@ -439,6 +442,7 @@ class WorkflowPolicyTest(unittest.TestCase):
             receipt = root / "token-authority.json"
             result = run_authority(root / "release-artifacts.yml", receipt=receipt, write=True, gh_mode="read_only")
             payload = json.loads(receipt.read_text())
+            receipt_text = receipt.read_text()
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("release metadata unreadable", result.stderr)
@@ -446,6 +450,7 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertIn("release metadata unreadable", payload["failure_reason"])
         self.assertEqual(payload["probes"][0]["exit_status"], 1)
         self.assertIn("resource not accessible", payload["probes"][0]["stderr"])
+        self.assertNotIn("ghs_test_token", receipt_text)
 
     def test_publish_authority_policy_rejects_unavailable_release_api(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:

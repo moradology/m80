@@ -1489,6 +1489,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("actions/download-artifact", workflow)
         self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json", workflow)
+        self.assertIn("m80-release-token-authority-${{ github.run_id }}", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json", workflow)
         self.assertIn("m80-release-publication-plan-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publication-plan.json", workflow)
         self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)
