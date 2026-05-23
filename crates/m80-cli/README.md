@@ -45,6 +45,11 @@ binaries, pull OCI images, or install packages implicitly.
   artifact/helper paths, release tag, and missing profile paths before the
   preflight table. JSON output wraps that runtime-profile report plus the
   `HostPrerequisiteResult`. Exit 0 on full pass, 2 on any check failed.
+- Public Linux install starts with the release installer, not `m80 quickstart`:
+  `curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`.
+  Automation pins the same installer shape:
+  `curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh`.
+  The installer then hands off to `m80 install --release-tag <tag>`.
 - `m80 quickstart --artifact-url <url>` - explicit operator/test override for a
   local fixture tarball or a pinned artifact tarball that matches the running
   m80 binary. The normal Linux first-run path is the release `install.sh`.

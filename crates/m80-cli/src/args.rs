@@ -110,9 +110,15 @@ pub enum Cmd {
 
     /// Install an explicit artifact tarball for operator/test overrides.
     ///
-    /// The normal Linux first-run path is the release `install.sh`. This
-    /// command is for local fixtures or an explicitly pinned tarball that
-    /// matches the running m80 binary; it verifies `SHA256SUMS`, installs the
+    /// The normal Linux first-run path is:
+    ///
+    ///   curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+    ///
+    ///   curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
+    ///
+    /// This command is only the explicit operator/test override for local
+    /// fixtures or an explicitly pinned artifact tarball that matches the
+    /// running m80 binary. It verifies `SHA256SUMS`, installs the
     /// kernel/rootfs/manifest/guestd artifacts, then runs `m80 run -- echo
     /// hello` unless `--no-run` is set. Legacy artifact-only install repairs
     /// are documented in docs/behaviors/release/legacy-quickstart-hard-cutover.md.
@@ -120,9 +126,18 @@ pub enum Cmd {
 
     /// Install or plan a release bundle.
     ///
-    /// This validates the user-facing installer inputs and release identity.
-    /// `--dry-run` is side-effect-free; non-dry-run installs the verified
-    /// bundle into a versioned tree and flips the active pointer last.
+    /// Common path:
+    ///
+    ///   curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+    ///
+    ///   curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
+    ///
+    /// This command is the release `install.sh` handoff surface. Use
+    /// `--release-tag <tag>` for pinned installs and `--bundle-url <url>` only
+    /// as an explicit operator/test override; official bundle URLs verify the
+    /// same release material before staging. `--dry-run` is side-effect-free;
+    /// non-dry-run installs the verified bundle into a versioned tree and flips
+    /// the active pointer last.
     Install(InstallArgs),
 
     /// Show the installed release selected by the local host configuration.
@@ -462,7 +477,7 @@ pub struct WarmEnableArgs {
 /// Arguments for `m80 quickstart`.
 #[derive(Debug, Args)]
 pub struct QuickstartArgs {
-    /// Operator/test artifact tarball URL matching this m80 binary.
+    /// Operator/test artifact tarball URL matching this m80 binary; not the normal first-run path.
     #[arg(long = "artifact-url", value_name = "URL")]
     pub artifact_url: String,
 
@@ -499,7 +514,7 @@ pub struct InstallArgs {
     )]
     pub release_tag: Option<String>,
 
-    /// Explicit release bundle URL to install.
+    /// Explicit release bundle URL for operator/test overrides; official URLs verify bundle compatibility.
     #[arg(
         long = "bundle-url",
         value_name = "URL",

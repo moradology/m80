@@ -41,12 +41,16 @@ fn help_quickstart() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.contains("Install an explicit artifact tarball for operator/test overrides")
+            && stdout.contains(latest_install_command())
+            && stdout.contains(pinned_install_command())
             && stdout.contains("matching this m80 binary")
+            && stdout.contains("not the normal first-run path")
             && stdout.contains("legacy-quickstart-hard-cutover.md")
             && stdout.contains("--artifact-url")
             && stdout.contains("--no-run"),
         "quickstart help should expose the override-only artifact flow, got: {stdout}"
     );
+    assert_public_help_order("quickstart help", &stdout, "--artifact-url");
     assert_no_stale_public_quickstart_urls("quickstart help", &stdout);
 }
 
@@ -57,13 +61,18 @@ fn help_install() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         stdout.contains("Install or plan a release bundle")
+            && stdout.contains(latest_install_command())
+            && stdout.contains(pinned_install_command())
             && stdout.contains("--release-tag")
             && stdout.contains("--bundle-url")
+            && stdout.contains("explicit operator/test override")
+            && stdout.contains("verify bundle compatibility")
             && stdout.contains("--install-root")
             && stdout.contains("--dry-run")
             && !stdout.contains("--bootstrap-tag"),
         "install help should expose user-facing installer inputs only, got: {stdout}"
     );
+    assert_public_help_order("install help", &stdout, "--bundle-url");
     assert_no_stale_public_quickstart_urls("install help", &stdout);
 }
 
@@ -212,4 +221,28 @@ fn assert_no_stale_public_quickstart_urls(surface: &str, text: &str) {
                 && !token.contains("/releases/latest/download/install.sh")),
         "{surface} must not point users at artifact-only latest release assets, got: {text}"
     );
+}
+
+fn assert_public_help_order(surface: &str, text: &str, override_marker: &str) {
+    let latest = text
+        .find(latest_install_command())
+        .unwrap_or_else(|| panic!("{surface} missing latest install command: {text}"));
+    let pinned = text
+        .find(pinned_install_command())
+        .unwrap_or_else(|| panic!("{surface} missing pinned install command: {text}"));
+    let override_pos = text
+        .find(override_marker)
+        .unwrap_or_else(|| panic!("{surface} missing override marker {override_marker}: {text}"));
+    assert!(
+        latest < pinned && pinned < override_pos,
+        "{surface} must order common latest, pinned, then explicit override, got: {text}"
+    );
+}
+
+fn latest_install_command() -> &'static str {
+    "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh"
+}
+
+fn pinned_install_command() -> &'static str {
+    "curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh"
 }

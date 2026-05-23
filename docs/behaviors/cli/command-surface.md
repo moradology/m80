@@ -23,8 +23,9 @@ install packages implicitly.
 
 - `m80 run [OPTIONS] -- <program> [args...]`
 - `m80 preflight`
-- public Linux install: release `install.sh`, which hands off to
-  `m80 install --release-tag <tag>|--bundle-url <url>`
+- public Linux install: `curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`
+- pinned automation install: `curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh`
+- release installer handoff: `m80 install --release-tag <tag>`
 - `m80 quickstart --artifact-url <url> [--artifact-dir <path>] [--run-root <path>] [--no-run]`
 - `m80 config show`
 - `m80 list`
@@ -119,6 +120,10 @@ Implemented warm flag:
 
 The normal Linux first-run path is the release `install.sh`, followed by plain
 `m80 run -- echo hello`.
+The public help order is stable/latest install first, pinned install second,
+and explicit override surfaces last. `m80 install --help` and
+`m80 quickstart --help` must both reject raw `main` URLs and artifact-only
+latest examples.
 
 `m80 quickstart --artifact-url <url>` is the explicit operator/test override for
 local fixture tarballs or pinned artifact tarballs that match the running m80
