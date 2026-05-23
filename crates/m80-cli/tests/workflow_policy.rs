@@ -66,6 +66,11 @@ fn release_workflow_doc_records_authority_boundary() {
         "`scripts/test-actionlint-runner.py`",
         "`scripts/test-actionlint-fixtures.py`",
         "actionlint_1.7.12_linux_amd64.tar.gz",
+        "Release artifact bytes cross from build to publish only through GitHub\n  workflow artifact identity",
+        "workflow artifact id,\n  fixed artifact name, producing job id, source commit, release tag, and release\n  upload manifest digest",
+        "manual\n  artifact override inputs, cache path injection, runner-local dist reuse, wrong\n  artifact id handoff",
+        "Runner-local release scratch directories are not trust anchors",
+        "fixed `/tmp` literals, preexisting scratch\n  path reuse, symlink staging roots, unsafe mode/owner checks, and clean\n  `$RUNNER_TEMP` usage",
         "invalid event syntax, duplicate job ids",
         "shellcheck failures\n  in inline bash run blocks",
         "documented non-bash exception",
@@ -87,4 +92,14 @@ fn release_workflow_doc_records_authority_boundary() {
     assert!(release_workflow.contains("publish-release-artifacts:"));
     assert!(release_workflow.contains("contents: write"));
     assert!(release_workflow.contains("release-artifacts-${{ github.ref_name }}"));
+    assert!(release_workflow.contains("release_dist_artifact_id"));
+    assert!(release_workflow.contains("release_dist_producer_job"));
+    assert!(release_workflow
+        .contains("$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-build"));
+    assert!(release_workflow.contains("test ! -e \"$release_tmp_root\""));
+    assert!(release_workflow.contains("test ! -L \"$release_tmp_root\""));
+    assert!(release_workflow.contains(
+        "artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}"
+    ));
+    assert!(release_workflow.contains("Verify workflow artifact origin handoff"));
 }

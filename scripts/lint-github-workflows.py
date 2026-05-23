@@ -74,6 +74,8 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
             errors.extend(lint_release_job_timeouts(path, lines))
             errors.extend(lint_release_cargo_locked(path, lines))
             errors.extend(lint_release_rust_toolchain_pins(path, lines))
+            errors.extend(lint_release_artifact_origin(path, text, lines))
+            errors.extend(lint_release_temp_isolation(path, text, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
     return errors
@@ -308,6 +310,144 @@ def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str
     return errors
 
 
+def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> list[str]:
+    if path.name != "release-artifacts.yml":
+        return []
+    if "build-release-artifacts:" not in text and "publish-release-artifacts:" not in text:
+        return []
+    errors: list[str] = []
+    if workflow_dispatch_declares_inputs(lines):
+        errors.append(f"{path}: release workflow must not accept manual artifact override inputs")
+    if "actions/cache@" in text:
+        errors.append(f"{path}: release workflow must not use cache contents as release artifact input")
+    build_block = job_block_text(lines, "build-release-artifacts")
+    publish_block = job_block_text(lines, "publish-release-artifacts")
+    if build_block is None:
+        errors.append(f"{path}: release workflow must define build-release-artifacts job")
+        build_text = ""
+    else:
+        build_text = "\n".join(build_block)
+    if publish_block is None:
+        errors.append(f"{path}: release workflow must define publish-release-artifacts job")
+        publish_text = ""
+    else:
+        publish_text = "\n".join(publish_block)
+
+    required_build_tokens = {
+        "release_commit: ${{ steps.release-commit.outputs.sha }}": "build job must output the source commit",
+        "release_dist_artifact_id: ${{ steps.upload-release-dist.outputs.artifact-id }}": "build job must output release_dist_artifact_id from upload-release-dist",
+        "release_dist_artifact_name: ${{ steps.release-artifact-origin.outputs.name }}": "build job must output release_dist_artifact_name from release-artifact-origin",
+        "release_dist_producer_job: ${{ steps.release-artifact-origin.outputs.producer_job }}": "build job must output release_dist_producer_job from release-artifact-origin",
+        "release_tag: ${{ steps.release-artifact-origin.outputs.release_tag }}": "build job must output release_tag from release-artifact-origin",
+        "release_upload_manifest_digest: ${{ steps.release-upload-manifest.outputs.digest }}": "build job must output release_upload_manifest_digest from the build manifest step",
+        "id: release-upload-manifest": "build job must give the release upload manifest step a stable id",
+        "id: upload-release-dist": "build job must give the upload-artifact step a stable id",
+        "id: release-artifact-origin": "build job must record release artifact origin with a stable id",
+        "uses: actions/upload-artifact@": "build job must upload release bytes as a workflow artifact",
+        "name: ${{ env.ARTIFACT_NAME }}": "build upload must use the fixed workflow artifact name",
+        "path: ${{ steps.build-scratch.outputs.dist_dir }}/*": "build upload must use the verified release dist directory",
+        "producer_job=build-release-artifacts": "build job must record the producing job id",
+        "release_tag=$GITHUB_REF_NAME": "build job must record the source release tag",
+    }
+    for token, message in required_build_tokens.items():
+        if token not in build_text:
+            errors.append(f"{path}: {message}")
+
+    required_publish_tokens = {
+        "uses: actions/download-artifact@": "publish job must download release bytes from workflow artifacts",
+        "artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}": "publish download must use the recorded build artifact id",
+        "EXPECTED_ARTIFACT_ID: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}": "publish job must carry the recorded build artifact id",
+        "EXPECTED_ARTIFACT_NAME: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}": "publish job must carry the recorded build artifact name",
+        "EXPECTED_PRODUCER_JOB: ${{ needs.build-release-artifacts.outputs.release_dist_producer_job }}": "publish job must carry the recorded producer job id",
+        "EXPECTED_RELEASE_TAG: ${{ needs.build-release-artifacts.outputs.release_tag }}": "publish job must carry the recorded release tag",
+        "EXPECTED_MANIFEST_DIGEST: ${{ needs.build-release-artifacts.outputs.release_upload_manifest_digest }}": "publish job must carry the recorded build manifest digest",
+        "test -n \"$EXPECTED_ARTIFACT_ID\"": "publish job must fail closed on missing build artifact id",
+        "test \"$EXPECTED_ARTIFACT_NAME\" = \"$ARTIFACT_NAME\"": "publish job must check artifact name handoff",
+        "test \"$EXPECTED_PRODUCER_JOB\" = \"build-release-artifacts\"": "publish job must check the producer job handoff",
+        "test \"$EXPECTED_RELEASE_TAG\" = \"$GITHUB_REF_NAME\"": "publish job must check the release tag handoff",
+        "test \"$observed_digest\" = \"$EXPECTED_MANIFEST_DIGEST\"": "publish job must hash-check the downloaded artifact set manifest",
+        "scripts/release_upload_manifest.py": "publish job must size/hash-check the downloaded artifact set before upload",
+        "--dist-dir \"$UPLOAD_DIR\"": "publish manifest check must inspect the downloaded release artifact set",
+    }
+    for token, message in required_publish_tokens.items():
+        if token not in publish_text:
+            errors.append(f"{path}: {message}")
+
+    for forbidden in [
+        "M80_RELEASE_ARTIFACT_URL",
+        "M80_RELEASE_DIST",
+        "M80_RELEASE_ARTIFACT_PATH",
+        "github.event.inputs.artifact",
+        "github.event.inputs.dist",
+        "github.event.inputs.url",
+    ]:
+        if forbidden in text:
+            errors.append(f"{path}: release workflow must not accept artifact override {forbidden}")
+    if "name: ${{ env.ARTIFACT_NAME }}" in publish_text:
+        errors.append(f"{path}: publish job must not download by runner-local artifact env")
+    if "name: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}" in publish_text:
+        errors.append(f"{path}: publish job must download by recorded artifact id, not name alone")
+    if "DIST_DIR" in publish_text:
+        errors.append(f"{path}: publish job must not reuse runner-local dist paths")
+    if "steps.build-scratch.outputs.dist_dir" in publish_text:
+        errors.append(f"{path}: publish job must not reuse runner-local dist paths")
+    return errors
+
+
+def lint_release_temp_isolation(path: Path, text: str, lines: list[str]) -> list[str]:
+    if path.name != "release-artifacts.yml":
+        return []
+    if "build-release-artifacts:" not in text and "publish-release-artifacts:" not in text:
+        return []
+    errors: list[str] = []
+    if "/tmp/m80-release-" in text:
+        errors.append(f"{path}: release workflow must not use fixed /tmp/m80-release-* scratch paths")
+
+    required_by_job = {
+        "build-release-artifacts": [
+            "release_tmp_root=\"$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-build\"",
+            "artifact_dir=\"$release_tmp_root/artifacts\"",
+            "dist_dir=\"$release_tmp_root/dist\"",
+            "test ! -e \"$release_tmp_root\"",
+            "mkdir -p \"$artifact_dir\" \"$dist_dir\"",
+            "test ! -L \"$release_tmp_root\"",
+            "owner_uid=\"$(stat -c '%u' \"$release_tmp_root\")\"",
+            "current_uid=\"$(id -u)\"",
+            "test \"$owner_uid\" = \"$current_uid\"",
+            "mode_octal=\"$(stat -c '%a' \"$release_tmp_root\")\"",
+            "test \"$mode_octal\" = \"700\"",
+            "echo \"RELEASE_TMP_ROOT=$release_tmp_root\"",
+            "echo \"DIST_DIR=$dist_dir\"",
+            "rm -rf \"$RELEASE_TMP_ROOT\"",
+        ],
+        "publish-release-artifacts": [
+            "release_tmp_root=\"$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-publish\"",
+            "upload_dir=\"$release_tmp_root/upload\"",
+            "prepublish_dir=\"$release_tmp_root/prepublish\"",
+            "redownload_dir=\"$release_tmp_root/redownload\"",
+            "test ! -e \"$release_tmp_root\"",
+            "mkdir -p \"$upload_dir\" \"$prepublish_dir\" \"$redownload_dir\"",
+            "test ! -L \"$release_tmp_root\"",
+            "owner_uid=\"$(stat -c '%u' \"$release_tmp_root\")\"",
+            "current_uid=\"$(id -u)\"",
+            "test \"$owner_uid\" = \"$current_uid\"",
+            "mode_octal=\"$(stat -c '%a' \"$release_tmp_root\")\"",
+            "test \"$mode_octal\" = \"700\"",
+            "echo \"RELEASE_TMP_ROOT=$release_tmp_root\"",
+            "echo \"UPLOAD_DIR=$upload_dir\"",
+            "rm -rf \"$RELEASE_TMP_ROOT\"",
+        ],
+    }
+    for job_id, required_tokens in required_by_job.items():
+        block = job_block_text(lines, job_id)
+        block_text = "" if block is None else "\n".join(block)
+        for token in required_tokens:
+            if token not in block_text:
+                errors.append(f"{path}: release job {job_id} must isolate and validate runner temp scratch root")
+                break
+    return errors
+
+
 def lint_timeout_budget(
     path: Path,
     *,
@@ -506,6 +646,29 @@ def has_event(lines: list[str], event: str) -> bool:
                 if nested.strip().startswith(f"{event}:"):
                     return True
     return False
+
+
+def workflow_dispatch_declares_inputs(lines: list[str]) -> bool:
+    for index, line in enumerate(lines):
+        if line.startswith("on:") and "workflow_dispatch" in line:
+            continue
+        if not line.strip().startswith("workflow_dispatch:"):
+            continue
+        for nested in lines[index + 1 :]:
+            if not nested.strip() or nested.lstrip().startswith("#"):
+                continue
+            if leading_spaces(nested) <= leading_spaces(line):
+                break
+            if nested.strip().startswith("inputs:"):
+                return True
+    return False
+
+
+def job_block_text(lines: list[str], job_id: str) -> list[str] | None:
+    for current_job_id, start, end in job_blocks(lines):
+        if current_job_id == job_id:
+            return lines[start:end]
+    return None
 
 
 def has_pull_request_event(lines: list[str]) -> bool:

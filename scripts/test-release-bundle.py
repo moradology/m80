@@ -1342,14 +1342,14 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"', workflow)
         self.assertNotIn("--clobber", workflow)
         self.assertIn("Validate uploaded draft before latest promotion", workflow)
-        self.assertIn("download_args=(--dir /tmp/m80-release-prepublish)", workflow)
-        self.assertIn("/tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz", workflow)
+        self.assertIn('download_args=(--dir "$PREPUBLISH_DIR")', workflow)
+        self.assertIn('"$PREPUBLISH_DIR/m80-linux-x86_64.tar.gz"', workflow)
         self.assertIn("Publish validated draft without latest promotion", workflow)
         self.assertIn("Mark validated release as latest", workflow)
         self.assertIn("python3 scripts/stable_release_channel.py", workflow)
         self.assertIn("Write no-auth public-access release readiness receipt", workflow)
         self.assertIn("scripts/release_public_access_receipt.py", workflow)
-        self.assertIn("GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN", workflow)
+        self.assertIn('GH_CONFIG_DIR="$NOAUTH_GH_DIR" env -u GH_TOKEN -u GITHUB_TOKEN', workflow)
         self.assertIn("release-readiness-public-access.json", workflow)
         self.assertLess(
             workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"'),
@@ -1375,22 +1375,22 @@ class ReleaseBundleTest(unittest.TestCase):
             workflow.index("Write no-auth public-access release readiness receipt"),
             workflow.index("Upload public-access release readiness receipt"),
         )
-        self.assertIn("download_args=(--dir /tmp/m80-release-redownload)", workflow)
+        self.assertIn('download_args=(--dir "$REDOWNLOAD_DIR")', workflow)
         self.assertIn('download_args+=(--pattern "$pattern")', workflow)
         self.assertIn("--print-download-patterns", workflow)
         self.assertIn('gh release download "$GITHUB_REF_NAME" "${download_args[@]}"', workflow)
-        self.assertIn("--manifest /tmp/m80-release-upload/m80-release-upload-manifest.json", workflow)
+        self.assertIn('--manifest "$UPLOAD_DIR/m80-release-upload-manifest.json"', workflow)
         self.assertIn("--require-exact-dist-public-assets", workflow)
         self.assertLess(
             workflow.index("--require-exact-dist-public-assets"),
             workflow.index('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"'),
         )
         self.assertIn("scripts/release_remote_asset_inventory.py", workflow)
-        self.assertIn("--redownload-dir /tmp/m80-release-redownload", workflow)
-        self.assertIn("--release-metadata /tmp/m80-release-redownload/github-release.json", workflow)
+        self.assertIn('--redownload-dir "$REDOWNLOAD_DIR"', workflow)
+        self.assertIn('--release-metadata "$REDOWNLOAD_DIR/github-release.json"', workflow)
         self.assertIn("github-release-assets.json", workflow)
         self.assertIn("gh api --paginate --slurp", workflow)
-        self.assertIn("--release-assets-metadata /tmp/m80-release-redownload/github-release-assets.json", workflow)
+        self.assertIn('--release-assets-metadata "$REDOWNLOAD_DIR/github-release-assets.json"', workflow)
         self.assertLess(
             workflow.index('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"'),
             workflow.index("gh api --paginate --slurp"),
@@ -1410,14 +1410,14 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("actions/upload-artifact", workflow)
         self.assertIn("actions/download-artifact", workflow)
         self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
-        self.assertIn("/tmp/m80-release-upload/m80-release-publish-decision.json", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json", workflow)
         self.assertIn("m80-release-publication-plan-${{ github.run_id }}", workflow)
-        self.assertIn("/tmp/m80-release-upload/m80-release-publication-plan.json", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publication-plan.json", workflow)
         self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)
-        self.assertIn("/tmp/m80-release-redownload/m80-release-remote-assets.json", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.redownload_dir }}/m80-release-remote-assets.json", workflow)
         self.assertIn("m80-release-public-access-${{ github.run_id }}", workflow)
-        self.assertIn("/tmp/m80-release-redownload/release-readiness-public-access.json", workflow)
-        self.assertIn("/tmp/m80-release-prepublish/**", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.redownload_dir }}/release-readiness-public-access.json", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.prepublish_dir }}/**", workflow)
         for name in [
             BUNDLE_NAME,
             f"{BUNDLE_NAME}.sha256",
@@ -1443,7 +1443,7 @@ class ReleaseBundleTest(unittest.TestCase):
             INTEGRITY_ATTESTATION_METADATA_NAME,
         ]:
             self.assertGreaterEqual(
-                workflow.count(f"/tmp/m80-release-redownload/{name}"),
+                workflow.count(f"$REDOWNLOAD_DIR/{name}"),
                 1,
                 f"{name} must be re-verified after publication",
             )

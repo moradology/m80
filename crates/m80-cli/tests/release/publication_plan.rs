@@ -28,7 +28,7 @@ fn publication_plan_doc_and_workflow_keep_release_publish_fail_closed() {
     assert!(
         workflow.contains("Resolve release publication plan")
             && workflow.contains("scripts/release_publication_plan.py")
-            && workflow.contains("/tmp/m80-release-upload/m80-release-publication-plan.json"),
+            && workflow.contains("$UPLOAD_DIR/m80-release-publication-plan.json"),
         "release workflow must write the publication plan before release mutation"
     );
     assert!(

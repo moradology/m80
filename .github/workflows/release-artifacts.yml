@@ -16,8 +16,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  ARTIFACT_DIR: /tmp/m80-release-artifacts
-  DIST_DIR: /tmp/m80-release-dist
   ARTIFACT_NAME: m80-release-dist
 
 jobs:
@@ -30,10 +28,46 @@ jobs:
       attestations: write
     outputs:
       release_commit: ${{ steps.release-commit.outputs.sha }}
+      release_dist_artifact_id: ${{ steps.upload-release-dist.outputs.artifact-id }}
+      release_dist_artifact_name: ${{ steps.release-artifact-origin.outputs.name }}
+      release_dist_producer_job: ${{ steps.release-artifact-origin.outputs.producer_job }}
+      release_tag: ${{ steps.release-artifact-origin.outputs.release_tag }}
+      release_upload_manifest_digest: ${{ steps.release-upload-manifest.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Prepare release build scratch dirs
+        id: build-scratch
+        run: |
+          set -euo pipefail
+          release_tmp_root="$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-build"
+          artifact_dir="$release_tmp_root/artifacts"
+          dist_dir="$release_tmp_root/dist"
+          image_config="$release_tmp_root/image.toml"
+          test ! -e "$release_tmp_root"
+          mkdir -p "$artifact_dir" "$dist_dir"
+          chmod 700 "$release_tmp_root"
+          test -d "$release_tmp_root"
+          test ! -L "$release_tmp_root"
+          owner_uid="$(stat -c '%u' "$release_tmp_root")"
+          current_uid="$(id -u)"
+          test "$owner_uid" = "$current_uid"
+          mode_octal="$(stat -c '%a' "$release_tmp_root")"
+          test "$mode_octal" = "700"
+          {
+            echo "RELEASE_TMP_ROOT=$release_tmp_root"
+            echo "ARTIFACT_DIR=$artifact_dir"
+            echo "DIST_DIR=$dist_dir"
+            echo "IMAGE_CONFIG=$image_config"
+          } >> "$GITHUB_ENV"
+          {
+            echo "release_tmp_root=$release_tmp_root"
+            echo "artifact_dir=$artifact_dir"
+            echo "dist_dir=$dist_dir"
+            echo "image_config=$image_config"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
         run: rustup toolchain install 1.82 --profile minimal
@@ -68,7 +102,7 @@ jobs:
       - name: Write minimal image config
         run: |
           set -euo pipefail
-          cat > /tmp/m80-release-image.toml <<'EOF'
+          cat > "$IMAGE_CONFIG" <<'EOF'
           [kernel]
           version = "v1.15.1"
           artifact_track = "v1.15"
@@ -82,13 +116,19 @@ jobs:
           binary = "target/x86_64-unknown-linux-musl/release/m80-guestd"
 
           [output]
-          dir = "/tmp/m80-release-artifacts"
+          dir = "__ARTIFACT_DIR__"
           EOF
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          config = Path(os.environ["IMAGE_CONFIG"])
+          config.write_text(config.read_text().replace("__ARTIFACT_DIR__", os.environ["ARTIFACT_DIR"]))
+          PY
 
       - name: Build minimal rootfs artifacts
         run: |
           set -euo pipefail
-          sudo -E target/release/m80-image-build run --config /tmp/m80-release-image.toml
+          sudo -E target/release/m80-image-build run --config "$IMAGE_CONFIG"
           sudo chown -R "$USER:$USER" "$ARTIFACT_DIR"
           target/release/m80-image-build verify --rootfs "$ARTIFACT_DIR/output.ext4"
 
@@ -130,7 +170,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: m80-current-latest-repair-preflight-${{ github.run_id }}
-          path: /tmp/m80-release-artifacts/m80-current-latest-repair-preflight.json
+          path: ${{ steps.build-scratch.outputs.artifact_dir }}/m80-current-latest-repair-preflight.json
           if-no-files-found: error
 
       - name: Package release bundle and asset index
@@ -232,6 +272,7 @@ jobs:
             --expect-record-count 1
 
       - name: Write and validate release upload manifest
+        id: release-upload-manifest
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
@@ -239,13 +280,27 @@ jobs:
             --dist-dir "$DIST_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --write
+          digest="$(sha256sum "$DIST_DIR/m80-release-upload-manifest.json" | awk '{print $1}')"
+          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
+        id: upload-release-dist
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: /tmp/m80-release-dist/*
+          path: ${{ steps.build-scratch.outputs.dist_dir }}/*
+
+      - name: Record workflow artifact origin
+        id: release-artifact-origin
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          {
+            echo "name=$ARTIFACT_NAME"
+            echo "producer_job=build-release-artifacts"
+            echo "release_tag=$GITHUB_REF_NAME"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload failed build diagnostics
         if: failure()
@@ -253,9 +308,15 @@ jobs:
         with:
           name: m80-release-build-failure-${{ github.run_id }}
           path: |
-            /tmp/m80-release-artifacts/**
-            /tmp/m80-release-dist/**
+            ${{ steps.build-scratch.outputs.artifact_dir }}/**
+            ${{ steps.build-scratch.outputs.dist_dir }}/**
           if-no-files-found: ignore
+
+      - name: Cleanup release build scratch dirs
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "$RELEASE_TMP_ROOT"
 
   publish-release-artifacts:
     if: startsWith(github.ref, 'refs/tags/')
@@ -267,21 +328,74 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Prepare release publish scratch dirs
+        id: publish-scratch
+        run: |
+          set -euo pipefail
+          release_tmp_root="$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-publish"
+          upload_dir="$release_tmp_root/upload"
+          prepublish_dir="$release_tmp_root/prepublish"
+          redownload_dir="$release_tmp_root/redownload"
+          noauth_gh_dir="$release_tmp_root/noauth-gh"
+          test ! -e "$release_tmp_root"
+          mkdir -p "$upload_dir" "$prepublish_dir" "$redownload_dir"
+          chmod 700 "$release_tmp_root"
+          test -d "$release_tmp_root"
+          test ! -L "$release_tmp_root"
+          owner_uid="$(stat -c '%u' "$release_tmp_root")"
+          current_uid="$(id -u)"
+          test "$owner_uid" = "$current_uid"
+          mode_octal="$(stat -c '%a' "$release_tmp_root")"
+          test "$mode_octal" = "700"
+          {
+            echo "RELEASE_TMP_ROOT=$release_tmp_root"
+            echo "UPLOAD_DIR=$upload_dir"
+            echo "PREPUBLISH_DIR=$prepublish_dir"
+            echo "REDOWNLOAD_DIR=$redownload_dir"
+            echo "NOAUTH_GH_DIR=$noauth_gh_dir"
+          } >> "$GITHUB_ENV"
+          {
+            echo "release_tmp_root=$release_tmp_root"
+            echo "upload_dir=$upload_dir"
+            echo "prepublish_dir=$prepublish_dir"
+            echo "redownload_dir=$redownload_dir"
+            echo "noauth_gh_dir=$noauth_gh_dir"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: /tmp/m80-release-upload
+          artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}
+
+      - name: Verify workflow artifact origin handoff
+        env:
+          EXPECTED_ARTIFACT_ID: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}
+          EXPECTED_ARTIFACT_NAME: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}
+          EXPECTED_PRODUCER_JOB: ${{ needs.build-release-artifacts.outputs.release_dist_producer_job }}
+          EXPECTED_RELEASE_TAG: ${{ needs.build-release-artifacts.outputs.release_tag }}
+          EXPECTED_MANIFEST_DIGEST: ${{ needs.build-release-artifacts.outputs.release_upload_manifest_digest }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_ARTIFACT_ID"
+          test "$EXPECTED_ARTIFACT_NAME" = "$ARTIFACT_NAME"
+          test "$EXPECTED_PRODUCER_JOB" = "build-release-artifacts"
+          test "$EXPECTED_RELEASE_TAG" = "$GITHUB_REF_NAME"
+          test -n "$RELEASE_COMMIT"
+          manifest_sha="$(sha256sum "$UPLOAD_DIR/m80-release-upload-manifest.json" | awk '{print $1}')"
+          observed_digest="sha256:$manifest_sha"
+          test "$observed_digest" = "$EXPECTED_MANIFEST_DIGEST"
 
       - name: Verify hostless quickstart proof artifact before upload
         run: |
           set -euo pipefail
           scripts/verify-quickstart-proof.py \
-            /tmp/m80-release-upload/m80-quickstart-proof-hostless.json \
-            --artifact-root /tmp/m80-release-upload \
+            "$UPLOAD_DIR/m80-quickstart-proof-hostless.json" \
+            --artifact-root "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME"
           scripts/release_proof_ledger.py verify \
-            --ledger /tmp/m80-release-upload/m80-release-proof-ledger.jsonl \
-            --artifact-root /tmp/m80-release-upload \
+            --ledger "$UPLOAD_DIR/m80-release-proof-ledger.jsonl" \
+            --artifact-root "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --require-proof m80-quickstart-proof-hostless.json \
             --require-proof-type hostless \
@@ -295,13 +409,13 @@ jobs:
           set -euo pipefail
           verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           scripts/verify-release-integrity.py \
-            /tmp/m80-release-upload/m80-release-integrity.json \
-            --dist-dir /tmp/m80-release-upload \
+            "$UPLOAD_DIR/m80-release-integrity.json" \
+            --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --commit-sha "$RELEASE_COMMIT" \
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-            --attestation-bundle /tmp/m80-release-upload/m80-release-integrity.attestation.jsonl \
-            --attestation-metadata /tmp/m80-release-upload/m80-release-attestation.json \
+            --attestation-bundle "$UPLOAD_DIR/m80-release-integrity.attestation.jsonl" \
+            --attestation-metadata "$UPLOAD_DIR/m80-release-attestation.json" \
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
@@ -309,7 +423,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/release_upload_manifest.py \
-            --dist-dir /tmp/m80-release-upload \
+            --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME"
 
       - name: Verify publish authority before mutation
@@ -328,7 +442,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/release_publish_receipt.py \
-            --dist-dir /tmp/m80-release-upload \
+            --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --commit-sha "$RELEASE_COMMIT" \
             --workflow-run-id "$GITHUB_RUN_ID" \
@@ -343,8 +457,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          metadata="/tmp/m80-release-upload/github-release-before-upload.json"
-          stderr="/tmp/m80-release-upload/github-release-before-upload.stderr"
+          metadata="$UPLOAD_DIR/github-release-before-upload.json"
+          stderr="$UPLOAD_DIR/github-release-before-upload.stderr"
           if gh release view "$GITHUB_REF_NAME" --json tagName,url,isDraft,isPrerelease,assets > "$metadata" 2> "$stderr"; then
             :
           elif grep -qi "release not found" "$stderr"; then
@@ -354,10 +468,10 @@ jobs:
             exit 1
           fi
           python3 scripts/release_publication_plan.py \
-            --dist-dir /tmp/m80-release-upload \
+            --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --release-metadata "$metadata" \
-            --out /tmp/m80-release-upload/m80-release-publication-plan.json \
+            --out "$UPLOAD_DIR/m80-release-publication-plan.json" \
             --write
 
       - name: Attach artifacts to GitHub Release
@@ -368,13 +482,15 @@ jobs:
           publication_action="$(
             python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          plan = Path(os.environ["UPLOAD_DIR"]) / "m80-release-publication-plan.json"
+          print(json.loads(plan.read_text())["action"])
           PY
           )"
           mapfile -t upload_paths < <(
             scripts/release_upload_manifest.py \
-              --dist-dir /tmp/m80-release-upload \
+              --dist-dir "$UPLOAD_DIR" \
               --release-tag "$GITHUB_REF_NAME" \
               --print-upload-paths
           )
@@ -405,8 +521,10 @@ jobs:
           publication_action="$(
             python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          plan = Path(os.environ["UPLOAD_DIR"]) / "m80-release-publication-plan.json"
+          print(json.loads(plan.read_text())["action"])
           PY
           )"
           if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
@@ -414,42 +532,42 @@ jobs:
             exit 0
           fi
           verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          mkdir -p /tmp/m80-release-prepublish
-          download_args=(--dir /tmp/m80-release-prepublish)
+          mkdir -p "$PREPUBLISH_DIR"
+          download_args=(--dir "$PREPUBLISH_DIR")
           while IFS= read -r pattern; do
             download_args+=(--pattern "$pattern")
           done < <(
             scripts/release_upload_manifest.py \
-              --dist-dir /tmp/m80-release-upload \
+              --dist-dir "$UPLOAD_DIR" \
               --release-tag "$GITHUB_REF_NAME" \
               --print-download-patterns
           )
           gh release download "$GITHUB_REF_NAME" "${download_args[@]}"
           scripts/release_upload_manifest.py \
-            --dist-dir /tmp/m80-release-prepublish \
-            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
+            --dist-dir "$PREPUBLISH_DIR" \
+            --manifest "$UPLOAD_DIR/m80-release-upload-manifest.json" \
             --release-tag "$GITHUB_REF_NAME" \
             --require-exact-dist-public-assets
           scripts/verify-install-handoff.py \
-            /tmp/m80-release-prepublish \
+            "$PREPUBLISH_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-            --attestation-bundle /tmp/m80-release-prepublish/m80-release-integrity.attestation.jsonl \
-            --attestation-metadata /tmp/m80-release-prepublish/m80-release-attestation.json \
+            --attestation-bundle "$PREPUBLISH_DIR/m80-release-integrity.attestation.jsonl" \
+            --attestation-metadata "$PREPUBLISH_DIR/m80-release-attestation.json" \
             --verification-time "$verification_time"
           scripts/verify-release-bundle.py \
-            /tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz \
+            "$PREPUBLISH_DIR/m80-linux-x86_64.tar.gz" \
             --release-tag "$GITHUB_REF_NAME" \
             --verify-sidecars \
             --downloaded-public-assets
           scripts/verify-release-integrity.py \
-            /tmp/m80-release-prepublish/m80-release-integrity.json \
-            --dist-dir /tmp/m80-release-prepublish \
+            "$PREPUBLISH_DIR/m80-release-integrity.json" \
+            --dist-dir "$PREPUBLISH_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --commit-sha "$RELEASE_COMMIT" \
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-            --attestation-bundle /tmp/m80-release-prepublish/m80-release-integrity.attestation.jsonl \
-            --attestation-metadata /tmp/m80-release-prepublish/m80-release-attestation.json \
+            --attestation-bundle "$PREPUBLISH_DIR/m80-release-integrity.attestation.jsonl" \
+            --attestation-metadata "$PREPUBLISH_DIR/m80-release-attestation.json" \
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
@@ -461,8 +579,10 @@ jobs:
           publication_action="$(
             python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          plan = Path(os.environ["UPLOAD_DIR"]) / "m80-release-publication-plan.json"
+          print(json.loads(plan.read_text())["action"])
           PY
           )"
           if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
@@ -478,64 +598,66 @@ jobs:
         run: |
           set -euo pipefail
           verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          mkdir -p /tmp/m80-release-redownload
-          download_args=(--dir /tmp/m80-release-redownload)
+          mkdir -p "$REDOWNLOAD_DIR"
+          download_args=(--dir "$REDOWNLOAD_DIR")
           while IFS= read -r pattern; do
             download_args+=(--pattern "$pattern")
           done < <(
             scripts/release_upload_manifest.py \
-              --dist-dir /tmp/m80-release-upload \
+              --dist-dir "$UPLOAD_DIR" \
               --release-tag "$GITHUB_REF_NAME" \
               --print-download-patterns
           )
           gh release download "$GITHUB_REF_NAME" "${download_args[@]}"
           scripts/release_upload_manifest.py \
-            --dist-dir /tmp/m80-release-redownload \
-            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
+            --dist-dir "$REDOWNLOAD_DIR" \
+            --manifest "$UPLOAD_DIR/m80-release-upload-manifest.json" \
             --release-tag "$GITHUB_REF_NAME" \
             --require-exact-dist-public-assets
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            > /tmp/m80-release-redownload/github-release.json
+            > "$REDOWNLOAD_DIR/github-release.json"
           release_id="$(
             python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-redownload/github-release.json").read_text())["id"])
+          metadata = Path(os.environ["REDOWNLOAD_DIR"]) / "github-release.json"
+          print(json.loads(metadata.read_text())["id"])
           PY
           )"
           gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
-            > /tmp/m80-release-redownload/github-release-assets.json
+            > "$REDOWNLOAD_DIR/github-release-assets.json"
           scripts/release_remote_asset_inventory.py \
-            --redownload-dir /tmp/m80-release-redownload \
-            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
-            --release-metadata /tmp/m80-release-redownload/github-release.json \
-            --release-assets-metadata /tmp/m80-release-redownload/github-release-assets.json \
+            --redownload-dir "$REDOWNLOAD_DIR" \
+            --manifest "$UPLOAD_DIR/m80-release-upload-manifest.json" \
+            --release-metadata "$REDOWNLOAD_DIR/github-release.json" \
+            --release-assets-metadata "$REDOWNLOAD_DIR/github-release-assets.json" \
             --release-tag "$GITHUB_REF_NAME" \
             --write
           scripts/verify-install-handoff.py \
-            /tmp/m80-release-redownload \
+            "$REDOWNLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-            --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
-            --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
+            --attestation-bundle "$REDOWNLOAD_DIR/m80-release-integrity.attestation.jsonl" \
+            --attestation-metadata "$REDOWNLOAD_DIR/m80-release-attestation.json" \
             --verification-time "$verification_time"
           python3 scripts/stable_release_channel.py \
-            --release-metadata /tmp/m80-release-redownload/github-release.json \
-            --asset-index /tmp/m80-release-redownload/m80-release-assets.json \
+            --release-metadata "$REDOWNLOAD_DIR/github-release.json" \
+            --asset-index "$REDOWNLOAD_DIR/m80-release-assets.json" \
             --expected-tag "$GITHUB_REF_NAME"
           scripts/verify-release-bundle.py \
-            /tmp/m80-release-redownload/m80-linux-x86_64.tar.gz \
+            "$REDOWNLOAD_DIR/m80-linux-x86_64.tar.gz" \
             --release-tag "$GITHUB_REF_NAME" \
             --verify-sidecars \
             --downloaded-public-assets
           scripts/verify-release-integrity.py \
-            /tmp/m80-release-redownload/m80-release-integrity.json \
-            --dist-dir /tmp/m80-release-redownload \
+            "$REDOWNLOAD_DIR/m80-release-integrity.json" \
+            --dist-dir "$REDOWNLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME" \
             --commit-sha "$RELEASE_COMMIT" \
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-            --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
-            --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
+            --attestation-bundle "$REDOWNLOAD_DIR/m80-release-integrity.attestation.jsonl" \
+            --attestation-metadata "$REDOWNLOAD_DIR/m80-release-attestation.json" \
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
@@ -547,8 +669,10 @@ jobs:
           publication_action="$(
             python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          plan = Path(os.environ["UPLOAD_DIR"]) / "m80-release-publication-plan.json"
+          print(json.loads(plan.read_text())["action"])
           PY
           )"
           if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
@@ -562,15 +686,15 @@ jobs:
           RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/m80-noauth-gh
-          mkdir -p /tmp/m80-noauth-gh
+          rm -rf "$NOAUTH_GH_DIR"
+          mkdir -p "$NOAUTH_GH_DIR"
           verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN \
+          GH_CONFIG_DIR="$NOAUTH_GH_DIR" env -u GH_TOKEN -u GITHUB_TOKEN \
             scripts/release_public_access_receipt.py \
               --repository "$GITHUB_REPOSITORY" \
               --release-tag "$GITHUB_REF_NAME" \
               --commit-sha "$RELEASE_COMMIT" \
-              --out /tmp/m80-release-redownload/release-readiness-public-access.json \
+              --out "$REDOWNLOAD_DIR/release-readiness-public-access.json" \
               --verification-time "$verification_time" \
               --write
 
@@ -578,28 +702,28 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: m80-release-publish-decision-${{ github.run_id }}
-          path: /tmp/m80-release-upload/m80-release-publish-decision.json
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json
           if-no-files-found: error
 
       - name: Upload release publication plan
         uses: actions/upload-artifact@v4
         with:
           name: m80-release-publication-plan-${{ github.run_id }}
-          path: /tmp/m80-release-upload/m80-release-publication-plan.json
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publication-plan.json
           if-no-files-found: error
 
       - name: Upload remote release asset inventory
         uses: actions/upload-artifact@v4
         with:
           name: m80-release-remote-assets-${{ github.run_id }}
-          path: /tmp/m80-release-redownload/m80-release-remote-assets.json
+          path: ${{ steps.publish-scratch.outputs.redownload_dir }}/m80-release-remote-assets.json
           if-no-files-found: error
 
       - name: Upload public-access release readiness receipt
         uses: actions/upload-artifact@v4
         with:
           name: m80-release-public-access-${{ github.run_id }}
-          path: /tmp/m80-release-redownload/release-readiness-public-access.json
+          path: ${{ steps.publish-scratch.outputs.redownload_dir }}/release-readiness-public-access.json
           if-no-files-found: error
 
       - name: Upload failed publish diagnostics
@@ -608,7 +732,13 @@ jobs:
         with:
           name: m80-release-publish-failure-${{ github.run_id }}
           path: |
-            /tmp/m80-release-upload/**
-            /tmp/m80-release-prepublish/**
-            /tmp/m80-release-redownload/**
+            ${{ steps.publish-scratch.outputs.upload_dir }}/**
+            ${{ steps.publish-scratch.outputs.prepublish_dir }}/**
+            ${{ steps.publish-scratch.outputs.redownload_dir }}/**
           if-no-files-found: ignore
+
+      - name: Cleanup release publish scratch dirs
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "$RELEASE_TMP_ROOT"

@@ -33,7 +33,7 @@ fn public_access_receipt_doc_workflow_and_tests_pin_no_auth_latest_gate() {
     assert!(
         workflow.contains("Write no-auth public-access release readiness receipt")
             && workflow.contains("scripts/release_public_access_receipt.py")
-            && workflow.contains("GH_CONFIG_DIR=/tmp/m80-noauth-gh")
+            && workflow.contains("GH_CONFIG_DIR=\"$NOAUTH_GH_DIR\"")
             && workflow.contains("env -u GH_TOKEN -u GITHUB_TOKEN")
             && workflow.contains("m80-release-public-access-${{ github.run_id }}"),
         "release workflow must generate and upload the no-auth public-access receipt"

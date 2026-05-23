@@ -202,41 +202,113 @@ class WorkflowPolicyTest(unittest.TestCase):
     def test_release_build_attestation_permissions_are_allowed(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",
-            """
-            name: Release artifacts
-            on:
-              push:
-                tags: ["v*"]
-            permissions:
-              contents: read
-            concurrency:
-              group: release-${{ github.ref_name }}
-            jobs:
-              build-release-artifacts:
-                permissions:
-                  contents: read
-                  id-token: write
-                  attestations: write
-                runs-on: ubuntu-latest
-                timeout-minutes: 90
-                steps:
-                  - uses: actions/checkout@v4
-                  - uses: actions/attest@v4
-                    with:
-                      subject-name: m80-release-integrity.json
-                      subject-digest: sha256:0123456789abcdef
-              publish-release-artifacts:
-                permissions:
-                  contents: write
-                runs-on: ubuntu-latest
-                timeout-minutes: 30
-                steps:
-                  - uses: actions/checkout@v4
-            """,
+            release_artifact_origin_workflow(
+                extra_build_steps="""
+                - uses: actions/attest@v4
+                  with:
+                    subject-name: m80-release-integrity.json
+                    subject-digest: sha256:0123456789abcdef
+                """
+            ),
         ) as root:
             result = run_lint(root)
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_artifact_origin_handoff_is_allowed(self) -> None:
+        with workflow_dir("release-artifacts.yml", release_artifact_origin_workflow()) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_artifact_origin_rejects_manual_override_inputs(self) -> None:
+        workflow = release_artifact_origin_workflow(
+            events="""
+            push:
+              tags: ["v*"]
+            workflow_dispatch:
+              inputs:
+                artifact_url:
+                  required: true
+            """
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must not accept manual artifact override inputs", result.stderr)
+
+    def test_release_artifact_origin_rejects_cache_path_injection(self) -> None:
+        workflow = release_artifact_origin_workflow(
+            extra_build_steps="""
+            - uses: actions/cache@v4
+              with:
+                path: /tmp/m80-release-dist
+                key: release-dist
+            """
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must not use cache contents as release artifact input", result.stderr)
+
+    def test_release_artifact_origin_rejects_runner_local_dist_reuse(self) -> None:
+        workflow = release_artifact_origin_workflow().replace(
+            "path: ${{ steps.publish-scratch.outputs.upload_dir }}",
+            "path: ${{ steps.build-scratch.outputs.dist_dir }}",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("publish job must not reuse runner-local dist paths", result.stderr)
+
+    def test_release_artifact_origin_rejects_wrong_artifact_id_handoff(self) -> None:
+        workflow = release_artifact_origin_workflow().replace(
+            "artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}",
+            "name: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("publish download must use the recorded build artifact id", result.stderr)
+
+    def test_release_temp_isolation_rejects_fixed_tmp_literals(self) -> None:
+        workflow = release_artifact_origin_workflow().replace(
+            "$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-build",
+            "/tmp/m80-release-dist",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must not use fixed /tmp/m80-release-* scratch paths", result.stderr)
+
+    def test_release_temp_isolation_rejects_preexisting_path_reuse(self) -> None:
+        workflow = release_artifact_origin_workflow().replace('          test ! -e "$release_tmp_root"\n', "")
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must isolate and validate runner temp scratch root", result.stderr)
+
+    def test_release_temp_isolation_rejects_symlink_staging_root(self) -> None:
+        workflow = release_artifact_origin_workflow().replace('          test ! -L "$release_tmp_root"\n', "")
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must isolate and validate runner temp scratch root", result.stderr)
+
+    def test_release_temp_isolation_rejects_unsafe_mode_or_owner(self) -> None:
+        workflow = release_artifact_origin_workflow().replace('          test "$mode_octal" = "700"\n', "")
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must isolate and validate runner temp scratch root", result.stderr)
 
     def test_publish_authority_policy_allows_clean_publish_context(self) -> None:
         with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
@@ -977,6 +1049,171 @@ def publish_authority_workflow() -> str:
         steps:
           - uses: actions/checkout@v6
     """
+
+
+def release_artifact_origin_workflow(
+    *,
+    events: str = """
+      push:
+        tags: ["v*"]
+      workflow_dispatch:
+    """,
+    extra_build_steps: str = "",
+) -> str:
+    events_block = textwrap.indent(textwrap.dedent(events).strip(), "  ")
+    extra_build_steps_block = textwrap.indent(textwrap.dedent(extra_build_steps).strip(), "          ")
+    if extra_build_steps_block:
+        extra_build_steps_block = "\n" + extra_build_steps_block
+    return f"""
+name: Release artifacts
+on:
+{events_block}
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref_name }}
+jobs:
+  build-release-artifacts:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      release_commit: ${{{{ steps.release-commit.outputs.sha }}}}
+      release_dist_artifact_id: ${{{{ steps.upload-release-dist.outputs.artifact-id }}}}
+      release_dist_artifact_name: ${{{{ steps.release-artifact-origin.outputs.name }}}}
+      release_dist_producer_job: ${{{{ steps.release-artifact-origin.outputs.producer_job }}}}
+      release_tag: ${{{{ steps.release-artifact-origin.outputs.release_tag }}}}
+      release_upload_manifest_digest: ${{{{ steps.release-upload-manifest.outputs.digest }}}}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare release build scratch dirs
+        id: build-scratch
+        run: |
+          set -euo pipefail
+          release_tmp_root="$RUNNER_TEMP/m80-release-${{GITHUB_RUN_ID}}-${{GITHUB_RUN_ATTEMPT}}-build"
+          artifact_dir="$release_tmp_root/artifacts"
+          dist_dir="$release_tmp_root/dist"
+          test ! -e "$release_tmp_root"
+          mkdir -p "$artifact_dir" "$dist_dir"
+          chmod 700 "$release_tmp_root"
+          test -d "$release_tmp_root"
+          test ! -L "$release_tmp_root"
+          owner_uid="$(stat -c '%u' "$release_tmp_root")"
+          current_uid="$(id -u)"
+          test "$owner_uid" = "$current_uid"
+          mode_octal="$(stat -c '%a' "$release_tmp_root")"
+          test "$mode_octal" = "700"
+          {{
+            echo "RELEASE_TMP_ROOT=$release_tmp_root"
+            echo "ARTIFACT_DIR=$artifact_dir"
+            echo "DIST_DIR=$dist_dir"
+          }} >> "$GITHUB_ENV"
+          {{
+            echo "artifact_dir=$artifact_dir"
+            echo "dist_dir=$dist_dir"
+          }} >> "$GITHUB_OUTPUT"
+      - name: Resolve release commit
+        id: release-commit
+        run: |
+          set -euo pipefail
+          echo "sha=0123456789abcdef0123456789abcdef01234567" >> "$GITHUB_OUTPUT"
+      - name: Write and validate release upload manifest
+        id: release-upload-manifest
+        run: |
+          set -euo pipefail
+          digest="sha256:0123456789abcdef"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Upload workflow artifact
+        id: upload-release-dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{{{ env.ARTIFACT_NAME }}}}
+          path: ${{{{ steps.build-scratch.outputs.dist_dir }}}}/*
+      - name: Record workflow artifact origin
+        id: release-artifact-origin
+        run: |
+          set -euo pipefail
+          {{
+            echo "name=$ARTIFACT_NAME"
+            echo "producer_job=build-release-artifacts"
+            echo "release_tag=$GITHUB_REF_NAME"
+          }} >> "$GITHUB_OUTPUT"{extra_build_steps_block}
+      - name: Cleanup release build scratch dirs
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "$RELEASE_TMP_ROOT"
+  publish-release-artifacts:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-release-artifacts
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Prepare release publish scratch dirs
+        id: publish-scratch
+        run: |
+          set -euo pipefail
+          release_tmp_root="$RUNNER_TEMP/m80-release-${{GITHUB_RUN_ID}}-${{GITHUB_RUN_ATTEMPT}}-publish"
+          upload_dir="$release_tmp_root/upload"
+          prepublish_dir="$release_tmp_root/prepublish"
+          redownload_dir="$release_tmp_root/redownload"
+          test ! -e "$release_tmp_root"
+          mkdir -p "$upload_dir" "$prepublish_dir" "$redownload_dir"
+          chmod 700 "$release_tmp_root"
+          test -d "$release_tmp_root"
+          test ! -L "$release_tmp_root"
+          owner_uid="$(stat -c '%u' "$release_tmp_root")"
+          current_uid="$(id -u)"
+          test "$owner_uid" = "$current_uid"
+          mode_octal="$(stat -c '%a' "$release_tmp_root")"
+          test "$mode_octal" = "700"
+          {{
+            echo "RELEASE_TMP_ROOT=$release_tmp_root"
+            echo "UPLOAD_DIR=$upload_dir"
+            echo "PREPUBLISH_DIR=$prepublish_dir"
+            echo "REDOWNLOAD_DIR=$redownload_dir"
+          }} >> "$GITHUB_ENV"
+          {{
+            echo "upload_dir=$upload_dir"
+            echo "prepublish_dir=$prepublish_dir"
+            echo "redownload_dir=$redownload_dir"
+          }} >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{{{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}}}
+          path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}
+      - name: Verify workflow artifact origin handoff
+        env:
+          EXPECTED_ARTIFACT_ID: ${{{{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}}}
+          EXPECTED_ARTIFACT_NAME: ${{{{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}}}
+          EXPECTED_PRODUCER_JOB: ${{{{ needs.build-release-artifacts.outputs.release_dist_producer_job }}}}
+          EXPECTED_RELEASE_TAG: ${{{{ needs.build-release-artifacts.outputs.release_tag }}}}
+          EXPECTED_MANIFEST_DIGEST: ${{{{ needs.build-release-artifacts.outputs.release_upload_manifest_digest }}}}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_ARTIFACT_ID"
+          test "$EXPECTED_ARTIFACT_NAME" = "$ARTIFACT_NAME"
+          test "$EXPECTED_PRODUCER_JOB" = "build-release-artifacts"
+          test "$EXPECTED_RELEASE_TAG" = "$GITHUB_REF_NAME"
+          manifest_sha="$(sha256sum "$UPLOAD_DIR/m80-release-upload-manifest.json" | awk '{{print $1}}')"
+          observed_digest="sha256:$manifest_sha"
+          test "$observed_digest" = "$EXPECTED_MANIFEST_DIGEST"
+      - name: Verify release upload manifest before upload
+        run: |
+          set -euo pipefail
+          scripts/release_upload_manifest.py --dist-dir "$UPLOAD_DIR" --release-tag "$GITHUB_REF_NAME"
+      - name: Cleanup release publish scratch dirs
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "$RELEASE_TMP_ROOT"
+"""
 
 
 def latest_freshness_workflow(
