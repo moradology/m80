@@ -125,8 +125,10 @@ missing public assets are repairable without rerunning a privileged smoke.
 `.github/workflows/latest-freshness.yml` runs this verifier on a scheduled and
 manual read-only hostless lane. Its `latest-freshness-public` concurrency group
 uses `cancel-in-progress: false` so an overlapping run does not discard the
-older run's evidence, and it uploads proof, drift, stdout, and stderr artifacts
-with `if: always()`.
+older run's evidence. It uploads proof, drift, stdout, and stderr workflow
+artifacts with `if: always()`, then a separate publish job uploads the successful
+`m80-latest-freshness-proof.json` to the resolved public release with
+`--clobber`.
 
 The uploaded `m80-latest-freshness-proof.json` is the reusable input for
 freshness status repair and release-readiness gates. It records the proof schema
@@ -158,6 +160,8 @@ latest release, validates the same latest/pinned URLs and installer-consumed
 assets, and uploads its proof/drift artifacts for repair. `m80 update --check`
 fetches only that status asset by default, or the operator-provided
 `--latest-status-url`; it never downloads bundles or mutates the install root.
+Current public proof:
+`docs/behaviors/release/public-latest-update-check-v0.2.11.json`.
 
 The freshness status contract is defined in
 `docs/behaviors/release/freshness-status.md` and validated by

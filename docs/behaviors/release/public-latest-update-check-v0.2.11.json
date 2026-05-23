@@ -1,0 +1,124 @@
+{
+  "bead": "m80-o3uh9.16.9.8",
+  "command": {
+    "argv": [
+      "sudo",
+      "-n",
+      "env",
+      "PATH=/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root/bin:$PATH",
+      "target/debug/m80",
+      "--json",
+      "update",
+      "--check",
+      "--install-root",
+      "/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root"
+    ],
+    "display": "sudo -n env PATH=/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root/bin:$PATH target/debug/m80 --json update --check --install-root /tank/tmp/m80-o3uh9.16.9.8/fresh-install-root",
+    "exit_status": 0,
+    "json_output": {
+      "data": {
+        "active_kind": "stable_release",
+        "active_tag": "v0.2.11",
+        "apply_command": null,
+        "diagnostics": [],
+        "freshness_state": "current",
+        "install_status": "healthy_active_release",
+        "latest_stable_tag": "v0.2.11",
+        "latest_status_cache_state": "not_used",
+        "latest_status_error": null,
+        "latest_status_fetched_at": 1779511058,
+        "latest_status_max_age_seconds": 172800,
+        "latest_status_offline_reason": null,
+        "latest_status_origin": "remote",
+        "latest_status_source": "https://github.com/moradology/m80/releases/latest/download/m80-latest-freshness-proof.json",
+        "message": "active release is current",
+        "next_command": "m80 run -- echo hello",
+        "proof_cache_age_seconds": 645,
+        "proof_cache_status": "available",
+        "reinstall_command": null,
+        "retry_command": null,
+        "safety_floor": {
+          "advisory_url": null,
+          "issue_id": null,
+          "metadata_source": "https://github.com/moradology/m80/releases/latest/download/m80-latest-freshness-proof.json",
+          "minimum_safe_tag": null,
+          "no_replacement_reason": null,
+          "policy_tag": null,
+          "published_at": "2026-05-23T04:37:38Z",
+          "reason": null,
+          "replacement_command": null,
+          "status": "unknown",
+          "yanked_tags": []
+        },
+        "safety_state": "unknown",
+        "schema_version": 1,
+        "state": "current"
+      },
+      "version": 1
+    },
+    "stderr_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live.stderr",
+    "stdout_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live.json"
+  },
+  "freshness_status_asset": {
+    "checked_url_count": 17,
+    "downloaded_path": "/tank/tmp/m80-o3uh9.16.9.8/m80-latest-freshness-proof-public.json",
+    "public_asset_count": 16,
+    "published_at": "2026-05-23T04:37:38Z",
+    "repository": "moradology/m80",
+    "resolved_tag": "v0.2.11",
+    "sha256": "192e6e7623297f328995a66b093b7a7e10c63c0776d5f617c85af4776f0c76ac",
+    "status": "success",
+    "url": "https://github.com/moradology/m80/releases/latest/download/m80-latest-freshness-proof.json"
+  },
+  "generated_at": "2026-05-23T04:45:57Z",
+  "kind": "public_latest_update_check_proof",
+  "m80_binary_build": {
+    "path": "target/debug/m80",
+    "release_tag_env": "v0.2.11",
+    "source_commit_env": "265ed7db875b16743e51e38514db72b9d3759f59",
+    "target_triple_env": "x86_64-unknown-linux-gnu"
+  },
+  "no_write_proof": {
+    "active_profile_proof_cache_writes": false,
+    "after_fingerprint_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live-after.fingerprint",
+    "after_fingerprint_sha256": "ad488d4ea76c7f1c6df38310f989912ced6c577f224a6efc4b7b41202156f167",
+    "before_fingerprint_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live-before.fingerprint",
+    "before_fingerprint_sha256": "ad488d4ea76c7f1c6df38310f989912ced6c577f224a6efc4b7b41202156f167",
+    "diff_bytes": 0,
+    "diff_empty": true,
+    "diff_path": "/tank/tmp/m80-o3uh9.16.9.8/update-check-public-live-no-write.diff"
+  },
+  "observed": {
+    "active_tag": "v0.2.11",
+    "freshness_state": "current",
+    "latest_stable_tag": "v0.2.11",
+    "metadata_age_seconds_at_capture": 499,
+    "metadata_cache_state": "not_used",
+    "metadata_fetched_at_unix_seconds": 1779511058,
+    "metadata_max_age_seconds": 172800,
+    "metadata_origin": "remote",
+    "metadata_source": "https://github.com/moradology/m80/releases/latest/download/m80-latest-freshness-proof.json",
+    "next_action_command": "m80 run -- echo hello"
+  },
+  "schema_version": 1,
+  "setup": {
+    "install_command": "sudo -n env PATH=/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root/bin:$PATH M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) target/debug/m80 install --release-tag v0.2.11 --install-root /tank/tmp/m80-o3uh9.16.9.8/fresh-install-root",
+    "install_stderr_path": "/tank/tmp/m80-o3uh9.16.9.8/fresh-install-v0211-clean-sudo-path.stderr",
+    "install_stdout_path": "/tank/tmp/m80-o3uh9.16.9.8/fresh-install-v0211-clean-sudo-path.stdout",
+    "installed_from_public_release": true,
+    "release_tag": "v0.2.11"
+  },
+  "substrate": {
+    "auth_state": "unauthenticated-public-read",
+    "fixture_source": false,
+    "install_root": "/tank/tmp/m80-o3uh9.16.9.8/fresh-install-root",
+    "kind": "linux-host-with-sudo",
+    "network_target": "public-github-release",
+    "public_owner": "moradology",
+    "public_repo": "m80"
+  },
+  "verification": {
+    "public_asset_validated_command": "python3 scripts/release_freshness.py --validate-proof /tank/tmp/m80-o3uh9.16.9.8/m80-latest-freshness-proof-public.json",
+    "update_check_stdout_sha256": "a5c2cd2cd34f8c2a315248c74a87a2f97ebbb6ca83bccada369988bdb5234ad3"
+  }
+}
