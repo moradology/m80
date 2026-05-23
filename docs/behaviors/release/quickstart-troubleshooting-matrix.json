@@ -315,6 +315,9 @@
         }
       ],
       "verifier_codes": {
+        "error_envelope": [
+          "no_installed_profile"
+        ],
         "install_state": [
           "active_pointer_not_version_dir",
           "active_pointer_outside_install_root",

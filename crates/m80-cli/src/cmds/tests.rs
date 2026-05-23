@@ -5,8 +5,8 @@ use super::install_status::ProofCacheStatusOutput;
 use super::preflight::{
     artifact_config_for_runtime_profile, binary_config_for_runtime_profile,
     host_feature_config_from_effective, host_prerequisite_failure,
-    render_host_prerequisite_failure, render_preflight_result, PreflightErrorReport,
-    PreflightReport,
+    render_host_prerequisite_failure, render_preflight_result, run_profile_readiness_error,
+    PreflightErrorReport, PreflightReport,
 };
 use super::{
     build_process_env, cmd_preflight, format_config_json, format_config_table,
@@ -17,6 +17,7 @@ use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};
 use crate::json;
 use crate::profile::{self, ProfileBodySource, RuntimeProfile};
+use crate::release::VersionIdentity;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{
     CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
@@ -90,6 +91,160 @@ fn preflight_error_uses_shared_error_mapping() {
         false,
     );
     assert_eq!(code, EXIT_PREFLIGHT);
+}
+
+#[test]
+fn run_default_env_profile_without_artifacts_prints_install_repair() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "M80_KERNEL_IMAGE",
+        "M80_ROOTFS_IMAGE",
+        "M80_ARTIFACT_DIR",
+    ]);
+    std::env::remove_var("M80_KERNEL_IMAGE");
+    std::env::remove_var("M80_ROOTFS_IMAGE");
+    std::env::remove_var("M80_ARTIFACT_DIR");
+
+    let profile = RuntimeProfile {
+        name: "env".to_owned(),
+        selection_source: ConfigSource::Default,
+        body_source: ProfileBodySource::BuiltinEnv,
+        file_path: None,
+        artifact_dir: None,
+        kernel_image: None,
+        rootfs_image: None,
+        kernel_kind: None,
+        guestd: None,
+        guest_manifest: None,
+        build_receipt: None,
+        install_provenance: None,
+        host_binaries_manifest: None,
+        firecracker_bin: None,
+        firecracker_seccomp_filter: None,
+        jailer_bin: None,
+        jailer_harden_bin: None,
+        net_helper_bin: None,
+        run_root: None,
+        release_tag: None,
+        m80_version: None,
+        description: Some("boot artifacts resolved from M80_* environment/defaults".to_owned()),
+    };
+
+    let err =
+        run_profile_readiness_error(&profile, &VersionIdentity::from_parts("1.2.3", None, None))
+            .expect("missing installed profile should fail before preflight");
+    let text = err.to_string();
+
+    assert!(text.contains("no installed default profile"), "{text}");
+    assert!(
+        text.contains("m80 install --bundle-url file:///path/to/m80-linux-x86_64.tar.gz"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("releases/latest"),
+        "dev build must not suggest latest install: {text}"
+    );
+}
+
+#[test]
+fn run_default_env_profile_with_artifact_env_is_allowed_to_preflight() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "M80_KERNEL_IMAGE",
+        "M80_ROOTFS_IMAGE",
+        "M80_ARTIFACT_DIR",
+    ]);
+    std::env::set_var("M80_KERNEL_IMAGE", "/tmp/vmlinux");
+    std::env::set_var("M80_ROOTFS_IMAGE", "/tmp/rootfs.ext4");
+    std::env::remove_var("M80_ARTIFACT_DIR");
+
+    let mut profile = installed_runtime_profile();
+    profile.name = "env".to_owned();
+    profile.selection_source = ConfigSource::Default;
+    profile.body_source = ProfileBodySource::BuiltinEnv;
+    profile.description =
+        Some("boot artifacts resolved from M80_* environment/defaults".to_owned());
+    profile.kernel_image = None;
+    profile.rootfs_image = None;
+
+    assert!(run_profile_readiness_error(
+        &profile,
+        &VersionIdentity::from_parts("1.2.3", None, None),
+    )
+    .is_none());
+}
+
+#[test]
+fn release_no_profile_repair_names_current_and_latest_installer() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "M80_KERNEL_IMAGE",
+        "M80_ROOTFS_IMAGE",
+        "M80_ARTIFACT_DIR",
+    ]);
+    std::env::remove_var("M80_KERNEL_IMAGE");
+    std::env::remove_var("M80_ROOTFS_IMAGE");
+    std::env::remove_var("M80_ARTIFACT_DIR");
+
+    let mut profile = installed_runtime_profile();
+    profile.name = "env".to_owned();
+    profile.selection_source = ConfigSource::Default;
+    profile.body_source = ProfileBodySource::BuiltinEnv;
+    profile.description =
+        Some("boot artifacts resolved from M80_* environment/defaults".to_owned());
+    profile.kernel_image = None;
+    profile.rootfs_image = None;
+
+    let err = run_profile_readiness_error(
+        &profile,
+        &VersionIdentity::from_parts(
+            "1.2.3",
+            Some("v1.2.3"),
+            Some("0123456789abcdef0123456789abcdef01234567"),
+        ),
+    )
+    .expect("release build without installed profile should name repair commands");
+    let text = err.to_string();
+
+    assert!(
+        text.contains("releases/download/v1.2.3/install.sh"),
+        "{text}"
+    );
+    assert!(
+        text.contains("releases/latest/download/install.sh"),
+        "{text}"
+    );
+}
+
+#[test]
+fn stale_installed_profile_paths_print_reinstall_command() {
+    let mut profile = installed_runtime_profile();
+    profile.kernel_image = Some("/definitely/missing/vmlinux".into());
+    profile.rootfs_image = Some("/definitely/missing/rootfs.ext4".into());
+
+    let err = run_profile_readiness_error(
+        &profile,
+        &VersionIdentity::from_parts(
+            "1.2.3",
+            Some("v1.2.3"),
+            Some("0123456789abcdef0123456789abcdef01234567"),
+        ),
+    )
+    .expect("stale installed profile should fail before unrelated preflight checks");
+    let text = err.to_string();
+
+    assert!(
+        text.contains("installed default profile is stale"),
+        "{text}"
+    );
+    assert!(
+        text.contains("kernel_image=/definitely/missing/vmlinux"),
+        "{text}"
+    );
+    assert!(
+        text.contains("releases/download/v1.2.3/install.sh"),
+        "{text}"
+    );
 }
 
 #[test]

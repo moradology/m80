@@ -31,6 +31,9 @@ the guest process exit code, then tears the sandbox down.
 The CLI mints one opaque ULID-based `request_id` at `m80 run` entry and threads
 it through JSON envelopes, wrapper errors, host diagnostics, warm-owner control
 requests, and guest wire frames.
+When no installed default profile or explicit artifact input exists, `m80 run`
+fails before host preflight with `code: "no_installed_profile"` and prints the
+exact install repair path for the running binary identity.
 
 Runtime availability is explicit: `<program>` must already exist in the selected
 guest image/profile or in the visible workspace. The CLI does not execute host

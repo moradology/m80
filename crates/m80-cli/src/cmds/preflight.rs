@@ -14,6 +14,7 @@ use crate::config;
 use crate::errors;
 use crate::json;
 use crate::profile::{self, ProfileFilePaths, RuntimeProfile};
+use crate::release::{VersionIdentity, VersionStatus};
 use crate::release_urls;
 
 use super::install_status::ProofCacheStatusOutput;
@@ -37,7 +38,73 @@ pub(crate) fn build_run_backend(
     }
     let effective = config::load_effective(&flag_overrides)?;
     let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
+    if let Some(err) = run_profile_readiness_error(&runtime_profile, &VersionIdentity::current()) {
+        return Err(err);
+    }
     backend_from_effective(effective, &runtime_profile)
+}
+
+pub(super) fn run_profile_readiness_error(
+    runtime_profile: &RuntimeProfile,
+    identity: &VersionIdentity,
+) -> Option<FcError> {
+    if runtime_profile.body_source == profile::ProfileBodySource::BuiltinEnv
+        && std::env::var_os(m80_preflight::ENV_KERNEL_IMAGE).is_none()
+        && std::env::var_os(m80_preflight::ENV_ROOTFS_IMAGE).is_none()
+        && std::env::var_os("M80_ARTIFACT_DIR").is_none()
+    {
+        return Some(no_installed_profile_error(identity));
+    }
+
+    let report = profile::runtime_profile_report(runtime_profile);
+    if runtime_profile.description.as_deref() == Some("m80 installed default profile")
+        && !report.missing_paths.is_empty()
+    {
+        let missing = report
+            .missing_paths
+            .iter()
+            .map(|missing| format!("{}={}", missing.field, missing.path.display()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Some(FcError::Config(ConfigError::InvalidValue {
+            field: "runtime_profile",
+            reason: format!(
+                "installed default profile is stale: missing {missing}; repair: {}",
+                install_repair_command(identity)
+            ),
+        }));
+    }
+
+    None
+}
+
+fn no_installed_profile_error(identity: &VersionIdentity) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "default_profile",
+        reason: format!(
+            "no installed default profile; repair: {}",
+            install_repair_command(identity)
+        ),
+    })
+}
+
+fn install_repair_command(identity: &VersionIdentity) -> String {
+    if identity.version_status == VersionStatus::Release {
+        let tag = identity
+            .release_tag
+            .as_deref()
+            .expect("release status requires release tag");
+        return format!(
+            "current version: curl -fsSL {} | sudo sh; latest stable: curl -fsSL {} | sudo sh",
+            release_urls::release_install_url(tag),
+            release_urls::latest_install_url()
+        );
+    }
+
+    format!(
+        "dev build: create a local bundle for {} and run m80 install --bundle-url file:///path/to/m80-linux-x86_64.tar.gz",
+        identity.binary_version
+    )
 }
 
 fn backend_from_effective(

@@ -198,6 +198,7 @@
         "doc:docs/behaviors/release/install-state.md"
       ],
       "verifier_code_families": [
+        "error_envelope",
         "install_state"
       ]
     },

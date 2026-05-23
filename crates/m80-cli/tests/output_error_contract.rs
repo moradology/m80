@@ -73,6 +73,42 @@ fn writeback_without_workspace_fails_before_backend_work() {
 }
 
 #[test]
+fn run_without_installed_profile_reports_repair_code_before_preflight() {
+    let run_root = tempfile::tempdir().unwrap();
+    let output = m80()
+        .env("M80_DEFAULT_PROFILE", "env")
+        .env_remove("M80_KERNEL_IMAGE")
+        .env_remove("M80_ROOTFS_IMAGE")
+        .env_remove("M80_ARTIFACT_DIR")
+        .env("M80_RUN_ROOT", run_root.path())
+        .args(["--json", "run", "--", "echo", "hello"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(EXIT_CONFIG));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr should be one JSON envelope");
+    assert_eq!(parsed["data"]["variant"], "Config");
+    assert_eq!(parsed["data"]["code"], "no_installed_profile");
+    let detail = parsed["data"]["detail"].as_str().unwrap();
+    assert!(detail.contains("no installed default profile"), "{detail}");
+    assert!(
+        detail.contains("m80 install --bundle-url file:///path/to/m80-linux-x86_64.tar.gz"),
+        "{detail}"
+    );
+    assert!(
+        !detail.contains("releases/latest"),
+        "dev build must not suggest latest install: {detail}"
+    );
+    assert!(
+        common::run_root_entries(run_root.path()).is_empty(),
+        "no-profile diagnostic must not create run dirs"
+    );
+}
+
+#[test]
 fn cli_exit_codes_parse_vs_runtime_distinct() {
     let parse_error = m80()
         .args(["run", "--not-a-real-flag", "--", "true"])

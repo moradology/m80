@@ -150,6 +150,7 @@ pub(crate) enum ErrorDiagnosticCode {
     ReleaseMaterialAttestation,
     ReleaseMaterialStale,
     InstallNoWriteRollback,
+    NoInstalledProfile,
 }
 
 /// Build an [`ErrorEnvelope`] from an [`FcError`].
@@ -170,6 +171,9 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
 fn diagnostic_code_for(err: &FcError) -> Option<ErrorDiagnosticCode> {
     match err {
         FcError::Config(ConfigError::InvalidValue { field, reason }) => match *field {
+            "default_profile" if reason.contains("no installed default profile") => {
+                Some(ErrorDiagnosticCode::NoInstalledProfile)
+            }
             "bundle-url" => Some(ErrorDiagnosticCode::DirectUrlClassifier),
             "bundle-url.sha256" => Some(ErrorDiagnosticCode::ReleaseMaterialDigest),
             "attestation-verifier" => Some(ErrorDiagnosticCode::ReleaseMaterialAttestation),
