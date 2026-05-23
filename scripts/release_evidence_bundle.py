@@ -12,13 +12,14 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 KIND = "m80_release_evidence_bundle"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 BUILD_HANDOFF_NAME = "m80-release-build.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 HOSTLESS_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+REAL_KVM_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 READINESS_CONFIG = Path("docs/behaviors/release/release-readiness-lanes.json")
 
@@ -40,6 +41,7 @@ TOP_LEVEL_FIELDS = {
     "public_assets",
     "workflow_only_artifacts",
     "proofs",
+    "host_binaries",
     "redaction",
 }
 FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
@@ -47,6 +49,15 @@ PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subjec
 WORKFLOW_ARTIFACT_FIELDS = {"name", "reason", "sha256", "size_bytes"}
 WORKFLOW_INVENTORY_FIELDS = {"name", "reason", "sha256", "size_bytes"}
 PROOF_FIELDS = {"lane_id", "proof_kind", "substrate", "artifact_class", "file"}
+HOST_BINARIES_FIELDS = {
+    "lane_id",
+    "substrate",
+    "artifact_class",
+    "manifest",
+    "firecracker_version",
+    "jailer_version",
+    "install_root_classification",
+}
 REDACTION_FIELDS = {"policy", "forbidden"}
 REDACTION_FORBIDDEN = ["absolute-host-paths", "secrets", "tokens", "environment-dumps"]
 
@@ -90,6 +101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--publish-receipt", type=Path)
     parser.add_argument("--proof-ledger", type=Path)
     parser.add_argument("--hostless-proof", type=Path)
+    parser.add_argument("--real-kvm-proof", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--write", action="store_true")
     return parser.parse_args()
@@ -103,6 +115,7 @@ def main() -> int:
     publish_receipt = (args.publish_receipt or dist_dir / PUBLISH_RECEIPT_NAME).resolve()
     proof_ledger = (args.proof_ledger or dist_dir / RELEASE_PROOF_LEDGER_NAME).resolve()
     hostless_proof = (args.hostless_proof or dist_dir / HOSTLESS_PROOF_NAME).resolve()
+    real_kvm_proof = args.real_kvm_proof.resolve() if args.real_kvm_proof else None
     bundle_path = (args.bundle or dist_dir / EVIDENCE_BUNDLE_NAME).resolve()
     resolved_install_tag = args.resolved_install_tag or args.release_tag
 
@@ -121,6 +134,7 @@ def main() -> int:
             publish_receipt=publish_receipt,
             proof_ledger=proof_ledger,
             hostless_proof=hostless_proof,
+            real_kvm_proof=real_kvm_proof,
         )
         write_json(bundle_path, bundle)
 
@@ -138,6 +152,7 @@ def main() -> int:
         publish_receipt=publish_receipt,
         proof_ledger=proof_ledger,
         hostless_proof=hostless_proof,
+        real_kvm_proof=real_kvm_proof,
     )
     print(f"release evidence bundle ok: {bundle_path}")
     return 0
@@ -158,11 +173,20 @@ def build_bundle(
     publish_receipt: Path,
     proof_ledger: Path,
     hostless_proof: Path,
+    real_kvm_proof: Path | None,
 ) -> dict[str, Any]:
     manifest = read_json(upload_manifest, "release upload manifest")
     required_lane_ids = required_lanes(read_json(readiness_config, "release readiness config"))
-    proof_lane_ids = {"hostless-quickstart"}
+    proof_inputs = {"hostless-quickstart": hostless_proof}
+    if real_kvm_proof is not None:
+        proof_inputs["real-kvm-quickstart"] = real_kvm_proof
     workflow_only = workflow_only_artifacts(manifest, dist_dir)
+    workflow_by_name = {row["name"]: row for row in workflow_only}
+    require(
+        real_kvm_proof is None or real_kvm_proof.name in workflow_by_name,
+        "release evidence real-kvm proof must be listed as a workflow-only artifact",
+    )
+    proof_lane_ids = set(proof_inputs)
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
@@ -182,13 +206,20 @@ def build_bundle(
         "workflow_only_artifacts": workflow_only,
         "proofs": [
             {
-                "lane_id": "hostless-quickstart",
+                "lane_id": lane_id,
                 "proof_kind": "quickstart-proof",
-                "substrate": "hostless",
+                "substrate": PROOF_SUBSTRATES_BY_LANE[lane_id],
                 "artifact_class": "workflow-only",
-                "file": file_ref(dist_dir, hostless_proof, "hostless proof"),
+                "file": file_ref(dist_dir, proof_path, f"{lane_id} proof"),
             }
+            for lane_id, proof_path in sorted(proof_inputs.items())
+            if lane_id == "hostless-quickstart" or proof_path.name in workflow_by_name
         ],
+        "host_binaries": host_binaries_summaries(
+            dist_dir=dist_dir,
+            proof_inputs=proof_inputs,
+            workflow_by_name=workflow_by_name,
+        ),
         "redaction": {
             "policy": "Evidence names flat release files and sha256 digests only; host paths, secrets, tokens, and environment dumps are forbidden.",
             "forbidden": list(REDACTION_FORBIDDEN),
@@ -210,6 +241,7 @@ def verify_bundle(
     publish_receipt: Path,
     proof_ledger: Path,
     hostless_proof: Path,
+    real_kvm_proof: Path | None,
 ) -> None:
     require_exact_fields(bundle, TOP_LEVEL_FIELDS, "release evidence bundle")
     require(bundle["schema_version"] == SCHEMA_VERSION, "unsupported release evidence bundle schema_version")
@@ -248,6 +280,7 @@ def verify_bundle(
 
     expected_workflow = workflow_only_artifacts(manifest, dist_dir)
     require(observed_workflow == expected_workflow, "release evidence bundle workflow_only_artifacts mismatch")
+    workflow_by_name = {row["name"]: row for row in expected_workflow}
 
     required_lane_ids = require_lane_ids(bundle["required_lane_ids"], "release evidence bundle required_lane_ids")
     require(set(required_lane_ids), "release evidence bundle required_lane_ids must be nonempty")
@@ -255,12 +288,28 @@ def verify_bundle(
         bundle["missing_required_lane_ids"],
         "release evidence bundle missing_required_lane_ids",
     )
+    expected_proof_files = {"hostless-quickstart": hostless_proof}
+    if real_kvm_proof is not None:
+        expected_proof_files["real-kvm-quickstart"] = real_kvm_proof
     proof_lane_ids = require_proofs(
         bundle["proofs"],
         public_names=public_names,
         workflow_names=workflow_names,
         dist_dir=dist_dir,
-        expected_files={"hostless-quickstart": hostless_proof},
+        expected_files=expected_proof_files,
+    )
+    proof_inputs = {"hostless-quickstart": hostless_proof}
+    if real_kvm_proof is not None:
+        proof_inputs["real-kvm-quickstart"] = real_kvm_proof
+    expected_host_binaries = host_binaries_summaries(
+        dist_dir=dist_dir,
+        proof_inputs=proof_inputs,
+        workflow_by_name=workflow_by_name,
+    )
+    observed_host_binaries = normalized_host_binaries(bundle["host_binaries"])
+    require(
+        observed_host_binaries == expected_host_binaries,
+        "release evidence bundle host_binaries mismatch",
     )
     required = set(required_lane_ids)
     missing = set(missing_lane_ids)
@@ -275,6 +324,7 @@ def verify_bundle(
         "release evidence bundle required lane coverage mismatch",
     )
     verify_redaction(bundle["redaction"])
+    reject_absolute_host_path_leak(bundle, "release evidence bundle")
 
 
 def normalized_public_assets(value: object) -> list[dict[str, Any]]:
@@ -393,6 +443,159 @@ def require_proofs(
             expected_ref = file_ref(dist_dir, expected_file, f"proof {lane_id}")
             require(file == expected_ref, f"release evidence bundle proof {lane_id} file mismatch")
     return seen_lane_ids
+
+
+def host_binaries_summaries(
+    *,
+    dist_dir: Path,
+    proof_inputs: dict[str, Path],
+    workflow_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for lane_id, proof_path in sorted(proof_inputs.items()):
+        proof = read_json(proof_path, f"{lane_id} quickstart proof")
+        require(
+            proof.get("proof_kind") == PROOF_SUBSTRATES_BY_LANE[lane_id],
+            f"{lane_id} quickstart proof proof_kind mismatch",
+        )
+        host_binaries = require_object(proof.get("host_binaries"), f"{lane_id} quickstart proof host_binaries")
+        require_exact_fields(
+            host_binaries,
+            {"manifest_path", "firecracker_version", "jailer_version"},
+            f"{lane_id} quickstart proof host_binaries",
+        )
+        manifest_rel = require_relative_artifact_path(
+            host_binaries["manifest_path"],
+            f"{lane_id} quickstart proof host_binaries manifest_path",
+        )
+        require(len(Path(manifest_rel).parts) == 1, f"{lane_id} host-binaries manifest must be a flat artifact")
+        manifest_path = (proof_path.parent / manifest_rel).resolve()
+        manifest_ref = file_ref(dist_dir, manifest_path, f"{lane_id} host-binaries manifest")
+        inventory_row = workflow_by_name.get(manifest_ref["name"])
+        require(
+            inventory_row is not None,
+            f"release evidence host-binaries manifest not listed as workflow-only artifact: {manifest_ref['name']}",
+        )
+        require(
+            manifest_ref["sha256"] == f"sha256:{inventory_row['sha256']}",
+            f"release evidence host-binaries manifest {manifest_ref['name']} sha256 mismatch",
+        )
+        require(
+            manifest_ref["size_bytes"] == inventory_row["size_bytes"],
+            f"release evidence host-binaries manifest {manifest_ref['name']} size_bytes mismatch",
+        )
+        manifest = read_json(manifest_path, f"{lane_id} host-binaries manifest")
+        firecracker_version = require_nonempty_string(
+            host_binaries["firecracker_version"],
+            f"{lane_id} quickstart proof host_binaries firecracker_version",
+        )
+        jailer_version = require_nonempty_string(
+            host_binaries["jailer_version"],
+            f"{lane_id} quickstart proof host_binaries jailer_version",
+        )
+        require(
+            manifest.get("firecracker_version") == firecracker_version,
+            f"{lane_id} host-binaries manifest firecracker_version mismatch",
+        )
+        require(
+            manifest.get("jailer_version") == jailer_version,
+            f"{lane_id} host-binaries manifest jailer_version mismatch",
+        )
+        rows.append(
+            {
+                "lane_id": lane_id,
+                "substrate": PROOF_SUBSTRATES_BY_LANE[lane_id],
+                "artifact_class": "workflow-only",
+                "manifest": manifest_ref,
+                "firecracker_version": firecracker_version,
+                "jailer_version": jailer_version,
+                "install_root_classification": install_root_classification(proof),
+            }
+        )
+    return rows
+
+
+def normalized_host_binaries(value: object) -> list[dict[str, Any]]:
+    rows = require_list(value, "release evidence bundle host_binaries")
+    result = []
+    for row in rows:
+        require(isinstance(row, dict), "release evidence bundle host_binaries row must be an object")
+        require_exact_fields(row, HOST_BINARIES_FIELDS, "release evidence bundle host_binaries row")
+        lane_id = require_lane_id(row["lane_id"], "release evidence bundle host_binaries lane_id")
+        expected_substrate = PROOF_SUBSTRATES_BY_LANE.get(lane_id)
+        require(expected_substrate is not None, f"release evidence bundle host_binaries {lane_id} lane unknown")
+        require(row["substrate"] == expected_substrate, f"release evidence bundle host_binaries {lane_id} substrate mismatch")
+        require(row["artifact_class"] == "workflow-only", f"release evidence bundle host_binaries {lane_id} artifact_class invalid")
+        firecracker_version = require_nonempty_string(
+            row["firecracker_version"],
+            f"release evidence bundle host_binaries {lane_id} firecracker_version",
+        )
+        jailer_version = require_nonempty_string(
+            row["jailer_version"],
+            f"release evidence bundle host_binaries {lane_id} jailer_version",
+        )
+        classification = require_nonempty_string(
+            row["install_root_classification"],
+            f"release evidence bundle host_binaries {lane_id} install_root_classification",
+        )
+        require(
+            classification in {"default-install-root", "override-install-root", "hostless-fixture"},
+            f"release evidence bundle host_binaries {lane_id} install_root_classification invalid",
+        )
+        result.append(
+            {
+                "lane_id": lane_id,
+                "substrate": row["substrate"],
+                "artifact_class": row["artifact_class"],
+                "manifest": normalized_file_ref(
+                    row["manifest"],
+                    f"release evidence bundle host_binaries {lane_id} manifest",
+                ),
+                "firecracker_version": firecracker_version,
+                "jailer_version": jailer_version,
+                "install_root_classification": classification,
+            }
+        )
+    lane_ids = [row["lane_id"] for row in result]
+    require(len(lane_ids) == len(set(lane_ids)), "release evidence bundle host_binaries duplicate lane_id")
+    return sorted(result, key=lambda row: row["lane_id"])
+
+
+def install_root_classification(proof: dict[str, Any]) -> str:
+    substrate = proof.get("proof_kind")
+    if substrate == "hostless":
+        return "hostless-fixture"
+    install = require_object(proof.get("install"), f"{substrate} quickstart proof install")
+    root = require_nonempty_string(install.get("root"), f"{substrate} quickstart proof install root")
+    return "default-install-root" if root == "/opt/m80" else "override-install-root"
+
+
+def require_object(value: object, label: str) -> dict[str, Any]:
+    require(isinstance(value, dict), f"{label} must be an object")
+    return value
+
+
+def require_relative_artifact_path(value: object, label: str) -> str:
+    require(isinstance(value, str) and value, f"{label} must be a nonempty relative path")
+    path = Path(value)
+    require(not path.is_absolute(), f"{label} must be relative to the proof artifact root")
+    require(".." not in path.parts, f"{label} must not escape the proof artifact root")
+    return path.as_posix()
+
+
+def reject_absolute_host_path_leak(value: object, label: str) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            reject_absolute_host_path_leak(item, f"{label}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            reject_absolute_host_path_leak(item, f"{label}[{index}]")
+    elif isinstance(value, str):
+        require(not looks_like_absolute_host_path(value), f"{label} leaks absolute host path")
+
+
+def looks_like_absolute_host_path(value: str) -> bool:
+    return re.search(r"(^|[\s=:\"'(\[])/(home|root|tmp|var|opt|tank)/", value) is not None
 
 
 def verify_redaction(value: object) -> None:

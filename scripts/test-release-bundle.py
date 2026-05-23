@@ -54,6 +54,7 @@ HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME = "m80-quickstart-proof-hostless.verifi
 HOSTLESS_QUICKSTART_STDERR_NAME = "m80-quickstart-stderr.txt"
 HOSTLESS_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries.manifest.json"
 REAL_KVM_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
+REAL_KVM_QUICKSTART_HOST_BINARIES_NAME = "m80-quickstart-host-binaries-real-kvm.manifest.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 WORKFLOW_POLICY_REPORT_NAME = "m80-workflow-policy-report.json"
 WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
@@ -2279,7 +2280,7 @@ class ReleaseBundleTest(unittest.TestCase):
             bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
-            self.assertEqual(bundle["schema_version"], 2)
+            self.assertEqual(bundle["schema_version"], 3)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
             self.assertEqual(bundle["release_tag"], "v0.2.11")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
@@ -2320,7 +2321,79 @@ class ReleaseBundleTest(unittest.TestCase):
                     }
                 ],
             )
+            host_manifest_ref = {
+                "name": HOSTLESS_QUICKSTART_HOST_BINARIES_NAME,
+                "sha256": f"sha256:{sha256(out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME)}",
+                "size_bytes": (out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME).stat().st_size,
+            }
+            self.assertEqual(
+                bundle["host_binaries"],
+                [
+                    {
+                        "artifact_class": "workflow-only",
+                        "firecracker_version": "hostless-fixture",
+                        "install_root_classification": "hostless-fixture",
+                        "jailer_version": "hostless-fixture",
+                        "lane_id": "hostless-quickstart",
+                        "manifest": host_manifest_ref,
+                        "substrate": "hostless",
+                    }
+                ],
+            )
+            self.assertNotIn("/tmp/m80-hostless-install-root", json.dumps(bundle))
             self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
+
+    def test_release_evidence_bundle_writes_real_kvm_host_binaries_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            real_kvm_proof = write_real_kvm_quickstart_proof_placeholder(out_dir)
+            add_workflow_inventory_artifact(out_dir, REAL_KVM_QUICKSTART_PROOF_NAME, "real-KVM quickstart proof")
+            add_workflow_inventory_artifact(
+                out_dir,
+                REAL_KVM_QUICKSTART_HOST_BINARIES_NAME,
+                "real-KVM host-binaries manifest",
+            )
+
+            run_release_evidence_bundle(
+                out_dir,
+                "--write",
+                "--real-kvm-proof",
+                str(real_kvm_proof),
+            )
+            bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+
+            self.assertEqual(
+                [row["lane_id"] for row in bundle["host_binaries"]],
+                ["hostless-quickstart", "real-kvm-quickstart"],
+            )
+            real_kvm = next(row for row in bundle["host_binaries"] if row["lane_id"] == "real-kvm-quickstart")
+            self.assertEqual(real_kvm["substrate"], "real-kvm")
+            self.assertEqual(real_kvm["firecracker_version"], "v1.15.1")
+            self.assertEqual(real_kvm["jailer_version"], "v1.15.1")
+            self.assertEqual(real_kvm["install_root_classification"], "default-install-root")
+            self.assertEqual(real_kvm["manifest"]["name"], REAL_KVM_QUICKSTART_HOST_BINARIES_NAME)
+            self.assertNotIn("/opt/m80", json.dumps(bundle))
+
+    def test_release_evidence_bundle_rejects_uninventoried_real_kvm_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            real_kvm_proof = write_real_kvm_quickstart_proof_placeholder(out_dir)
+            add_workflow_inventory_artifact(
+                out_dir,
+                REAL_KVM_QUICKSTART_HOST_BINARIES_NAME,
+                "real-KVM host-binaries manifest",
+            )
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--write",
+                "--real-kvm-proof",
+                str(real_kvm_proof),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("real-kvm proof must be listed as a workflow-only artifact", result.stderr)
 
     def test_release_evidence_bundle_rejects_proof_row_ledger_swap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2363,6 +2436,76 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"workflow-only artifact missing: {HOSTLESS_QUICKSTART_HOST_BINARIES_NAME}", result.stderr)
+
+    def test_release_evidence_bundle_rejects_missing_host_binaries_manifest_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["host_binaries"].pop("manifest_path")
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("hostless-quickstart quickstart proof host_binaries field mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_host_binaries_manifest_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            manifest_path = out_dir / HOSTLESS_QUICKSTART_HOST_BINARIES_NAME
+            manifest = json.loads(manifest_path.read_text())
+            manifest["jailer_version"] = "tampered"
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "workflow-only artifact m80-quickstart-host-binaries.manifest.json sha256 mismatch",
+                result.stderr,
+            )
+
+    def test_release_evidence_bundle_rejects_missing_host_binaries_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["host_binaries"]["firecracker_version"] = ""
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("host_binaries firecracker_version must be a nonempty string", result.stderr)
+
+    def test_release_evidence_bundle_rejects_absolute_host_binaries_manifest_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["host_binaries"]["manifest_path"] = "/tmp/host-binaries.manifest.json"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("manifest_path must be relative to the proof artifact root", result.stderr)
+
+    def test_release_evidence_bundle_rejects_embedded_absolute_host_path_leak(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["redaction"]["policy"] = "bad leak: /tmp/m80-hostless-install-root"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("redaction.policy leaks absolute host path", result.stderr)
 
     def test_release_evidence_bundle_rejects_stale_quickstart_proof_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6127,15 +6270,57 @@ def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:
         )
         + "\n"
     )
+    metadata = json.loads((out_dir / METADATA_NAME).read_text())
     proof = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
     proof.write_text(
         json.dumps(
             {
                 "schema_version": 1,
-                "kind": "m80_quickstart_proof",
                 "proof_kind": "hostless",
-                "release_tag": "v0.2.11",
-                "substrate": {"kind": "hostless"},
+                "release": {
+                    "requested": "v0.2.11",
+                    "resolved_tag": "v0.2.11",
+                    "install_url": "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh",
+                },
+                "command": {
+                    "display": "m80 run -- echo hello",
+                    "argv": ["m80", "run", "--", "echo", "hello"],
+                    "expected_exit_status": 0,
+                    "observed_exit_status": 0,
+                    "expected_nonzero": False,
+                },
+                "stream_expectations": {
+                    "stdout_contains": "hello",
+                    "stderr_contains": "",
+                },
+                "stdout": {"excerpt": "hello\n"},
+                "stderr": {"path": HOSTLESS_QUICKSTART_STDERR_NAME},
+                "install": {
+                    "root": "/tmp/m80-hostless-install-root",
+                    "active_pointer": "/tmp/m80-hostless-install-root/active",
+                    "default_profile": "/tmp/m80-hostless-install-root/profiles/default.toml",
+                },
+                "m80": {
+                    "version": "v0.2.11",
+                    "release_tag": "v0.2.11",
+                    "version_status": "release",
+                },
+                "bundle": {
+                    "metadata_path": METADATA_NAME,
+                    "release_tag": metadata["release_tag"],
+                    "m80_version": metadata["m80_version"],
+                    "guest_protocol_version": metadata["guest_protocol_version"],
+                    "manifest_schema_version": metadata["manifest_schema_version"],
+                },
+                "host_binaries": {
+                    "manifest_path": HOSTLESS_QUICKSTART_HOST_BINARIES_NAME,
+                    "firecracker_version": "hostless-fixture",
+                    "jailer_version": "hostless-fixture",
+                },
+                "substrate": {
+                    "kind": "hostless",
+                    "summary": "hostless release fixture; not a real-KVM run-smoke proof",
+                },
             },
             indent=2,
             sort_keys=True,
@@ -6143,6 +6328,108 @@ def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:
         + "\n"
     )
     return proof
+
+
+def write_real_kvm_quickstart_proof_placeholder(out_dir: Path) -> Path:
+    (out_dir / REAL_KVM_QUICKSTART_HOST_BINARIES_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "proof_kind": "real-kvm-proof",
+                "firecracker_version": "v1.15.1",
+                "jailer_version": "v1.15.1",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    metadata = json.loads((out_dir / METADATA_NAME).read_text())
+    proof = out_dir / REAL_KVM_QUICKSTART_PROOF_NAME
+    proof.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "proof_kind": "real-kvm",
+                "release": {
+                    "requested": "v0.2.11",
+                    "resolved_tag": "v0.2.11",
+                    "install_url": "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh",
+                },
+                "command": {
+                    "display": "m80 run -- echo hello",
+                    "argv": ["m80", "run", "--", "echo", "hello"],
+                    "expected_exit_status": 0,
+                    "observed_exit_status": 0,
+                    "expected_nonzero": False,
+                },
+                "stream_expectations": {
+                    "stdout_contains": "hello",
+                    "stderr_contains": "",
+                },
+                "stdout": {"excerpt": "hello\n"},
+                "stderr": {"path": HOSTLESS_QUICKSTART_STDERR_NAME},
+                "install": {
+                    "root": "/opt/m80",
+                    "active_pointer": "/opt/m80/active",
+                    "default_profile": "/opt/m80/profiles/default.toml",
+                },
+                "m80": {
+                    "version": "v0.2.11",
+                    "release_tag": "v0.2.11",
+                    "version_status": "release",
+                },
+                "bundle": {
+                    "metadata_path": METADATA_NAME,
+                    "release_tag": metadata["release_tag"],
+                    "m80_version": metadata["m80_version"],
+                    "guest_protocol_version": metadata["guest_protocol_version"],
+                    "manifest_schema_version": metadata["manifest_schema_version"],
+                },
+                "host_binaries": {
+                    "manifest_path": REAL_KVM_QUICKSTART_HOST_BINARIES_NAME,
+                    "firecracker_version": "v1.15.1",
+                    "jailer_version": "v1.15.1",
+                },
+                "substrate": {
+                    "kind": "real-kvm",
+                    "summary": "real-KVM release smoke proof",
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return proof
+
+
+def add_workflow_inventory_artifact(out_dir: Path, name: str, reason: str) -> None:
+    manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    path = out_dir / name
+    manifest["workflow_artifact_inventory"].append(
+        {
+            "name": name,
+            "reason": reason,
+            "sha256": sha256(path),
+            "size_bytes": path.stat().st_size,
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+
+def refresh_workflow_inventory_artifact(out_dir: Path, name: str) -> None:
+    manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    path = out_dir / name
+    for artifact in manifest["workflow_artifact_inventory"]:
+        if artifact["name"] == name:
+            artifact["sha256"] = sha256(path)
+            artifact["size_bytes"] = path.stat().st_size
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+            return
+    raise AssertionError(f"workflow artifact missing from fixture inventory: {name}")
 
 
 def write_release_proof_ledger_placeholder(out_dir: Path) -> Path:

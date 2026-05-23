@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_host_binaries_proof",
+  "bead_id": "m80-o3uh9.13.39.2.1",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures and policy gates validated normalized host-binaries collection without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.1 && br dep cycles --json && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 259 tests in 57.555s OK; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.946s OK; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.914s OK; verify-release-tracker-policy ok; br lint ok; br dep cycles count=0; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 259 tests in 57.555s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.946s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.1 && br dep cycles --json && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 46 tests in 2.928s\\n\\nOK\\nrelease tracker policy ok: docs/behaviors/release/release-tracker-policy.json\\nNo template warnings found (1 issues checked)\\ncycles: []\\ncount: 0",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "release evidence bundle schema_version is 3",
+    "host_binaries summary rows are built from quickstart proof host_binaries.manifest_path and upload manifest workflow_artifact_inventory digests",
+    "hostless and real-kvm quickstart lanes emit the same host_binaries summary shape with explicit substrate",
+    "host_binaries summary records Firecracker version, jailer version, manifest file ref, artifact class, lane id, substrate, and install-root classification",
+    "generated evidence bundle JSON omits raw install-root paths",
+    "missing host-binaries manifest path fails closed",
+    "stale host-binaries manifest digest fails closed",
+    "missing Firecracker or jailer version fails closed",
+    "absolute host-binaries manifest paths fail closed",
+    "embedded absolute host paths in generated bundle strings fail closed"
+  ]
+}

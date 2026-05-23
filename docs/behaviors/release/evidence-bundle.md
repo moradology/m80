@@ -13,7 +13,12 @@ ledger and each lane proof JSON as distinct file refs: the top-level
 quickstart proof row points at `m80-quickstart-proof-hostless.json`. Top-level
 file refs use flat release file names plus `sha256:<digest>` and `size_bytes`;
 public and workflow-only artifact rows use raw lowercase sha256 digests to
-mirror the upload manifest. None of these fields carry host-local paths.
+mirror the upload manifest. Schema version 3 also records `host_binaries`
+summary rows for quickstart proof lanes. These rows are normalized evidence
+inputs, not log scrapes: each row is built from the quickstart proof's relative
+`host_binaries.manifest_path`, the upload manifest's digest inventory for that
+manifest, the proof/manifest Firecracker and jailer versions, and an install
+root classification. None of these fields carry host-local paths.
 
 The schema keeps three artifact classes distinct:
 
@@ -29,6 +34,11 @@ The schema keeps three artifact classes distinct:
   `m80-quickstart-host-binaries.manifest.json`.
 - `proofs`: lane-specific evidence entries that name their substrate and point
   to either a public or workflow-only artifact.
+- `host_binaries`: lane-specific summaries for the host-binaries manifest used
+  by each quickstart proof. The summary names the lane, substrate,
+  workflow-only manifest file ref, Firecracker version, jailer version, and
+  install-root classification (`hostless-fixture`, `default-install-root`, or
+  `override-install-root`). It deliberately omits raw install-root paths.
 
 Hostless proof never satisfies real-KVM proof. A hostless quickstart fixture is
 recorded with `lane_id=hostless-quickstart`, `substrate=hostless`, and
@@ -42,8 +52,9 @@ The redaction rule is part of the schema contract: evidence bundles may contain
 flat release file names, sizes, digests, release tags, commit SHA, workflow run
 ids, m80 version, lane ids, proof kinds, and substrate names. They must not
 contain host absolute paths, secrets, tokens, or environment dumps. Follow-up
-redaction leaves may add stronger scanners, but schema version 2 already names
-these forbidden categories.
+redaction leaves may add stronger scanners, but schema version 3 names these
+forbidden categories and validates that generated bundle strings do not leak
+common absolute host path prefixes.
 
 The validator rejects missing required keys, unknown schema versions, duplicate
 lane ids, malformed digests, stale file refs, missing or stale workflow-only
@@ -51,4 +62,7 @@ proof sidecars, public/workflow artifact overlap, unaccounted required lanes,
 and proof entries whose artifact class points at the wrong artifact set. It
 also rejects proof rows that point at the proof ledger, swapped or duplicated
 proof file refs, missing proof JSON, and stale proof JSON or proof-ledger
-digests.
+digests. Host-binaries collection fails closed when a proof omits its manifest
+path, points at an absolute or escaping manifest path, omits a Firecracker or
+jailer version, disagrees with the manifest version fields, or when the manifest
+file ref no longer matches the upload manifest's workflow artifact inventory.
