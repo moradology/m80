@@ -57,6 +57,7 @@ WORKFLOW_POLICY_REPORT_NAME = "m80-workflow-policy-report.json"
 WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
 RELEASE_INTEGRITY_READINESS_RECEIPT_NAME = "m80-readiness-release-bundle-integrity.json"
 HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME = "m80-readiness-hostless-quickstart.json"
+DOCS_COMMAND_READINESS_RECEIPT_NAME = "m80-readiness-docs-command.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
 RELEASE_TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
@@ -1380,6 +1381,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("m80-readiness-workflow-policy.json", workflow)
         self.assertIn("m80-readiness-release-bundle-integrity.json", workflow)
         self.assertIn("m80-readiness-hostless-quickstart.json", workflow)
+        self.assertIn("scripts/release_docs_command_receipt.py", workflow)
+        self.assertIn("m80-readiness-docs-command.json", workflow)
         self.assertGreaterEqual(workflow.count("scripts/release_upload_manifest.py"), 5)
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
@@ -1614,6 +1617,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn(WORKFLOW_POLICY_READINESS_RECEIPT_NAME, non_public_names)
             self.assertIn(RELEASE_INTEGRITY_READINESS_RECEIPT_NAME, non_public_names)
             self.assertIn(HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME, non_public_names)
+            self.assertIn(DOCS_COMMAND_READINESS_RECEIPT_NAME, non_public_names)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_PROOF_NAME, public_assets)
             self.assertNotIn(RELEASE_PROOF_LEDGER_NAME, public_assets)
@@ -1624,6 +1628,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotIn(WORKFLOW_POLICY_READINESS_RECEIPT_NAME, public_assets)
             self.assertNotIn(RELEASE_INTEGRITY_READINESS_RECEIPT_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME, public_assets)
+            self.assertNotIn(DOCS_COMMAND_READINESS_RECEIPT_NAME, public_assets)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, inventory)
             for name in [
                 HOSTLESS_QUICKSTART_PROOF_NAME,
@@ -1635,6 +1640,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 WORKFLOW_POLICY_READINESS_RECEIPT_NAME,
                 RELEASE_INTEGRITY_READINESS_RECEIPT_NAME,
                 HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME,
+                DOCS_COMMAND_READINESS_RECEIPT_NAME,
             ]:
                 self.assertEqual(inventory[name]["sha256"], sha256(out_dir / name))
                 self.assertEqual(inventory[name]["size_bytes"], (out_dir / name).stat().st_size)
@@ -5822,6 +5828,7 @@ def write_workflow_only_proof_sidecars(out_dir: Path) -> None:
         remediation_command="scripts/verify-quickstart-proof.py",
         fixture=True,
     )
+    write_docs_command_receipt_placeholder(out_dir)
 
 
 def write_readiness_receipt_placeholder(
@@ -5876,6 +5883,37 @@ def receipt_artifact_name(receipt_name: str) -> str:
     if receipt_name == HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME:
         return HOSTLESS_QUICKSTART_PROOF_NAME
     raise AssertionError(f"unknown readiness receipt fixture: {receipt_name}")
+
+
+def write_docs_command_receipt_placeholder(out_dir: Path) -> None:
+    digest = "sha256:" + ("d" * 64)
+    payload = {
+        "schema_version": 1,
+        "kind": "m80_release_readiness_docs_command",
+        "lane_id": "docs-command",
+        "lane_kind": "docs-command",
+        "proof_kind": "docs-command-receipt",
+        "status": "passed",
+        "release_tag": "v0.2.11",
+        "commit_sha": INTEGRITY_COMMIT_SHA,
+        "workflow_run_id": "12345",
+        "verification_time": INTEGRITY_VERIFICATION_TIME,
+        "substrate": {
+            "kind": "github-actions",
+            "fixture": False,
+        },
+        "repository": "moradology/m80",
+        "snippet_sources": [],
+        "rendered_install_commands": [],
+        "command_digest_sha256": digest,
+        "remediation": {
+            "command": "python3 scripts/release_docs_command_receipt.py",
+            "bead_id": None,
+        },
+    }
+    (out_dir / DOCS_COMMAND_READINESS_RECEIPT_NAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    )
 
 
 def write_token_authority_receipt(

@@ -25,6 +25,7 @@ WORKFLOW_POLICY_REPORT_NAME = "m80-workflow-policy-report.json"
 WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
 RELEASE_INTEGRITY_READINESS_RECEIPT_NAME = "m80-readiness-release-bundle-integrity.json"
 HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME = "m80-readiness-hostless-quickstart.json"
+DOCS_COMMAND_READINESS_RECEIPT_NAME = "m80-readiness-docs-command.json"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
@@ -69,6 +70,7 @@ NON_PUBLIC_WORKFLOW_ARTIFACTS = {
     WORKFLOW_POLICY_READINESS_RECEIPT_NAME: "workflow-policy readiness receipt is workflow-only gate input",
     RELEASE_INTEGRITY_READINESS_RECEIPT_NAME: "release-integrity readiness receipt is workflow-only gate input",
     HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME: "hostless quickstart readiness receipt is workflow-only gate input",
+    DOCS_COMMAND_READINESS_RECEIPT_NAME: "docs-command readiness receipt is workflow-only gate input",
 }
 WORKFLOW_ARTIFACT_INVENTORY = {
     name: reason

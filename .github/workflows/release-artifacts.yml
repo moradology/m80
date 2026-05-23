@@ -340,6 +340,12 @@ jobs:
             --artifact "$DIST_DIR/m80-quickstart-proof-hostless.json" \
             --out "$DIST_DIR/m80-readiness-hostless-quickstart.json" \
             --write
+          scripts/release_docs_command_receipt.py \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --out "$DIST_DIR/m80-readiness-docs-command.json" \
+            --write
 
       - name: Write and validate release upload manifest
         id: release-upload-manifest

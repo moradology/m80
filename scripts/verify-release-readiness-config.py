@@ -33,6 +33,7 @@ LANE_FIELDS = {
 REMEDIATION_FIELDS = {"field", "command"}
 LANE_KINDS = {
     "workflow-policy",
+    "docs-command",
     "release-integrity",
     "hostless-quickstart",
     "real-kvm-smoke",
@@ -41,6 +42,7 @@ LANE_KINDS = {
 }
 PROOF_KINDS = {
     "workflow-policy-report",
+    "docs-command-receipt",
     "release-integrity-predicate",
     "quickstart-proof",
     "public-access-proof",
@@ -52,6 +54,7 @@ PUBLISH_EFFECTS = {"satisfies", "warn", "blocks"}
 REQUIRED_STATUS_IDS = {"passed", "warning", "failed", "stale", "missing", "unauthenticated", "wrong-substrate"}
 REQUIRED_LANE_IDS = {
     "workflow-policy",
+    "docs-command",
     "release-bundle-integrity",
     "hostless-quickstart",
     "real-kvm-quickstart",
@@ -59,6 +62,7 @@ REQUIRED_LANE_IDS = {
 }
 EXPECTED_PROOF_BY_KIND = {
     "workflow-policy": {"workflow-policy-report"},
+    "docs-command": {"docs-command-receipt"},
     "release-integrity": {"release-integrity-predicate"},
     "hostless-quickstart": {"quickstart-proof"},
     "real-kvm-smoke": {"quickstart-proof"},
@@ -67,6 +71,7 @@ EXPECTED_PROOF_BY_KIND = {
 }
 EXPECTED_SUBSTRATES_BY_KIND = {
     "workflow-policy": {"github-actions"},
+    "docs-command": {"github-actions"},
     "release-integrity": {"github-actions"},
     "hostless-quickstart": {"hostless"},
     "real-kvm-smoke": {"real-kvm"},

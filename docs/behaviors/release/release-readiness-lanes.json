@@ -80,6 +80,23 @@
       "policy_text": "Public bundles are publishable only when the signed predicate binds the release tag, commit, asset index, installer, checksums, and attestation metadata."
     },
     {
+      "id": "docs-command",
+      "title": "Public quickstart docs command freshness",
+      "lane_kind": "docs-command",
+      "proof_kind": "docs-command-receipt",
+      "allowed_substrates": ["github-actions"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "release_tag",
+      "expected_commit_field": "commit_sha",
+      "digest_field": "command_digest_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "python3 scripts/release_docs_command_receipt.py"
+      },
+      "policy_text": "Public release docs are publishable only when README and runbook quickstart snippets match the shared command contract and rendered install URLs."
+    },
+    {
       "id": "hostless-quickstart",
       "title": "Hostless release fixture quickstart proof",
       "lane_kind": "hostless-quickstart",
