@@ -59,6 +59,11 @@ pub(super) struct VerifiedAssetIndex {
 }
 
 pub(super) fn github_release_asset_index_url(release_tag: &str) -> String {
+    if let Some(template) = option_env!("M80_INTERNAL_RELEASE_FIXTURE_ASSET_INDEX_URL") {
+        return template
+            .replace("{release_tag}", release_tag)
+            .replace("{tag}", release_tag);
+    }
     crate::release_urls::release_asset_url(release_tag, ASSET_INDEX_NAME)
 }
 

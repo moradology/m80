@@ -97,6 +97,13 @@ fields as `asset_index_code=...`, `requested_*`, `index_url=...`,
 `fetch_url=...`, `checksum_verification=...`, `available_*`, and `repair_*`
 lines after the error summary.
 
+The release-identity CLI fixture builds an isolated m80 binary with
+`M80_RELEASE_TAG`, `M80_RELEASE_COMMIT`, and
+`M80_INTERNAL_RELEASE_FIXTURE_ASSET_INDEX_URL` set at compile time. That
+fixture is test-only: it proves the real process stderr/stdout surface against
+local verified asset indexes without network, GitHub credentials, `/opt`,
+`/etc`, or KVM, and without runtime identity overrides.
+
 The stable `code` values are:
 
 - `unsupported_host_tuple` for unsupported OS/architecture rows;
@@ -117,6 +124,13 @@ The stable `code` values are:
   `download_failed`, `redirect_unsupported`, `checksum_invalid`,
   `checksum_mismatch`, and `verified_index_invalid` for fetch or integrity
   failures before tuple selection.
+
+Regression coverage:
+
+- `scripts/test-release-identity-cli-fixture.py` builds the release-identity
+  CLI fixture and covers `unsupported_host_tuple`, `missing_image_kind`,
+  `stale_asset_index`, `duplicate_default_bundle`, and `binary_tag_mismatch`
+  through `m80 --json install --release-tag ... --dry-run`.
 
 The release also publishes `m80-bootstrap-selector.tsv`, a non-executable
 line-oriented projection of the canonical JSON index for the no-installed-binary

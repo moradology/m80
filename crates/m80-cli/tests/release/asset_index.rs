@@ -38,6 +38,15 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
         "dev builds",
         "`--bundle-url`",
         "pinned release `install.sh` URL",
+        "`M80_RELEASE_TAG`",
+        "`M80_RELEASE_COMMIT`",
+        "`M80_INTERNAL_RELEASE_FIXTURE_ASSET_INDEX_URL`",
+        "`scripts/test-release-identity-cli-fixture.py`",
+        "`unsupported_host_tuple`",
+        "`missing_image_kind`",
+        "`stale_asset_index`",
+        "`duplicate_default_bundle`",
+        "`binary_tag_mismatch`",
     ] {
         assert!(
             doc.contains(required),
