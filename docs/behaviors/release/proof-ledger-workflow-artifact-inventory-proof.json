@@ -4,6 +4,8 @@
   "exit_status": 0,
   "generated_at": "2026-05-23T13:58:00Z",
   "proof_kind": "hostless-release-proof-ledger-workflow-artifact-inventory",
+  "resolved_tag": "v0.2.11",
+  "release_tag": "v0.2.11",
   "substrate": "local-hostless",
   "stdout": "test-release-bundle.py: Ran 246 tests OK; lint-github-workflows.py: workflow policy ok; test-workflow-policy.py: Ran 80 tests OK; verify-release-tracker-policy.py: release tracker policy ok; test-release-tracker-policy.py: Ran 45 tests OK; git diff --check OK; run-actionlint.py OK",
   "stderr": "",
