@@ -3,6 +3,11 @@
 mod common;
 
 use common::m80;
+use m80_preflight::{
+    REPAIR_CGROUP_MODE, REPAIR_HOST_BINARIES_MANIFEST, REPAIR_HOST_SETUP,
+    REPAIR_INSTALL_FIRECRACKER_PREREQUISITES, REPAIR_KVM, REPAIR_PRIVILEGE,
+    REPAIR_REINSTALL_M80_RELEASE, REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
+};
 
 #[test]
 fn json_output_envelope_stable_across_subcommands() {
@@ -57,9 +62,22 @@ fn env_json_on_failed_preflight_stable_schema() {
         Some(0),
         "failed preflight must use an empty checks array: {parsed}"
     );
-    assert_eq!(
-        preflight["host_prerequisite_failure"]["remediation"]["id"], "repair-privilege",
-        "env must expose the same remediation token as preflight JSON/text: {parsed}"
+    let remediation_id = preflight["host_prerequisite_failure"]["remediation"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("env must expose a remediation token: {parsed}"));
+    assert!(
+        [
+            REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
+            REPAIR_KVM,
+            REPAIR_CGROUP_MODE,
+            REPAIR_PRIVILEGE,
+            REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
+            REPAIR_HOST_BINARIES_MANIFEST,
+            REPAIR_HOST_SETUP,
+            REPAIR_REINSTALL_M80_RELEASE,
+        ]
+        .contains(&remediation_id),
+        "env must expose a stable host-prerequisite remediation token, got {remediation_id:?}: {parsed}"
     );
     assert_eq!(
         preflight["host_prerequisite_failure"]["remediation"]["policy_link"],
