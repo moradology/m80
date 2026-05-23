@@ -22,8 +22,8 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
         artifact = accepted_fixture()
 
         self.assertTrue(artifact["decision"]["ok"])
-        self.assertEqual(artifact["target_tag"], "v0.2.19")
-        self.assertEqual(artifact["expected_release_tag"], "v0.2.19")
+        self.assertEqual(artifact["target_tag"], "v0.2.20")
+        self.assertEqual(artifact["expected_release_tag"], "v0.2.20")
         self.assertFalse(artifact["dirty_tree"]["dirty"])
         self.assertEqual(artifact["existing_latest"]["tag"], "v0.2.11")
         self.assertFalse(artifact["supersedes_missing_installer_latest_state"])
@@ -51,7 +51,7 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
         diagnostic = only_diagnostic(artifact)
         self.assertEqual(diagnostic["field"], "target_tag")
-        self.assertEqual(diagnostic["expected"], "v0.2.19")
+        self.assertEqual(diagnostic["expected"], "v0.2.20")
         self.assertEqual(diagnostic["observed"], "v0.2.14")
         self.assertIn("Cargo.toml workspace.package.version", diagnostic["safe_repair_action"])
 
@@ -92,7 +92,7 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
                     "python3",
                     str(SCRIPT),
                     "--release-tag",
-                    "v0.2.19",
+                    "v0.2.20",
                     "--source-commit",
                     SOURCE_COMMIT,
                     "--tag-commit",
@@ -116,8 +116,8 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(out.read_text())
-        self.assertEqual(payload["workspace_package_version"], "0.2.19")
-        self.assertEqual(payload["expected_release_tag"], "v0.2.19")
+        self.assertEqual(payload["workspace_package_version"], "0.2.20")
+        self.assertEqual(payload["expected_release_tag"], "v0.2.20")
         self.assertEqual(payload["decision"]["status"], "accepted")
 
     def test_cli_writes_rejected_artifact_before_exiting_nonzero(self) -> None:
@@ -128,9 +128,9 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
                     "python3",
                     str(SCRIPT),
                     "--release-tag",
-                    "v0.2.19",
+                    "v0.2.20",
                     "--workspace-version",
-                    "0.2.19",
+                    "0.2.20",
                     "--source-commit",
                     SOURCE_COMMIT,
                     "--tag-commit",
@@ -161,9 +161,9 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
 def accepted_fixture(**overrides: object) -> dict:
     values = {
-        "release_tag": "v0.2.19",
+        "release_tag": "v0.2.20",
         "source_commit": SOURCE_COMMIT,
-        "workspace_package_version": "0.2.19",
+        "workspace_package_version": "0.2.20",
         "tag_commit": SOURCE_COMMIT,
         "existing_latest_tag": "v0.2.11",
         "existing_latest_url": "https://github.com/moradology/m80/releases/tag/v0.2.11",
