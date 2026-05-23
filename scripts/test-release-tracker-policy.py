@@ -264,6 +264,38 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_workflow_only_public_exclusion_leaf_with_hostless_proof_passes(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "workflow-sidecar-proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_hostless_generic_proof()))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.6.3.5",
+                        "Proof ledger workflow artifact inventory",
+                        "Workflow-only proof sidecars remain excluded from public release upload paths.",
+                        status="closed",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("workflow sidecar proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/workflow-sidecar-proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_fixture_scaffold_leaf_with_fixture_proof_passes(self) -> None:
         with tracker_repo() as repo:
             proof = repo.root / "artifacts" / "fixture-freshness-proof.json"
@@ -1262,6 +1294,17 @@ def valid_freshness_proof(*, fixture_source: bool) -> dict:
             "github_write_apis_available": False,
             "kind": "hostless-fixture" if fixture_source else "public-unauthenticated",
         },
+    }
+
+
+def valid_hostless_generic_proof() -> dict:
+    return {
+        "command": "python3 scripts/test-release-bundle.py",
+        "exit_status": 0,
+        "resolved_tag": "v0.0.0",
+        "stdout": "ok\n",
+        "stderr": "",
+        "substrate": "hostless",
     }
 
 
