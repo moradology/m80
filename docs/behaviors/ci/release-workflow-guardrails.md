@@ -20,6 +20,9 @@ public release state.
   authority.
 - Release/latest workflows declare a concurrency group keyed by the release tag,
   GitHub ref, or latest-promotion target.
+- Workflow release/latest/proof scope comes from
+  `docs/behaviors/ci/workflow-policy-scope.json`, not filename guesses.
+  Guarded-looking filenames without a policy entry still fail closed.
 - Pull-request workflows do not reference `secrets.*`.
 - `actions/*` refs are the trusted first-party exception documented in
   `docs/runbook/release-bundle.md`; third-party actions use a full 40-character
@@ -54,9 +57,13 @@ public release state.
 ## Enforcement
 
 `scripts/lint-github-workflows.py` checks the repository workflows for broad
-write permissions, release/latest workflows without concurrency, floating
-third-party action refs, `secrets.*` references in pull-request workflows, and
-multi-line `run:` blocks that omit the strict shell prelude.
+write permissions, explicitly scoped release/latest/proof workflows without
+concurrency, floating third-party action refs, `secrets.*` references in
+pull-request workflows, and multi-line `run:` blocks that omit the strict shell
+prelude. Workflow scope is declared in
+`docs/behaviors/ci/workflow-policy-scope.json`; the linter rejects missing
+workflow entries, missing configured files, duplicate entries, and unknown
+scope names.
 
 `CI` installs the host test tools, then runs the m80 linter and the pinned
 actionlint syntax/run-block gate on every push and pull request before the
@@ -93,7 +100,10 @@ resulting `m80-repository-protection-audit.json` evidence artifact.
   permission in non-publish jobs, workflow-level write permissions, publish jobs
   missing their required `needs` graph, missing or misplaced
   `m80-release-publish` environment gates, release mutation commands outside
-  the publish job, and the clean least-privilege layout.
+  the publish job, and the clean least-privilege layout. It also proves workflow
+  policy scope is explicit: renamed release workflows stay guarded, ordinary CI
+  is not forced through release-only checks, and missing, duplicate, or unknown
+  scope entries fail closed.
 - `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports

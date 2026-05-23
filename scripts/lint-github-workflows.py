@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import re
 import sys
@@ -30,6 +31,15 @@ RELEASE_PUBLISH_ENVIRONMENT = "m80-release-publish"
 REUSABLE_TIMEOUT_MARKER_RE = re.compile(
     r"m80-lint:\s*reusable-timeout-minutes=([0-9]+)\b"
 )
+WORKFLOW_POLICY_CONFIG = Path("docs/behaviors/ci/workflow-policy-scope.json")
+ALLOWED_WORKFLOW_SCOPES = {
+    "ordinary-ci",
+    "release-authority",
+    "latest-freshness",
+    "proof",
+}
+RELEASE_GUARD_SCOPES = {"release-authority", "latest-freshness", "proof"}
+GUARDED_FILENAME_TOKENS = ["release", "latest", "freshness", "proof", "publish"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,12 +50,18 @@ def parse_args() -> argparse.Namespace:
         default=Path(".github/workflows"),
         help="directory containing GitHub workflow YAML files",
     )
+    parser.add_argument(
+        "--policy-config",
+        type=Path,
+        default=WORKFLOW_POLICY_CONFIG,
+        help="JSON config that assigns an explicit scope to every workflow file",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    errors = lint_workflow_dir(args.workflow_dir)
+    errors = lint_workflow_dir(args.workflow_dir, policy_config=args.policy_config)
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
@@ -54,21 +70,30 @@ def main() -> int:
     return 0
 
 
-def lint_workflow_dir(workflow_dir: Path) -> list[str]:
+def lint_workflow_dir(
+    workflow_dir: Path,
+    *,
+    policy_config: Path = WORKFLOW_POLICY_CONFIG,
+) -> list[str]:
     files = sorted(set(workflow_dir.glob("*.yml")) | set(workflow_dir.glob("*.yaml")))
     if not files:
         return [f"{workflow_dir}: no workflow files found"]
-    errors: list[str] = []
+    scope_by_name, errors = load_workflow_scope_policy(
+        policy_config=policy_config,
+        workflow_dir=workflow_dir,
+        files=files,
+    )
     for path in files:
         text = path.read_text()
         lines = text.splitlines()
-        release_workflow = workflow_needs_release_guards(path)
+        workflow_scope = scope_by_name.get(path.name)
+        release_workflow = workflow_scope in RELEASE_GUARD_SCOPES
         errors.extend(lint_action_refs(path, lines))
         errors.extend(lint_top_level_permissions(path, lines))
         errors.extend(lint_job_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_multiline_run_block_strictness(path, lines))
-        if is_freshness_workflow(path):
+        if workflow_scope == "latest-freshness":
             errors.extend(lint_freshness_workflow(path, text, lines))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
@@ -82,6 +107,75 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         if has_pull_request_event(lines) and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
     return errors
+
+
+def load_workflow_scope_policy(
+    *,
+    policy_config: Path,
+    workflow_dir: Path,
+    files: list[Path],
+) -> tuple[dict[str, str], list[str]]:
+    errors: list[str] = []
+    if not policy_config.exists():
+        return {}, [f"{policy_config}: workflow scope policy config is missing"]
+
+    try:
+        payload = json.loads(policy_config.read_text())
+    except json.JSONDecodeError as exc:
+        return {}, [f"{policy_config}:{exc.lineno}: invalid JSON: {exc.msg}"]
+
+    if not isinstance(payload, dict):
+        return {}, [f"{policy_config}: workflow scope policy must be a JSON object"]
+    allowed_keys = {"schema_version", "workflows"}
+    unknown_keys = sorted(set(payload) - allowed_keys)
+    for key in unknown_keys:
+        errors.append(f"{policy_config}: unknown workflow scope policy field: {key}")
+    if payload.get("schema_version") != 1:
+        errors.append(f"{policy_config}: schema_version must be 1")
+
+    entries = payload.get("workflows")
+    if not isinstance(entries, list):
+        errors.append(f"{policy_config}: workflows must be a list")
+        return {}, errors
+
+    names_on_disk = {path.name for path in files}
+    scope_by_name: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        prefix = f"{policy_config}:workflows[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix}: workflow scope entry must be an object")
+            continue
+        unknown_entry_keys = sorted(set(entry) - {"path", "scope"})
+        for key in unknown_entry_keys:
+            errors.append(f"{prefix}: unknown workflow scope entry field: {key}")
+        workflow_path = entry.get("path")
+        scope = entry.get("scope")
+        if not isinstance(workflow_path, str) or not workflow_path:
+            errors.append(f"{prefix}: path must be a non-empty string")
+            continue
+        if "/" in workflow_path or workflow_path in {".", ".."} or workflow_path.startswith("."):
+            errors.append(f"{prefix}: path must be a workflow filename under {workflow_dir}")
+            continue
+        if workflow_path in scope_by_name:
+            errors.append(f"{prefix}: duplicate workflow scope entry for {workflow_path}")
+            continue
+        if workflow_path not in names_on_disk:
+            errors.append(f"{policy_config}: configured workflow is missing: {workflow_path}")
+        if scope not in ALLOWED_WORKFLOW_SCOPES:
+            errors.append(f"{prefix}: unknown workflow scope: {scope}")
+            continue
+        scope_by_name[workflow_path] = scope
+
+    for path in files:
+        if path.name in scope_by_name:
+            continue
+        if workflow_needs_release_guards(path):
+            errors.append(
+                f"{path}: guarded-looking workflow filename is not named in {policy_config}"
+            )
+        else:
+            errors.append(f"{path}: workflow is not named in {policy_config}")
+    return scope_by_name, errors
 
 
 def lint_action_refs(path: Path, lines: list[str]) -> list[str]:
@@ -878,14 +972,7 @@ def is_trusted_first_party_action(repo: str) -> bool:
 
 
 def workflow_needs_release_guards(path: Path) -> bool:
-    return any(
-        token in path.name
-        for token in ["release", "latest", "freshness", "proof", "publish"]
-    )
-
-
-def is_freshness_workflow(path: Path) -> bool:
-    return "freshness" in path.name
+    return any(token in path.name for token in GUARDED_FILENAME_TOKENS)
 
 
 def job_uses_reusable_workflow(lines: list[str]) -> bool:

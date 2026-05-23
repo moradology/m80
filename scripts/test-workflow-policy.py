@@ -23,6 +23,142 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_renamed_release_workflow_uses_configured_scope(self) -> None:
+        with workflow_dir(
+            "ship.yml",
+            """
+            name: Ship artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 30
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            scope="release-authority",
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must declare top-level concurrency.group", result.stderr)
+
+    def test_guarded_looking_filename_without_config_is_rejected(self) -> None:
+        with workflow_dir(
+            "release-ish.yml",
+            """
+            name: Release-ish
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            policy_entries=[],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("guarded-looking workflow filename is not named", result.stderr)
+
+    def test_ordinary_ci_scope_does_not_require_release_guards(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            scope="ordinary-ci",
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_workflow_scope_policy_rejects_duplicate_entries(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            policy_entries=[
+                {"path": "ci.yml", "scope": "ordinary-ci"},
+                {"path": "ci.yml", "scope": "ordinary-ci"},
+            ],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate workflow scope entry for ci.yml", result.stderr)
+
+    def test_workflow_scope_policy_rejects_unknown_scope(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            scope="nightly-magic",
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown workflow scope: nightly-magic", result.stderr)
+
+    def test_workflow_scope_policy_rejects_configured_missing_file(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            policy_entries=[
+                {"path": "ci.yml", "scope": "ordinary-ci"},
+                {"path": "release-artifacts.yml", "scope": "release-authority"},
+            ],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("configured workflow is missing: release-artifacts.yml", result.stderr)
+
     def test_release_workflow_requires_concurrency(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",
@@ -1110,8 +1246,12 @@ class WorkflowPolicyTest(unittest.TestCase):
 
 
 def run_lint(workflow_dir: Path) -> subprocess.CompletedProcess[str]:
+    command = ["python3", str(LINT), "--workflow-dir", str(workflow_dir)]
+    policy_config = workflow_dir / "workflow-policy-scope.json"
+    if policy_config.exists():
+        command.extend(["--policy-config", str(policy_config)])
     return subprocess.run(
-        ["python3", str(LINT), "--workflow-dir", str(workflow_dir)],
+        command,
         text=True,
         capture_output=True,
         check=False,
@@ -1541,20 +1681,51 @@ jobs:
 
 
 class workflow_dir:
-    def __init__(self, name: str, body: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        body: str,
+        *,
+        scope: str | None = None,
+        policy_entries: list[dict[str, str]] | None = None,
+        write_policy: bool = True,
+    ) -> None:
         self.name = name
         self.body = textwrap.dedent(body).strip() + "\n"
+        self.scope = infer_workflow_scope(name) if scope is None else scope
+        self.policy_entries = policy_entries
+        self.write_policy = write_policy
         self.temp: tempfile.TemporaryDirectory[str] | None = None
 
     def __enter__(self) -> Path:
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         (root / self.name).write_text(self.body)
+        if self.write_policy:
+            entries = (
+                [{"path": self.name, "scope": self.scope}]
+                if self.policy_entries is None
+                else self.policy_entries
+            )
+            (root / "workflow-policy-scope.json").write_text(
+                json.dumps({"schema_version": 1, "workflows": entries}, indent=2)
+                + "\n"
+            )
         return root
 
     def __exit__(self, *args: object) -> None:
         assert self.temp is not None
         self.temp.cleanup()
+
+
+def infer_workflow_scope(name: str) -> str:
+    if name == "latest-freshness.yml":
+        return "latest-freshness"
+    if "proof" in name:
+        return "proof"
+    if any(token in name for token in ["release", "latest", "freshness", "publish"]):
+        return "release-authority"
+    return "ordinary-ci"
 
 
 if __name__ == "__main__":

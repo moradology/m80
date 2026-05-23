@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "workflows": [
+    {
+      "path": "ci.yml",
+      "scope": "ordinary-ci"
+    },
+    {
+      "path": "latest-freshness.yml",
+      "scope": "latest-freshness"
+    },
+    {
+      "path": "release-artifacts.yml",
+      "scope": "release-authority"
+    }
+  ]
+}

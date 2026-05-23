@@ -793,12 +793,22 @@ leaves in the `m80-o3uh9.13.39` family.
 | `.github/workflows/release-artifacts.yml` | `build-release-artifacts` | 90 minutes |
 | `.github/workflows/release-artifacts.yml` | `publish-release-artifacts` | 30 minutes |
 
-`scripts/lint-github-workflows.py` requires every workflow whose filename
-contains `release`, `latest`, `freshness`, `proof`, or `publish` to put
-`timeout-minutes` on every normal job, with a maximum of 120 minutes. A reusable
-workflow job that cannot own `timeout-minutes` must carry a YAML comment in the
-job body such as `# m80-lint: reusable-timeout-minutes=45`; that number is the
-documented budget of the called workflow and is linted against the same maximum.
+`scripts/lint-github-workflows.py` requires every workflow listed as
+`release-authority`, `latest-freshness`, or `proof` in
+`docs/behaviors/ci/workflow-policy-scope.json` to put `timeout-minutes` on every
+normal job, with a maximum of 120 minutes. A reusable workflow job that cannot
+own `timeout-minutes` must carry a YAML comment in the job body such as
+`# m80-lint: reusable-timeout-minutes=45`; that number is the documented budget
+of the called workflow and is linted against the same maximum.
+
+When adding, renaming, or splitting a release, proof, publish, latest, or
+freshness workflow, update `docs/behaviors/ci/workflow-policy-scope.json` in the
+same diff before merging. Use `release-authority` for tag release build/publish
+authority, `latest-freshness` for the scheduled public latest freshness lane,
+`proof` for proof-producing release workflows, and `ordinary-ci` for normal CI.
+The linter rejects missing entries, duplicate entries, unknown scopes, missing
+configured files, and guarded-looking filenames that are not represented in the
+policy.
 Release build and publish jobs upload partial `/tmp/m80-release-*` diagnostics
 on ordinary step failures where the runner still reaches the diagnostic upload
 step. If the job-level timeout fires first, GitHub names the timed-out job in
