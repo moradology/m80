@@ -29,6 +29,10 @@ pub(super) fn cmd_env(json: bool) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+pub(super) fn collect_env_dump_value() -> serde_json::Value {
+    serde_json::to_value(collect_env_dump()).unwrap()
+}
+
 fn collect_env_dump() -> EnvDump {
     let config_result = config::load_effective(&HashMap::new());
     let runtime_profile_result = match config_result.as_ref() {

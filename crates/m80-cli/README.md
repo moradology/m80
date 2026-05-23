@@ -120,6 +120,11 @@ binaries, pull OCI images, or install packages implicitly.
   There is no `m80 rollback` command in this tranche; older install targets are
   refused by default, and rollback is limited to the status-rendered manual
   active-pointer command for an already-installed previous version.
+- `m80 bug-report [--vm-id <id>] [--request-id <id>]` - emits one redacted JSON
+  support bundle. The bundle includes install status, selected release/tag,
+  verifier diagnostics, host prerequisite summary, and bounded host/guest log
+  tails when a VM id is supplied. It is the public bug-report artifact; callers
+  do not need to collect `env` and `logs` separately.
 - `m80 install-cleanup --release-tag <tag> [--install-root <path>]` - removes
   one inactive installed version directory after rollback or upgrade. Cleanup
   refuses path escapes, symlinked install roots, malformed version directories,
@@ -457,6 +462,7 @@ Rust library items:
 - `EgressMode` - `m80 run --egress` value enum.
 - `InstallArgs` - `m80 install` argument struct.
 - `InstallStatusArgs` - `m80 install-status` argument struct.
+- `BugReportArgs` - `m80 bug-report` argument struct.
 - `OverlayCloneModeArg` - `m80 run --overlay-clone-mode` value enum.
 - `QuickstartArgs` - `m80 quickstart` argument struct.
 - `WarmAction` - `m80 warm` action enum.

@@ -363,12 +363,12 @@
       "owner_action": "operator",
       "action_kind": "report-release-bug",
       "likely_failing_command": "m80 run -- echo hello",
-      "diagnostic_command": "m80 --json env > m80-env.json",
-      "repair_command": "m80 --json env > m80-env.json",
+      "diagnostic_command": "m80 bug-report > m80-bug-report.json",
+      "repair_command": "m80 bug-report > m80-bug-report.json",
       "source_mappings": [
         {
           "kind": "doc",
-          "ref": "docs/behaviors/cli/env-dump.md"
+          "ref": "docs/behaviors/cli/bug-report.md"
         },
         {
           "kind": "doc",

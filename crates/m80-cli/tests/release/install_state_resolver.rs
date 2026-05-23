@@ -92,7 +92,7 @@ fn install_state_docs_keep_quickstart_and_release_evidence_repairable() {
 
     for required in [
         "If something fails, start with:",
-        "m80 install-status",
+        "m80 bug-report > m80-bug-report.json",
         "Then check the host:",
         "m80 preflight",
         "github.com/moradology/m80/releases/latest/download/install.sh",

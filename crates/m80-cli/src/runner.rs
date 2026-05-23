@@ -56,6 +56,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::InstallStatus(args) => cmds::cmd_install_status(args, json),
 
+        Cmd::BugReport(args) => cmds::cmd_bug_report(args, json),
+
         Cmd::InstallCleanup(args) => cmds::cmd_install_cleanup(args, json),
 
         Cmd::Update(args) => cmds::cmd_update(args, json),

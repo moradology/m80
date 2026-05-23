@@ -4,9 +4,9 @@ Behavior capture for bead `m80-81rw`.
 
 ## Contract
 
-`m80 env` produces the diagnostic bundle operators need when filing a bug. It
-does not launch a VM and does not require KVM to succeed. Host preflight is
-reported as data rather than used as command authority.
+`m80 env` produces the host/config diagnostic dump used by the bug-report
+bundle. It does not launch a VM and does not require KVM to succeed. Host
+preflight is reported as data rather than used as command authority.
 
 `m80 --json env` emits the standard CLI JSON envelope with `data.version: 1`.
 The payload includes:
@@ -33,17 +33,15 @@ Human output is the same diagnostic surface rendered as compact key/value text.
 
 ## Bug Reports
 
-The issue template asks reporters to attach:
+The public issue template asks reporters to attach the composed, redacted
+support bundle:
 
 ```sh
-m80 --json env > m80-env.json
+m80 bug-report > m80-bug-report.json
 ```
 
-For failure-specific context, reporters can also attach:
-
-```sh
-m80 --json logs <vm-id> > m80-logs.json
-```
+For failure-specific VM context, reporters pass `--vm-id <vm-id>` to the same
+command. See [`bug-report.md`](bug-report.md).
 
 ## Verification
 

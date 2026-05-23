@@ -36,7 +36,7 @@ deprecated URL exception is an explicitly marked migration-note block in
 `docs/behaviors/release/legacy-quickstart-hard-cutover.md`.
 
 Operational snippets use the same marker contract. README and runbook examples
-for the read-only freshness check, first repair diagnostic, and rollback cleanup
+for the read-only freshness check, first bug-report diagnostic, and rollback cleanup
 must stay as copy-pasteable POSIX shell blocks from
 `scripts/quickstart_snippets.py`. The runbook may explain when to use each
 command, but it must not hand-maintain alternate command bodies.
@@ -49,8 +49,8 @@ look like public install/run snippets must classify as one of:
   shared quickstart source
 - `pinned`: the reproducible `<version>` install command from the shared source
 - `verified/operator`: the verified install handoff block from the shared source
-- `troubleshooting`: a concrete pinned repair command in repair/troubleshooting
-  context
+- `troubleshooting`: a concrete pinned repair command, `m80 install-status`, or
+  `m80 bug-report` command in repair/troubleshooting context
 - `legacy-internal`: behavior-doc references that repeat the shared commands
   only to explain the hard cutover
 - `example-run`: example-local `m80 run` commands that rely on the installed

@@ -109,6 +109,19 @@ fn help_env() {
 }
 
 #[test]
+fn help_bug_report() {
+    let output = m80().args(["bug-report", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("redacted support bundle")
+            && stdout.contains("--vm-id")
+            && stdout.contains("--log-tail-lines"),
+        "bug-report help should expose the single support bundle path, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_cleanup() {
     m80().args(["cleanup", "--help"]).assert().success();
 }

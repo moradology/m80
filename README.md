@@ -74,9 +74,15 @@ If something fails, start with:
 
 <!-- m80:quickstart-snippet repair-status start -->
 ```sh
-m80 install-status
+m80 bug-report > m80-bug-report.json
 ```
 <!-- m80:quickstart-snippet repair-status end -->
+
+For a specific VM failure, include the VM id:
+
+```sh
+m80 bug-report --vm-id <vm-id> > m80-bug-report.json
+```
 
 If you are coming from the old artifact-only quickstart or a raw `main`
 installer command, use the
@@ -131,15 +137,15 @@ m80 --json logs <vm-id> --request-id req_...
 2 MiB per VM. Review [`docs/ops/logging.md`](docs/ops/logging.md) before
 shipping run-directory logs outside the host.
 
-For bug reports, include a diagnostic environment dump:
+For bug reports, attach one redacted bundle:
 
 ```sh
-m80 --json env > m80-env.json
+m80 bug-report > m80-bug-report.json
 ```
 
-That dump includes host capability checks, effective config, runtime artifact
-paths, Firecracker version evidence, and run-root state. For a specific failed
-VM, also attach `m80 --json logs <vm-id>`.
+That bundle includes install status, selected release/tag, verifier diagnostics,
+host prerequisite summary, and bounded log tails when `--vm-id <vm-id>` is
+provided.
 
 ## Process Visibility
 

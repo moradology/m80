@@ -582,6 +582,35 @@ fn parse_env() {
     assert!(matches!(cli.subcommand, Cmd::Env));
 }
 
+#[test]
+fn parse_bug_report() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "bug-report",
+        "--install-root",
+        "/tmp/m80",
+        "--profile",
+        "default",
+        "--vm-id",
+        "vm-abc",
+        "--request-id",
+        "req-1",
+        "--log-tail-lines",
+        "42",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::BugReport(args) => {
+            assert_eq!(args.install_root, std::path::PathBuf::from("/tmp/m80"));
+            assert_eq!(args.profile.as_deref(), Some("default"));
+            assert_eq!(args.vm_id.as_deref(), Some("vm-abc"));
+            assert_eq!(args.request_id.as_deref(), Some("req-1"));
+            assert_eq!(args.log_tail_lines, 42);
+        }
+        _ => panic!("expected BugReport"),
+    }
+}
+
 // ---- cleanup ----
 
 #[test]

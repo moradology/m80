@@ -144,6 +144,10 @@ pub enum Cmd {
     #[command(name = "install-status")]
     InstallStatus(InstallStatusArgs),
 
+    /// Emit one redacted support bundle for bug reports.
+    #[command(name = "bug-report")]
+    BugReport(BugReportArgs),
+
     /// Remove an installed version directory after rollback or upgrade.
     #[command(name = "install-cleanup")]
     InstallCleanup(InstallCleanupArgs),
@@ -576,6 +580,34 @@ pub struct InstallStatusArgs {
     /// Profile override to inspect instead of the effective default profile.
     #[arg(long, value_name = "NAME")]
     pub profile: Option<String>,
+}
+
+/// Arguments for `m80 bug-report`.
+#[derive(Debug, Args)]
+pub struct BugReportArgs {
+    /// Install root to inspect. Defaults to /opt/m80.
+    #[arg(long, value_name = "PATH", default_value = "/opt/m80")]
+    pub install_root: PathBuf,
+
+    /// Profile override to inspect instead of the effective default profile.
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+
+    /// VM id whose bounded diagnostics tail should be included.
+    #[arg(long = "vm-id", value_name = "ID")]
+    pub vm_id: Option<String>,
+
+    /// Include only diagnostics records for this opaque request id when possible.
+    #[arg(long = "request-id", value_name = "ID")]
+    pub request_id: Option<String>,
+
+    /// Maximum tail lines per log file. Defaults to 120; max 1000.
+    #[arg(long = "log-tail-lines", value_name = "N", default_value_t = 120)]
+    pub log_tail_lines: usize,
+
+    /// Test fixture override for the run-root.
+    #[arg(long = "run-root", value_name = "PATH", hide = true)]
+    pub run_root: Option<PathBuf>,
 }
 
 /// Arguments for `m80 install-cleanup`.

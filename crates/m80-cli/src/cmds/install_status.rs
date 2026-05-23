@@ -402,7 +402,7 @@ fn push_proof_cache(text: &mut String, proof_cache: &ProofCacheStatusOutput) {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct InstallStatusOutput {
+pub(super) struct InstallStatusOutput {
     schema_version: u16,
     status: InstallStateKind,
     install_root: PathBuf,
@@ -418,7 +418,7 @@ struct InstallStatusOutput {
 }
 
 impl InstallStatusOutput {
-    fn from_report(report: &InstallStateReport) -> Self {
+    pub(super) fn from_report(report: &InstallStateReport) -> Self {
         Self {
             schema_version: 1,
             status: report.state,
@@ -613,7 +613,7 @@ pub(super) struct ProofCacheStatusOutput {
 }
 
 impl ProofCacheStatusOutput {
-    fn from_install_report(report: &InstallStateReport) -> Self {
+    pub(super) fn from_install_report(report: &InstallStateReport) -> Self {
         let proof_cache_diagnostics = proof_cache_diagnostics(&report.diagnostics);
         let release_tag = report.active_pointer.release_tag.as_deref().or_else(|| {
             report

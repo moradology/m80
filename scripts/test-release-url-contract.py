@@ -196,7 +196,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("README.md", expected_snippets["latest-install"], "common"),
             ("README.md", expected_snippets["freshness-check"], "freshness-check"),
             ("README.md", expected_snippets["pinned-install"], "pinned"),
-            ("README.md", "m80 install-status", "troubleshooting"),
+            ("README.md", expected_snippets["repair-status"], "troubleshooting"),
             (
                 "docs/runbook/release.md",
                 "\n".join(

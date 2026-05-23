@@ -106,6 +106,10 @@ def install_status_command() -> str:
     return "m80 install-status"
 
 
+def bug_report_command() -> str:
+    return "m80 bug-report > m80-bug-report.json"
+
+
 def update_check_command() -> str:
     return "m80 update --check"
 
@@ -130,7 +134,7 @@ def expected_quickstart_snippets(release_tag: str = "<version>") -> dict[str, st
         "latest-install": latest_install_command(),
         "pinned-install": pinned_install_command(release_tag),
         "verified-install-handoff": verified_install_handoff_block(release_tag),
-        "repair-status": install_status_command(),
+        "repair-status": bug_report_command(),
         "freshness-check": update_check_command(),
         "rollback-cleanup": rollback_cleanup_block(),
     }
@@ -499,6 +503,8 @@ def is_public_command_line(line: str, *, include_run_variants: bool) -> bool:
         return True
     if line.startswith("m80 install") or line.startswith("m80 quickstart"):
         return True
+    if line.startswith("m80 bug-report"):
+        return True
     if line == update_check_command():
         return True
     if line == quickstart_smoke_command():
@@ -531,6 +537,8 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
         return "troubleshooting"
     if is_legacy_internal_reference(body, relative_path, expected):
         return "legacy-internal"
+    if is_bug_report_command(body):
+        return "troubleshooting"
     if is_install_status_command(body):
         return "troubleshooting"
     if is_rollback_cleanup_command(body, context):
@@ -615,6 +623,11 @@ def is_example_run_command(body: str, relative_path: Path) -> bool:
 
 def is_install_status_command(body: str) -> bool:
     return body.strip() == "m80 install-status"
+
+
+def is_bug_report_command(body: str) -> bool:
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    return bool(lines) and all(line.startswith("m80 bug-report") for line in lines)
 
 
 def is_rollback_cleanup_command(body: str, context: str) -> bool:

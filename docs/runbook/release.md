@@ -85,7 +85,7 @@ Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
 Use latest for the fastest interactive Linux install, pinned for automation or
 reproducible bug reports, verified handoff when a trusted checkout must inspect
-`install.sh` before sudo, `m80 install-status` for first repair triage,
+`install.sh` before sudo, `m80 bug-report` for first support triage,
 `m80 update --check` for read-only freshness, and rollback cleanup only after
 choosing a previously verified active version.
 Legacy artifact-only `releases/latest` tarball and raw `main` installer flows
@@ -389,7 +389,7 @@ For local install repair triage, start with:
 
 <!-- m80:quickstart-snippet repair-status start -->
 ```sh
-m80 install-status
+m80 bug-report > m80-bug-report.json
 ```
 <!-- m80:quickstart-snippet repair-status end -->
 
