@@ -241,6 +241,40 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertIn("job publish-release-artifacts grants contents: write", result.stderr)
         self.assertIn("requires needs: build-release-artifacts", result.stderr)
 
+    def test_release_publish_requires_protected_environment(self) -> None:
+        workflow = release_artifact_origin_workflow(publish_environment=None)
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job publish-release-artifacts must target protected environment", result.stderr)
+        self.assertIn("m80-release-publish", result.stderr)
+
+    def test_release_protected_environment_is_publish_only(self) -> None:
+        workflow = release_artifact_origin_workflow(
+            extra_build_job_lines="environment: m80-release-publish",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job build-release-artifacts must not target protected environment", result.stderr)
+
+    def test_release_mutation_commands_are_publish_only(self) -> None:
+        workflow = release_artifact_origin_workflow(
+            extra_build_steps="""
+            - name: Bad release mutation
+              run: |
+                set -euo pipefail
+                gh release upload "$GITHUB_REF_NAME" /tmp/asset
+            """,
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job build-release-artifacts must not run release mutation command", result.stderr)
+
     def test_release_build_attestation_permissions_are_allowed(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",
@@ -1192,11 +1226,19 @@ def release_artifact_origin_workflow(
       workflow_dispatch:
     """,
     extra_build_steps: str = "",
+    extra_build_job_lines: str = "",
+    publish_environment: str | None = "m80-release-publish",
 ) -> str:
     events_block = textwrap.indent(textwrap.dedent(events).strip(), "  ")
+    extra_build_job_lines_block = textwrap.indent(
+        textwrap.dedent(extra_build_job_lines).strip(), "    "
+    )
     extra_build_steps_block = textwrap.indent(textwrap.dedent(extra_build_steps).strip(), "          ")
     if extra_build_steps_block:
         extra_build_steps_block = "\n" + extra_build_steps_block
+    publish_environment_block = (
+        "" if publish_environment is None else f"    environment: {publish_environment}\n"
+    )
     return f"""
 name: Release artifacts
 on:
@@ -1213,6 +1255,7 @@ jobs:
       attestations: write
     runs-on: ubuntu-latest
     timeout-minutes: 90
+{extra_build_job_lines_block.rstrip()}
     outputs:
       release_commit: ${{{{ steps.release-commit.outputs.sha }}}}
       release_dist_artifact_id: ${{{{ steps.upload-release-dist.outputs.artifact-id }}}}
@@ -1286,6 +1329,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
+{publish_environment_block.rstrip()}
     steps:
       - uses: actions/checkout@v6
       - name: Prepare release publish scratch dirs
@@ -1341,6 +1385,24 @@ jobs:
         run: |
           set -euo pipefail
           scripts/release_upload_manifest.py --dist-dir "$UPLOAD_DIR" --release-tag "$GITHUB_REF_NAME"
+      - name: Audit repository release protections before mutation
+        env:
+          GH_TOKEN: ${{{{ github.token }}}}
+        run: |
+          set -euo pipefail
+          scripts/repository_protection_audit.py \\
+            --repository "$GITHUB_REPOSITORY" \\
+            --branch main \\
+            --tag-pattern "v*" \\
+            --environment m80-release-publish \\
+            --out "$UPLOAD_DIR/m80-repository-protection-audit.json" \\
+            --write
+      - name: Upload repository protection audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-repository-protection-audit-${{{{ github.run_id }}}}
+          path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}/m80-repository-protection-audit.json
+          if-no-files-found: error
       - name: Cleanup release publish scratch dirs
         if: always()
         run: |

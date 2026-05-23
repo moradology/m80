@@ -26,6 +26,7 @@ ASSIGNMENT_COMMAND_SUBSTITUTION_RE = re.compile(
 RUN_BLOCK_STRICT_PREAMBLE = "set -euo pipefail"
 RUN_BLOCK_EXCEPTION_MARKER = "m80-lint: allow-nonstrict-run"
 MAX_RELEASE_JOB_TIMEOUT_MINUTES = 120
+RELEASE_PUBLISH_ENVIRONMENT = "m80-release-publish"
 REUSABLE_TIMEOUT_MARKER_RE = re.compile(
     r"m80-lint:\s*reusable-timeout-minutes=([0-9]+)\b"
 )
@@ -75,6 +76,8 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
             errors.extend(lint_release_cargo_locked(path, lines))
             errors.extend(lint_release_rust_toolchain_pins(path, lines))
             errors.extend(lint_release_artifact_origin(path, text, lines))
+            errors.extend(lint_release_publish_environment(path, lines))
+            errors.extend(lint_release_mutation_authority(path, lines))
             errors.extend(lint_release_temp_isolation(path, text, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
@@ -419,6 +422,10 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         "test \"$observed_digest\" = \"$EXPECTED_MANIFEST_DIGEST\"": "publish job must hash-check the downloaded artifact set manifest",
         "scripts/release_upload_manifest.py": "publish job must size/hash-check the downloaded artifact set before upload",
         "--dist-dir \"$UPLOAD_DIR\"": "publish manifest check must inspect the downloaded release artifact set",
+        "scripts/repository_protection_audit.py": "publish job must audit repository protections before release mutation",
+        "--environment m80-release-publish": "repository protection audit must check the protected publish environment",
+        "--out \"$UPLOAD_DIR/m80-repository-protection-audit.json\"": "repository protection audit must preserve a publish evidence artifact",
+        "name: m80-repository-protection-audit-${{ github.run_id }}": "publish job must upload the repository protection audit artifact",
     }
     for token, message in required_publish_tokens.items():
         if token not in publish_text:
@@ -442,6 +449,53 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         errors.append(f"{path}: publish job must not reuse runner-local dist paths")
     if "steps.build-scratch.outputs.dist_dir" in publish_text:
         errors.append(f"{path}: publish job must not reuse runner-local dist paths")
+    return errors
+
+
+def lint_release_publish_environment(path: Path, lines: list[str]) -> list[str]:
+    if path.name != "release-artifacts.yml":
+        return []
+    errors: list[str] = []
+    for job_id, start, end in job_blocks(lines):
+        environment = job_environment_name(lines[start:end])
+        if job_id == "publish-release-artifacts":
+            if environment != RELEASE_PUBLISH_ENVIRONMENT:
+                errors.append(
+                    f"{path}:{start + 1}: job {job_id} must target protected "
+                    f"environment {RELEASE_PUBLISH_ENVIRONMENT}"
+                )
+            continue
+        if environment == RELEASE_PUBLISH_ENVIRONMENT:
+            errors.append(
+                f"{path}:{start + 1}: job {job_id} must not target protected "
+                f"environment {RELEASE_PUBLISH_ENVIRONMENT}"
+            )
+    return errors
+
+
+def lint_release_mutation_authority(path: Path, lines: list[str]) -> list[str]:
+    if path.name != "release-artifacts.yml":
+        return []
+    errors: list[str] = []
+    forbidden_mutations = [
+        "gh release create",
+        "gh release upload",
+        "gh release edit",
+        "gh release delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method DELETE",
+    ]
+    for job_id, start, end in job_blocks(lines):
+        if job_id == "publish-release-artifacts":
+            continue
+        block_text = "\n".join(lines[start:end])
+        for forbidden in forbidden_mutations:
+            if forbidden in block_text:
+                errors.append(
+                    f"{path}:{start + 1}: job {job_id} must not run release mutation "
+                    f"command: {forbidden}"
+                )
     return errors
 
 
@@ -641,6 +695,25 @@ def job_permissions(lines: list[str]) -> dict[str, str] | None:
             if match:
                 permissions[match.group(1)] = match.group(2)
         return permissions
+    return None
+
+
+def job_environment_name(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        if not line.startswith("    environment:"):
+            continue
+        suffix = line.split(":", 1)[1].strip()
+        if suffix:
+            return strip_quotes(suffix)
+        for nested in lines[index + 1 :]:
+            if not nested.strip() or nested.lstrip().startswith("#"):
+                continue
+            if not nested.startswith("      "):
+                break
+            stripped = nested.strip()
+            if stripped.startswith("name:"):
+                return strip_quotes(stripped.split(":", 1)[1].strip())
+        return None
     return None
 
 

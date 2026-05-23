@@ -1382,6 +1382,14 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("--workflow-run-id \"$GITHUB_RUN_ID\"", workflow)
         self.assertIn("--actor \"$GITHUB_ACTOR\"", workflow)
         self.assertIn('--token-authority "$UPLOAD_DIR/m80-release-token-authority.json"', workflow)
+        self.assertIn("Audit repository release protections before mutation", workflow)
+        self.assertIn("scripts/repository_protection_audit.py", workflow)
+        self.assertIn("--environment m80-release-publish", workflow)
+        self.assertIn('--out "$UPLOAD_DIR/m80-repository-protection-audit.json"', workflow)
+        self.assertLess(
+            workflow.index("scripts/repository_protection_audit.py"),
+            workflow.index("scripts/release_publish_authority.py"),
+        )
         self.assertLess(
             workflow.index("scripts/release_publish_receipt.py"),
             workflow.index("scripts/release_publication_plan.py"),
@@ -1491,6 +1499,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publish-decision.json", workflow)
         self.assertIn("m80-release-token-authority-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json", workflow)
+        self.assertIn("m80-repository-protection-audit-${{ github.run_id }}", workflow)
+        self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-repository-protection-audit.json", workflow)
         self.assertIn("m80-release-publication-plan-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-publication-plan.json", workflow)
         self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)

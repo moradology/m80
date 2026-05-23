@@ -12,6 +12,12 @@ public release state.
 - The only release workflow job allowed to request `contents: write` is a
   tag-gated publish job whose `needs` graph includes the required verification
   or readiness job for that workflow.
+- The tag release publish job targets the protected GitHub Actions environment
+  `m80-release-publish`. Build, verification, PR dry-run, freshness, and
+  real-KVM smoke jobs do not target that environment.
+- Release upload, draft-publication, and latest-promotion commands stay inside
+  the tag publish job; non-publish jobs cannot carry release mutation
+  authority.
 - Release/latest workflows declare a concurrency group keyed by the release tag,
   GitHub ref, or latest-promotion target.
 - Pull-request workflows do not reference `secrets.*`.
@@ -62,9 +68,14 @@ handoff: build outputs must expose the recorded artifact id/name, producer job,
 release tag, source commit, and release upload manifest digest; publish must
 download by the recorded artifact id and must reject manual artifact overrides,
 cache reuse, runner-local dist reuse, and missing or mismatched handoff fields.
-It also rejects fixed `/tmp/m80-release-*` paths and requires the build and
-publish jobs to validate their `$RUNNER_TEMP` scratch roots before producing or
-consuming release bytes.
+It requires `publish-release-artifacts` to target `m80-release-publish`, rejects
+that environment on every other release-artifacts job, rejects release mutation
+commands outside the publish job, rejects fixed `/tmp/m80-release-*` paths, and
+requires the build and publish jobs to validate their `$RUNNER_TEMP` scratch
+roots before producing or consuming release bytes.
+It also requires the publish job to run
+`scripts/repository_protection_audit.py` before mutation and upload the
+resulting `m80-repository-protection-audit.json` evidence artifact.
 
 ## Verification
 
@@ -80,7 +91,9 @@ consuming release bytes.
   path reuse, symlink staging roots, unsafe mode/owner checks, and clean
   `$RUNNER_TEMP` usage. For publish authority, it covers unexpected write
   permission in non-publish jobs, workflow-level write permissions, publish jobs
-  missing their required `needs` graph, and the clean least-privilege layout.
+  missing their required `needs` graph, missing or misplaced
+  `m80-release-publish` environment gates, release mutation commands outside
+  the publish job, and the clean least-privilege layout.
 - `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports

@@ -718,6 +718,58 @@ repository release access, tag state, or GitHub API availability; and
 `policy_digest` drift means update the policy, tests, and runbook together
 before relying on the new authority shape.
 
+The tag publish job targets the protected GitHub Actions environment
+`m80-release-publish`. Build, PR dry-run, hostless verification, freshness, and
+real-KVM smoke jobs do not request that environment. A normal release uses
+`github.token` with job-scoped `contents: write`; it does not require a personal
+access token. The environment should require maintainer approval before the
+publish job starts. At that point the build job has produced the release
+artifact handoff; after approval, the publish job still validates the upload
+manifest, hostless quickstart proof, proof ledger, integrity material,
+repository protection audit, token authority receipt, and publish decision
+receipt before any release mutation. `scripts/lint-github-workflows.py` fails
+if `publish-release-artifacts` loses the environment, if another
+release-artifacts job requests it, if release mutation commands move outside the
+publish job, or if the publish job can run without the validated build handoff
+dependency.
+
+Repository settings are audited before release mutation because they can drift
+outside git. The required settings are:
+
+- `main` branch protection has required status checks.
+- A repository ruleset targets release tags matching `v*`.
+- The `m80-release-publish` environment has required reviewers.
+
+Run the same audit locally with a token that can read repository settings:
+
+```sh
+GH_TOKEN=<token> scripts/repository_protection_audit.py \
+  --repository moradology/m80 \
+  --branch main \
+  --tag-pattern "v*" \
+  --environment m80-release-publish \
+  --out /tmp/m80-repository-protection-audit.json \
+  --write
+```
+
+The tag publish workflow runs that audit before the token authority receipt and
+uploads `m80-repository-protection-audit-<run id>` on success. If the audit is
+unavailable or reports weaker settings than this runbook requires, the publish
+job fails before upload/latest authority. Fix the named setting in the audit's
+`remediation` field, then rerun the tag workflow.
+
+If the publish job is waiting on `m80-release-publish`, inspect the run summary
+and approve or reject it there; do not rerun the build just to satisfy the gate.
+If the job created or uploaded a draft but did not reach latest promotion, use
+the uploaded `m80-release-publication-plan-*`,
+`m80-release-publish-decision-*`, `m80-release-token-authority-*`, and failed
+diagnostic artifacts to decide whether to rerun the same tag workflow or delete
+only the draft release:
+
+```sh
+gh release delete <version> --yes
+```
+
 Release and freshness workflow jobs also carry explicit job timeout budgets.
 Inner command timeouts remain the primary failure detector for network fetches,
 tool installation, and smoke probes; the job timeout is the final guard so a

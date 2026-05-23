@@ -323,6 +323,7 @@ jobs:
     needs: build-release-artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: m80-release-publish
     permissions:
       contents: write
     steps:
@@ -425,6 +426,19 @@ jobs:
           scripts/release_upload_manifest.py \
             --dist-dir "$UPLOAD_DIR" \
             --release-tag "$GITHUB_REF_NAME"
+
+      - name: Audit repository release protections before mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          scripts/repository_protection_audit.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --branch main \
+            --tag-pattern "v*" \
+            --environment m80-release-publish \
+            --out "$UPLOAD_DIR/m80-repository-protection-audit.json" \
+            --write
 
       - name: Verify publish authority before mutation
         env:
@@ -752,6 +766,13 @@ jobs:
         with:
           name: m80-release-token-authority-${{ github.run_id }}
           path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-release-token-authority.json
+          if-no-files-found: error
+
+      - name: Upload repository protection audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-repository-protection-audit-${{ github.run_id }}
+          path: ${{ steps.publish-scratch.outputs.upload_dir }}/m80-repository-protection-audit.json
           if-no-files-found: error
 
       - name: Upload release publication plan
