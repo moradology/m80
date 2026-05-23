@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -56,6 +57,12 @@ class FetchResult:
     redirects: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class LatestState:
+    api: dict
+    install: FetchResult
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", default="moradology/m80")
@@ -63,6 +70,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--verification-time")
+    parser.add_argument("--latest-timeout-seconds", type=float, default=0.0)
+    parser.add_argument("--latest-poll-interval-seconds", type=float, default=2.0)
     parser.add_argument("--write", action="store_true")
     return parser.parse_args()
 
@@ -76,6 +85,8 @@ def main() -> int:
                 release_tag=args.release_tag,
                 commit_sha=args.commit_sha,
                 verification_time=args.verification_time,
+                latest_timeout_seconds=args.latest_timeout_seconds,
+                latest_poll_interval_seconds=args.latest_poll_interval_seconds,
             )
             write_json(args.out, receipt)
         receipt = read_json(args.out, "public-access release readiness receipt")
@@ -97,27 +108,36 @@ def build_receipt(
     release_tag: str,
     commit_sha: str,
     verification_time: str | None = None,
+    latest_timeout_seconds: float = 0.0,
+    latest_poll_interval_seconds: float = 2.0,
 ) -> dict:
     require_safe_repository(repository)
     check(not os.environ.get("GH_TOKEN"), "GH_TOKEN must be unset for public-access proof")
     check(not os.environ.get("GITHUB_TOKEN"), "GITHUB_TOKEN must be unset for public-access proof")
 
     api_root = f"https://api.github.com/repos/{repository}/releases"
-    latest_api = fetch_json(f"{api_root}/latest")
-    pinned_api = fetch_json(f"{api_root}/tags/{release_tag}")
     release_url = f"https://github.com/{repository}/releases/tag/{release_tag}"
     latest_install_url = f"https://github.com/{repository}/releases/latest/download/install.sh"
     pinned_install_url = f"https://github.com/{repository}/releases/download/{release_tag}/install.sh"
 
-    check_release_payload(latest_api["json"], repository, release_tag, release_url, "latest release")
+    latest_state = wait_for_public_latest_state(
+        api_root=api_root,
+        repository=repository,
+        release_tag=release_tag,
+        release_url=release_url,
+        latest_install_url=latest_install_url,
+        timeout_seconds=latest_timeout_seconds,
+        poll_interval_seconds=latest_poll_interval_seconds,
+    )
+    latest_api = latest_state.api
+    latest_install = latest_state.install
+    pinned_api = fetch_json(f"{api_root}/tags/{release_tag}")
     check_release_payload(pinned_api["json"], repository, release_tag, release_url, "pinned release")
     release_assets = assets_by_name(pinned_api["json"], repository, release_tag)
     check_asset_set(set(release_assets), REQUIRED_PUBLIC_ASSETS, "public release asset set")
 
-    latest_install = fetch_bytes(latest_install_url)
     pinned_install = fetch_bytes(pinned_install_url)
     resolved_latest_tag = tag_from_download_result(latest_install)
-    check(resolved_latest_tag == release_tag, "latest install URL resolved to stale tag")
     check(
         sha256_bytes(latest_install.body) == sha256_bytes(pinned_install.body),
         "latest/pinned install.sh digest disagreement",
@@ -214,6 +234,40 @@ def build_receipt(
         expected_commit_sha=commit_sha,
     )
     return receipt
+
+
+def wait_for_public_latest_state(
+    *,
+    api_root: str,
+    repository: str,
+    release_tag: str,
+    release_url: str,
+    latest_install_url: str,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> LatestState:
+    deadline = time.monotonic() + max(timeout_seconds, 0.0)
+    while True:
+        try:
+            latest_api = fetch_json(f"{api_root}/latest")
+            check_release_payload(latest_api["json"], repository, release_tag, release_url, "latest release")
+            latest_install = fetch_bytes(latest_install_url)
+            resolved_latest_tag = tag_from_download_result(latest_install)
+            check(resolved_latest_tag == release_tag, "latest install URL resolved to stale tag")
+            return LatestState(api=latest_api, install=latest_install)
+        except VerificationError as exc:
+            if not is_transient_latest_mismatch(str(exc)) or time.monotonic() >= deadline:
+                raise
+            time.sleep(max(poll_interval_seconds, 0.0))
+
+
+def is_transient_latest_mismatch(message: str) -> bool:
+    return message in {
+        "latest release tag_name mismatch",
+        "latest release html_url mismatch",
+        "latest release asset download URL has wrong owner/repo or tag",
+        "latest install URL resolved to stale tag",
+    }
 
 
 def verify_receipt(

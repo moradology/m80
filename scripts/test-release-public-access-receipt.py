@@ -101,6 +101,46 @@ class PublicAccessReceiptTests(unittest.TestCase):
         receipt["installer_downloads"]["latest_install"]["sha256"] = "c" * 64
         self.assert_fails(receipt, "digest disagreement")
 
+    def test_wait_for_public_latest_retries_stale_latest_once(self) -> None:
+        original_fetch_json = public_access.fetch_json
+        original_fetch_bytes = public_access.fetch_bytes
+        original_sleep = public_access.time.sleep
+        calls = {"latest_api": 0}
+
+        def fake_fetch_json(url: str) -> dict:
+            calls["latest_api"] += 1
+            tag = "v0.2.6" if calls["latest_api"] == 1 else TAG
+            return {"fetch": fetch_result(url), "json": release_payload(tag)}
+
+        def fake_fetch_bytes(url: str, *, accept: str = "application/octet-stream") -> public_access.FetchResult:
+            return fetch_result(
+                url,
+                final_url=f"https://github.com/{REPOSITORY}/releases/download/{TAG}/install.sh",
+                redirects=(f"https://github.com/{REPOSITORY}/releases/download/{TAG}/install.sh",),
+            )
+
+        try:
+            public_access.fetch_json = fake_fetch_json
+            public_access.fetch_bytes = fake_fetch_bytes
+            public_access.time.sleep = lambda _seconds: None
+
+            state = public_access.wait_for_public_latest_state(
+                api_root=f"https://api.github.com/repos/{REPOSITORY}/releases",
+                repository=REPOSITORY,
+                release_tag=TAG,
+                release_url=f"https://github.com/{REPOSITORY}/releases/tag/{TAG}",
+                latest_install_url=f"https://github.com/{REPOSITORY}/releases/latest/download/install.sh",
+                timeout_seconds=1,
+                poll_interval_seconds=0,
+            )
+        finally:
+            public_access.fetch_json = original_fetch_json
+            public_access.fetch_bytes = original_fetch_bytes
+            public_access.time.sleep = original_sleep
+
+        self.assertEqual(calls["latest_api"], 2)
+        self.assertEqual(state.api["json"]["tag_name"], TAG)
+
     def assert_fails(self, receipt: dict, text: str) -> None:
         with self.assertRaises(public_access.VerificationError) as raised:
             public_access.verify_receipt(
@@ -214,6 +254,33 @@ def valid_receipt() -> dict:
         "exit_status": 0,
         "stdout": "public-access release readiness receipt ok",
         "stderr": "",
+    }
+
+
+def fetch_result(url: str, *, final_url: str | None = None, redirects: tuple[str, ...] = ()) -> public_access.FetchResult:
+    return public_access.FetchResult(
+        url=url,
+        final_url=final_url or url,
+        http_status=200,
+        body=b"ok",
+        error=None,
+        redirects=redirects,
+    )
+
+
+def release_payload(tag: str) -> dict:
+    return {
+        "tag_name": tag,
+        "html_url": f"https://github.com/{REPOSITORY}/releases/tag/{tag}",
+        "draft": False,
+        "prerelease": False,
+        "assets": [
+            {
+                "name": name,
+                "browser_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}",
+            }
+            for name in public_access.REQUIRED_PUBLIC_ASSETS
+        ],
     }
 
 

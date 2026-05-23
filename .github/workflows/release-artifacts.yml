@@ -884,6 +884,8 @@ jobs:
               --commit-sha "$RELEASE_COMMIT" \
               --out "$REDOWNLOAD_DIR/release-readiness-public-access.json" \
               --verification-time "$verification_time" \
+              --latest-timeout-seconds 60 \
+              --latest-poll-interval-seconds 5 \
               --write
 
       - name: Upload publish decision receipt
