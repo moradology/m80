@@ -893,7 +893,13 @@ state. The same step runs rerun preflight mode against the upload manifest,
 `m80-release-build.json`, and `m80-release-publish-decision.json`, so an
 existing public release is accepted only when the remote asset names, ids,
 sizes, digests, release tag, source commit, and receipt digests still match the
-current build handoff and publish decision. The behavior contract lives in
+current build handoff and publish decision. Rerun preflight prints a recovery
+class: `safe_identical_rerun`, `incomplete_draft_delete_and_rerun`, or
+`unsafe_manual_intervention_required`. The incomplete-draft class names the
+missing assets and the delete-and-rerun command. Unsafe cases name asset ids and
+digests where available and require manual inspection; the protected workflow
+does not delete or overwrite public assets on its own. The behavior contract
+lives in
 `docs/behaviors/release/remote-asset-inventory.md`.
 
 Before latest promotion, the publish job captures the current public release

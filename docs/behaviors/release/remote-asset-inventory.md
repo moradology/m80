@@ -40,9 +40,26 @@ name the same release tag and source commit, its own downloaded bytes must match
 the remote inventory row, and its `bundle_metadata_sha256` must match the
 remote bundle metadata row. A stale receipt, partial upload, duplicate remote
 name/id, or manual asset replacement fails before latest-promotion authority can
-move. The failure prints the safe recovery path: delete the bad release or
-publish a new tag; the protected publish job does not clobber or overwrite
-mismatched public assets.
+move.
+
+Rerun preflight classifies recovery without taking the recovery action:
+
+- `safe_identical_rerun`: every remote asset, receipt, tag, and commit agrees.
+  The workflow may continue through validation and latest-promotion gates.
+- `incomplete_draft_delete_and_rerun`: the remote release has a strict subset
+  of expected assets, no extra assets, no digest/size mismatches for present
+  assets, and the publish receipt is present. The diagnostic prints the exact
+  missing assets and the command `gh release delete <tag> --yes && rerun the
+  protected tag workflow`.
+- `unsafe_manual_intervention_required`: receipt material is missing, extra or
+  duplicate remote assets exist, or any present asset id, size, or digest
+  disagrees. The diagnostic names remote asset ids plus expected and observed
+  digests where available and tells the operator to inspect or delete the bad
+  release outside the protected publish job.
+
+The protected publish job never deletes, overwrites, or clobbers public release
+assets automatically. Classification is evidence for the operator and later
+runbook steps, not mutation authority.
 
 The inventory is uploaded as a workflow artifact named
 `m80-release-remote-assets-<run_id>` and is also included in failed publish

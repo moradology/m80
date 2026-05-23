@@ -2505,7 +2505,9 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("remote release asset metadata set mismatch", result.stderr)
             self.assertIn(missing, result.stderr)
-            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+            self.assertIn("rerun preflight recovery_class=incomplete_draft_delete_and_rerun", result.stderr)
+            self.assertIn(f"rerun preflight recovery_command=gh release delete v0.2.11 --yes", result.stderr)
+            self.assertIn(f"missing_assets={missing}", result.stderr)
 
     def test_remote_release_rerun_preflight_rejects_extra_remote_asset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2549,7 +2551,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("remote release asset metadata set mismatch", result.stderr)
             self.assertIn("unexpected.txt", result.stderr)
-            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+            self.assertIn("rerun preflight recovery_class=unsafe_manual_intervention_required", result.stderr)
+            self.assertIn("extra_assets=unexpected.txt", result.stderr)
 
     def test_remote_release_rerun_preflight_rejects_manual_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2583,7 +2586,73 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"remote release asset {stale} sha256 mismatch", result.stderr)
-            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+            self.assertIn("rerun preflight recovery_class=unsafe_manual_intervention_required", result.stderr)
+            self.assertIn(f"digest_mismatches={stale}:id=", result.stderr)
+            self.assertIn("expected_sha=", result.stderr)
+            self.assertIn("observed_sha=", result.stderr)
+
+    def test_remote_release_rerun_preflight_reports_safe_identical_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(out_dir / PUBLISH_RECEIPT_NAME),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("rerun preflight recovery_class=safe_identical_rerun", result.stdout)
+
+    def test_remote_release_rerun_preflight_rejects_missing_receipt_as_unsafe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            receipt_path = out_dir / PUBLISH_RECEIPT_NAME
+            receipt_path.unlink()
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(
+                redownload,
+                out_dir,
+                metadata,
+                "--build-handoff",
+                str(out_dir / BUILD_MANIFEST_NAME),
+                "--publish-receipt",
+                str(receipt_path),
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--require-rerun-preflight",
+                "--write",
+                assets_metadata=assets_metadata,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish decision receipt missing", result.stderr)
+            self.assertIn("rerun preflight recovery_class=unsafe_manual_intervention_required", result.stderr)
+            self.assertIn("publish_receipt_missing=true", result.stderr)
 
     def test_remote_release_rerun_preflight_rejects_stale_publish_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2618,7 +2687,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release publish decision receipt public_assets mismatch upload manifest", result.stderr)
-            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+            self.assertIn("rerun preflight recovery_class=unsafe_manual_intervention_required", result.stderr)
 
     def test_remote_release_rerun_preflight_rejects_duplicate_remote_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2649,7 +2718,8 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("duplicate asset name", result.stderr)
-            self.assertIn("repair: delete the bad v0.2.11 release or publish a new tag", result.stderr)
+            self.assertIn("rerun preflight recovery_class=unsafe_manual_intervention_required", result.stderr)
+            self.assertIn("duplicate_remote_assets=name=", result.stderr)
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -143,6 +143,7 @@ def main() -> int:
             metadata_path=metadata_path,
             assets_metadata_path=assets_metadata_path,
         )
+        rerun_preflight_ok = False
         if args.require_rerun_preflight:
             verify_rerun_preflight(
                 inventory,
@@ -153,19 +154,83 @@ def main() -> int:
                 build_handoff_path=build_handoff_path,
                 publish_receipt_path=publish_receipt_path,
             )
+            rerun_preflight_ok = True
     except SystemExit as exc:
         if not args.require_rerun_preflight or isinstance(exc.code, int):
             raise
-        raise SystemExit(f"{exc}\n{rerun_preflight_recovery(args.release_tag)}") from exc
+        raise SystemExit(
+            f"{exc}\n"
+            + rerun_preflight_recovery(
+                release_tag=args.release_tag,
+                redownload_dir=redownload_dir,
+                manifest_path=manifest_path,
+                metadata_path=metadata_path,
+                assets_metadata_path=assets_metadata_path,
+                publish_receipt_path=publish_receipt_path,
+            )
+        ) from exc
+    if rerun_preflight_ok:
+        print("rerun preflight recovery_class=safe_identical_rerun")
+        print("rerun preflight recovery_command=none")
     print(f"remote release asset inventory ok: {inventory_path}")
     return 0
 
 
-def rerun_preflight_recovery(release_tag: str) -> str:
-    return (
-        f"repair: delete the bad {release_tag} release or publish a new tag; "
-        "the protected publish job will not clobber, overwrite, or trust mismatched public assets"
-    )
+def rerun_preflight_recovery(
+    *,
+    release_tag: str,
+    redownload_dir: Path,
+    manifest_path: Path,
+    metadata_path: Path,
+    assets_metadata_path: Path | None,
+    publish_receipt_path: Path,
+) -> str:
+    try:
+        manifest = read_json(manifest_path, "release upload manifest")
+        manifest_assets = normalized_manifest_assets(manifest, release_tag)
+        expected_by_name = {asset["name"]: asset for asset in manifest_assets}
+        metadata = read_json(metadata_path, "GitHub release metadata")
+        remote_rows = release_assets_payload(metadata, assets_metadata_path)
+        remote_by_name, duplicate_details = recovery_remote_assets(remote_rows)
+        missing = sorted(set(expected_by_name) - set(remote_by_name))
+        extra = sorted(set(remote_by_name) - set(expected_by_name))
+        mismatch_details = recovery_mismatches(redownload_dir, expected_by_name, remote_by_name)
+        receipt_missing = not publish_receipt_path.is_file()
+        if missing and not extra and not duplicate_details and not mismatch_details and not receipt_missing:
+            recovery_class = "incomplete_draft_delete_and_rerun"
+            command = f"gh release delete {release_tag} --yes && rerun the protected tag workflow"
+        else:
+            recovery_class = "unsafe_manual_intervention_required"
+            command = f"inspect or delete the bad {release_tag} release outside the protected publish job"
+
+        details = [
+            f"missing_assets={comma_or_none(missing)}",
+            f"extra_assets={comma_or_none(extra)}",
+            "remote_assets=" + semicolon_or_none(recovery_asset_details(remote_by_name)),
+            "digest_mismatches=" + semicolon_or_none(mismatch_details),
+            "duplicate_remote_assets=" + semicolon_or_none(duplicate_details),
+            f"publish_receipt_missing={str(receipt_missing).lower()}",
+        ]
+        return "\n".join(
+            [
+                f"rerun preflight recovery_class={recovery_class}",
+                f"rerun preflight recovery_command={command}",
+                "rerun preflight recovery_detail " + " ".join(details),
+                f"repair: {command}; the protected publish job will not clobber, overwrite, or trust mismatched public assets",
+            ]
+        )
+    except SystemExit:
+        return "\n".join(
+            [
+                "rerun preflight recovery_class=unsafe_manual_intervention_required",
+                f"rerun preflight recovery_command=inspect or delete the bad {release_tag} release outside the protected publish job",
+                "rerun preflight recovery_detail unavailable=malformed-release-metadata",
+                (
+                    f"repair: inspect or delete the bad {release_tag} release outside the protected publish job; "
+                    "the protected publish job will not clobber, overwrite, or trust mismatched public assets"
+                ),
+            ]
+        )
 
 
 def build_inventory(
@@ -568,6 +633,60 @@ def require_name_set(observed: set[str], expected: set[str], label: str) -> None
 
 def comma_or_none(values: list[str]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def semicolon_or_none(values: list[str]) -> str:
+    return "; ".join(values) if values else "none"
+
+
+def recovery_remote_assets(rows: list[object]) -> tuple[dict[str, dict], list[str]]:
+    by_name: dict[str, dict] = {}
+    duplicate_details: list[str] = []
+    seen_ids: dict[int, str] = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            duplicate_details.append(f"assets[{index}]=not-an-object")
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or not name:
+            duplicate_details.append(f"assets[{index}]=missing-name")
+            continue
+        asset_id = row.get("id")
+        if name in by_name:
+            duplicate_details.append(f"name={name}")
+        if isinstance(asset_id, int):
+            if asset_id in seen_ids:
+                duplicate_details.append(f"id={asset_id} names={seen_ids[asset_id]},{name}")
+            seen_ids[asset_id] = name
+        by_name[name] = row
+    return by_name, duplicate_details
+
+
+def recovery_mismatches(redownload_dir: Path, expected_by_name: dict[str, dict], remote_by_name: dict[str, dict]) -> list[str]:
+    details: list[str] = []
+    for name in sorted(set(expected_by_name) & set(remote_by_name)):
+        expected = expected_by_name[name]
+        remote = remote_by_name[name]
+        remote_id = remote.get("id", "unknown")
+        path = redownload_dir / name
+        observed_sha = sha256_file(path) if path.is_file() else "missing-download"
+        observed_size = path.stat().st_size if path.is_file() else "missing-download"
+        if observed_sha != expected["sha256"]:
+            details.append(f"{name}:id={remote_id}:expected_sha={expected['sha256']}:observed_sha={observed_sha}")
+        remote_size = remote.get("size")
+        if observed_size != expected["size_bytes"] or remote_size != expected["size_bytes"]:
+            details.append(
+                f"{name}:id={remote_id}:expected_size={expected['size_bytes']}:"
+                f"downloaded_size={observed_size}:metadata_size={remote_size}"
+            )
+    return details
+
+
+def recovery_asset_details(remote_by_name: dict[str, dict]) -> list[str]:
+    details = []
+    for name, row in sorted(remote_by_name.items()):
+        details.append(f"{name}:id={row.get('id', 'unknown')}:size={row.get('size', 'unknown')}")
+    return details
 
 
 def require_dist_name(value: object, label: str) -> str:
