@@ -69,6 +69,13 @@ text says the public installer status and proof state. The renderer owns
 pending, scaffolded fixture proof, public proven, stale, and failed wording; the
 command itself still comes from the shared snippet source.
 
+The README quickstart stays shallow by test. It must contain the fastest latest
+install snippet, the `m80 run -- echo hello` smoke, the concise process-wrapper
+value sentence, and the pinned install snippet. Release verification internals,
+manifest/receipt details, and host policy details stay behind links to the
+release runbook, troubleshooting matrix, host prerequisite behavior docs, and
+operator setup docs.
+
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and
 `scripts/verify-quickstart-proof.py`: normal hostless and real-KVM quickstart

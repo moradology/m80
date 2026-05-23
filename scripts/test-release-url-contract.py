@@ -86,6 +86,13 @@ QUICKSTART_SNIPPET_DOCS = [
     "README.md",
     "docs/runbook/release.md",
 ]
+README_QUICKSTART_LINKS = {
+    "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
+    "docs/behaviors/release/quickstart-troubleshooting-matrix.md",
+    "docs/behaviors/release/host-prerequisite-policy.md",
+    "docs/behaviors/preflight/host-prerequisite-verifier.md",
+    "docs/ops/host-setup.md",
+}
 
 
 class ReleaseUrlContractTest(unittest.TestCase):
@@ -257,6 +264,35 @@ class ReleaseUrlContractTest(unittest.TestCase):
             gate,
         )
         self.assertIn("exits 0 and stdout is exactly `hello`", gate)
+
+    def test_readme_quickstart_stays_short_and_links_deep_details(self) -> None:
+        quickstart = extract_markdown_section(read_repo_file("README.md"), "Quickstart")
+        snippets = extract_marked_quickstart_snippets(REPO_ROOT / "README.md")
+        expected = expected_quickstart_snippets()
+
+        self.assertEqual(snippets["latest-install"], expected["latest-install"])
+        self.assertEqual(snippets["post-install-smoke"], expected["post-install-smoke"])
+        self.assertEqual(snippets["pinned-install"], expected["pinned-install"])
+        self.assertNotIn("verified-install-handoff", snippets)
+        self.assertIn(QUICKSTART_VALUE_STATEMENT, quickstart)
+
+        for noisy_detail in [
+            "m80-release-integrity",
+            "m80-release-attestation",
+            "SHA256SUMS",
+            "guest manifest",
+            "build receipt",
+            "host binary versus guest artifact",
+        ]:
+            self.assertNotIn(noisy_detail, quickstart)
+
+        readme_links = markdown_links(quickstart)
+        for target in README_QUICKSTART_LINKS:
+            self.assertTrue(
+                link_targets_file(readme_links, target),
+                f"README quickstart is missing follow-up doc link: {target}",
+            )
+            self.assertTrue((REPO_ROOT / target).is_file(), f"README quickstart link is stale: {target}")
 
     def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
         cases = [
@@ -513,6 +549,32 @@ class ReleaseUrlContractTest(unittest.TestCase):
 
 def read_repo_file(relative: str) -> str:
     return (REPO_ROOT / relative).read_text()
+
+
+def extract_markdown_section(text: str, heading: str) -> str:
+    start_marker = f"## {heading}"
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.strip() == start_marker:
+            start = index + 1
+            break
+    if start is None:
+        raise AssertionError(f"missing markdown section {heading!r}")
+    end = len(lines)
+    for index in range(start, len(lines)):
+        if lines[index].startswith("## "):
+            end = index
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def markdown_links(text: str) -> set[str]:
+    return set(re.findall(r"\[[^\]]+\]\(([^)]+)\)", text))
+
+
+def link_targets_file(links: set[str], target: str) -> bool:
+    return target in links or any(link.startswith(f"{target}#") for link in links)
 
 
 def extract_quickstart_value_block(text: str, relative: str) -> str:
