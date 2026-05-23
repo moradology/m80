@@ -442,6 +442,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}
+          merge-multiple: true
           path: ${{ steps.publish-scratch.outputs.upload_dir }}
 
       - name: Verify workflow artifact origin handoff

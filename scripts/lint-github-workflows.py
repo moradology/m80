@@ -779,6 +779,7 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
     required_publish_tokens = {
         "uses: actions/download-artifact@": "publish job must download release bytes from workflow artifacts",
         "artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}": "publish download must use the recorded build artifact id",
+        "merge-multiple: true": "publish download must flatten the selected artifact into the verified upload directory",
         "EXPECTED_ARTIFACT_ID: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}": "publish job must carry the recorded build artifact id",
         "EXPECTED_ARTIFACT_NAME: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_name }}": "publish job must carry the recorded build artifact name",
         "EXPECTED_PRODUCER_JOB: ${{ needs.build-release-artifacts.outputs.release_dist_producer_job }}": "publish job must carry the recorded producer job id",

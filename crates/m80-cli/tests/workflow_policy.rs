@@ -101,5 +101,6 @@ fn release_workflow_doc_records_authority_boundary() {
     assert!(release_workflow.contains(
         "artifact-ids: ${{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}"
     ));
+    assert!(release_workflow.contains("merge-multiple: true"));
     assert!(release_workflow.contains("Verify workflow artifact origin handoff"));
 }

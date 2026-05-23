@@ -535,6 +535,20 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("publish download must use the recorded build artifact id", result.stderr)
 
+    def test_release_artifact_origin_rejects_nested_download_layout(self) -> None:
+        workflow = release_artifact_origin_workflow().replace(
+            "          merge-multiple: true\n",
+            "",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "publish download must flatten the selected artifact into the verified upload directory",
+            result.stderr,
+        )
+
     def test_release_temp_isolation_rejects_fixed_tmp_literals(self) -> None:
         workflow = release_artifact_origin_workflow().replace(
             "$RUNNER_TEMP/m80-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-build",
@@ -1674,6 +1688,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           artifact-ids: ${{{{ needs.build-release-artifacts.outputs.release_dist_artifact_id }}}}
+          merge-multiple: true
           path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}
       - name: Verify workflow artifact origin handoff
         env:

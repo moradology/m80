@@ -12,20 +12,23 @@ the no-auth public-access receipt before GitHub latest pointed at the candidate;
 the host `/etc/m80` selector state while custom install-root proofs remain
 root-local and inspectable. `v0.2.11` carries the path-budget hardening found
 while proving a public install can wrap an actual process from `/tank/tmp`.
-`v0.2.12` carries the redacted `m80 bug-report` support bundle so the public
-quickstart failure path and installed CLI agree.
+`v0.2.12` built the redacted `m80 bug-report` support bundle, but its publish
+job failed before release mutation because the downloaded workflow artifact was
+nested one directory below the verified upload root. `v0.2.13` carries the same
+support bundle plus the flattened artifact-download handoff required for the
+publish job to verify the generated upload manifest.
 
-The current repair source therefore uses workspace package version `0.2.12`.
-The matching stable tag is `v0.2.12`; tags at or before the existing public
+The current repair source therefore uses workspace package version `0.2.13`.
+The matching stable tag is `v0.2.13`; tags at or before the existing public
 latest `v0.2.11` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.12-dev` and remains barred from
+so an unreleased local build now reports `0.2.13-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.12` as the packageable release
+Fixture and release-script coverage uses `v0.2.13` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,
