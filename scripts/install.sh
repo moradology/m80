@@ -104,6 +104,7 @@ validate_stable_release_tag "$M80_RELEASE_TAG"
 need python3
 
 selected_install_root=/opt/m80
+selected_bin_dir=
 install_dry_run=no
 preflight_install_args() {
     while [ "$#" -gt 0 ]; do
@@ -122,12 +123,41 @@ preflight_install_args() {
                 selected_install_root=${1#--install-root=}
                 [ -n "$selected_install_root" ] || fail "--install-root requires a path"
                 ;;
+            --bin-dir)
+                if [ "$#" -lt 2 ]; then
+                    fail "--bin-dir requires a path"
+                fi
+                selected_bin_dir=$2
+                shift
+                ;;
+            --bin-dir=*)
+                selected_bin_dir=${1#--bin-dir=}
+                [ -n "$selected_bin_dir" ] || fail "--bin-dir requires a path"
+                ;;
         esac
         shift
     done
 }
 
 preflight_install_args "$@"
+
+absolute_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$(pwd)" "$1" ;;
+    esac
+}
+
+selected_install_root_absolute=$(absolute_path "$selected_install_root")
+if [ -z "$selected_bin_dir" ]; then
+    if [ "$selected_install_root_absolute" = /opt/m80 ]; then
+        selected_bin_dir_absolute=/usr/local/bin
+    else
+        selected_bin_dir_absolute=$selected_install_root_absolute/bin
+    fi
+else
+    selected_bin_dir_absolute=$(absolute_path "$selected_bin_dir")
+fi
 
 asset_url() {
     printf '%s/%s\n' "$M80_RELEASE_BASE_URL" "$1"
@@ -1184,7 +1214,7 @@ verify_extracted_m80_identity "$extract_dir/bin/m80"
 run_extracted_m80_install() {
     env -i \
         HOME="${HOME:-}" \
-        PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+        PATH="$selected_bin_dir_absolute:/usr/sbin:/usr/bin:/sbin:/bin" \
         TMPDIR=/tmp \
         LANG="${LANG:-C}" \
         LC_ALL="${LC_ALL:-}" \

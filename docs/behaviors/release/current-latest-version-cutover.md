@@ -28,19 +28,21 @@ as the expected pre-create state while still failing on unreadable API errors,
 then published validated release assets but failed latest promotion because the
 hosted workflow still required an external real-KVM receipt. `v0.2.17` moves
 that real-KVM proof to the closeout/freshness evidence path instead of the
-GitHub-hosted latest-promotion gate.
+GitHub-hosted latest-promotion gate. `v0.2.18` preserves the public installer's
+configured command directory inside its sanitized child environment, so custom
+install roots can pass the `m80 install` PATH handoff without operator repair.
 
-The current repair source therefore uses workspace package version `0.2.17`.
-The matching stable tag is `v0.2.17`; tags at or before the existing public
+The current repair source therefore uses workspace package version `0.2.18`.
+The matching stable tag is `v0.2.18`; tags at or before the existing public
 latest `v0.2.11` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.17-dev` and remains barred from
+so an unreleased local build now reports `0.2.18-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.17` as the packageable release
+Fixture and release-script coverage uses `v0.2.18` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,
