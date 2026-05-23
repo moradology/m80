@@ -32,7 +32,7 @@ profile/config resolution, host-binaries manifest, Firecracker/jailer launch,
 and outbound network setup where the selected policy requires it.
 
 Verification:
-`crates/m80-cli/src/cmds/quickstart.rs::tests::echo_probe_command_is_plain_public_target`.
+`crates/m80-cli/src/cmds/quickstart/probe.rs::tests::echo_probe_command_is_plain_public_target`.
 
 ## Lockdown
 

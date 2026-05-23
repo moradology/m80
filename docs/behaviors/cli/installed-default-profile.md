@@ -162,7 +162,7 @@ and config contents where they existed. Missing files are removed again.
   the selected runtime-profile report alongside host prerequisites.
 - `crates/m80-cli/src/cmds/env.rs` unit tests prove `m80 env` reports selected
   profile source and exact installed paths from an isolated hostless profile.
-- `crates/m80-cli/src/cmds/quickstart.rs` unit tests pin the m80 environment
-  overrides removed from the runnable probe.
-- `crates/m80-cli/src/cmds/quickstart.rs::tests::echo_probe_command_is_plain_public_target`
+- `crates/m80-cli/src/cmds/quickstart/probe.rs` unit tests pin the m80
+  environment overrides removed from the runnable probe.
+- `crates/m80-cli/src/cmds/quickstart/probe.rs::tests::echo_probe_command_is_plain_public_target`
   pins the probe argv as exactly `m80 run -- echo hello`.
