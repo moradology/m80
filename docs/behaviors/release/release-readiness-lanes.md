@@ -24,3 +24,9 @@ These receipts are inputs to the aggregate readiness decision. They do not
 replace the underlying checks: the workflow policy linter, release-integrity
 verification, and quickstart proof verifier still run and produce their own
 artifacts.
+
+`scripts/release_readiness_decision.py` consumes the lane receipts as explicit
+`lane_id=path` inputs and writes the aggregate decision. Missing required lanes,
+stale tag or commit, authenticated public-access proof, blocking statuses, and
+fixture substitution for real-substrate lanes fail before a publish hook can
+consume the decision.
