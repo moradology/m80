@@ -799,6 +799,8 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         "--release-list \"$REDOWNLOAD_DIR/github-releases-before-latest.json\"": "latest promotion decision must use a fresh public release list",
         "--publish-decision \"$UPLOAD_DIR/m80-release-publish-decision.json\"": "latest promotion decision must bind the publish decision receipt",
         "--proof-ledger \"$UPLOAD_DIR/m80-release-proof-ledger.jsonl\"": "latest promotion decision must bind the proof ledger",
+        "--upload-manifest \"$UPLOAD_DIR/m80-release-upload-manifest.json\"": "latest promotion decision must bind the upload manifest",
+        "--remote-inventory \"$REDOWNLOAD_DIR/m80-release-remote-assets.json\"": "latest promotion decision must bind verified remote asset state",
         "--out \"$UPLOAD_DIR/m80-latest-promotion-decision.json\"": "latest promotion decision must preserve an evidence artifact",
         "name: m80-latest-promotion-decision-${{ github.run_id }}": "publish job must upload the latest promotion decision artifact",
     }

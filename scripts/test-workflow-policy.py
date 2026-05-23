@@ -1721,6 +1721,8 @@ jobs:
             --release-list "$REDOWNLOAD_DIR/github-releases-before-latest.json" \\
             --publish-decision "$UPLOAD_DIR/m80-release-publish-decision.json" \\
             --proof-ledger "$UPLOAD_DIR/m80-release-proof-ledger.jsonl" \\
+            --upload-manifest "$UPLOAD_DIR/m80-release-upload-manifest.json" \\
+            --remote-inventory "$REDOWNLOAD_DIR/m80-release-remote-assets.json" \\
             --out "$UPLOAD_DIR/m80-latest-promotion-decision.json" \\
             --write
       - name: Upload latest promotion decision

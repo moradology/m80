@@ -901,7 +901,12 @@ list and writes `m80-latest-promotion-decision.json` with
 `scripts/release_latest_promotion.py`. The normal rule is monotonic: the target
 tag must be greater than or equal to the highest public non-draft,
 non-prerelease stable tag matching `vMAJOR.MINOR.PATCH`. Drafts, prereleases,
-and prerelease suffix tags do not count as the highest stable release.
+and prerelease suffix tags do not count as the highest stable release. This is
+the final release pointer move, so the decision also consumes
+`m80-release-remote-assets.json` and refuses latest promotion unless the remote
+asset inventory still matches `m80-release-upload-manifest.json` by release tag,
+asset names, ids, sizes, and SHA256 digests. Latest depends on the public bytes
+GitHub is serving, not just the local workflow artifact bytes.
 
 Emergency rollback is explicit and auditable. Commit
 `docs/operations/release-latest-rollback-receipt.json` before the protected tag

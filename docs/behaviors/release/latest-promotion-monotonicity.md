@@ -15,9 +15,17 @@ receipt `m80-latest-promotion-decision.json` records:
 - the highest public non-draft, non-prerelease stable tag observed;
 - the publish decision receipt digest;
 - the proof ledger digest;
+- the remote asset inventory digest;
 - the rollback receipt digest when one was used;
 - `approved`, `rollback_approved`, or `refused`;
 - a human reason and remediation for refused decisions.
+
+Latest promotion also validates `m80-release-remote-assets.json` against
+`m80-release-upload-manifest.json` before approving. The remote inventory must
+be for the target release tag, must not have duplicate asset names or ids, must
+not omit or add public assets, and each row's kind, size, and SHA256 digest must
+match the upload manifest. Missing, stale, incomplete, duplicate, or mismatched
+remote state is refused before `gh release edit --latest`.
 
 Normal promotion is approved only when the target tag is greater than or equal
 to the highest public stable tag. Drafts, prereleases, and non-stable tag names
@@ -33,8 +41,9 @@ generation timestamp. Stale or mismatched receipts fail before latest moves.
 ## Verification
 
 `scripts/test-release-latest-promotion.py` covers highest-stable approval,
-lower-tag refusal, explicit rollback approval, draft/prerelease exclusion, and
-stale rollback receipt digest refusal.
+lower-tag refusal, explicit rollback approval, draft/prerelease exclusion,
+stale rollback receipt digest refusal, missing remote inventory, stale remote
+inventory, extra remote assets, and duplicate remote asset names.
 
 `scripts/test-release-bundle.py` checks that the release workflow runs the
 latest promotion decision before `gh release edit --latest` and uploads the

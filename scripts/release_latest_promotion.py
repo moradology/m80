@@ -18,6 +18,11 @@ KIND = "m80_release_latest_promotion_decision"
 ROLLBACK_KIND = "m80_release_latest_rollback_receipt"
 STABLE_TAG_RE = re.compile(r"^v([0-9]+)[.]([0-9]+)[.]([0-9]+)$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+RAW_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DIST_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
+REMOTE_INVENTORY_KIND = "m80_release_remote_asset_inventory"
+UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
+REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,6 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-list", required=True, type=Path)
     parser.add_argument("--publish-decision", required=True, type=Path)
     parser.add_argument("--proof-ledger", required=True, type=Path)
+    parser.add_argument("--upload-manifest", required=True, type=Path)
+    parser.add_argument("--remote-inventory", required=True, type=Path)
     parser.add_argument("--rollback-receipt", type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--generated-at")
@@ -41,6 +48,8 @@ def main() -> int:
             release_list=read_json(args.release_list, "release list"),
             publish_decision=args.publish_decision,
             proof_ledger=args.proof_ledger,
+            upload_manifest=args.upload_manifest,
+            remote_inventory=args.remote_inventory,
             rollback_receipt=args.rollback_receipt,
             generated_at=args.generated_at,
         )
@@ -70,6 +79,8 @@ def build_decision(
     release_list: Any,
     publish_decision: Path,
     proof_ledger: Path,
+    upload_manifest: Path,
+    remote_inventory: Path,
     rollback_receipt: Path | None,
     generated_at: str | None,
 ) -> dict[str, Any]:
@@ -79,6 +90,29 @@ def build_decision(
     highest_semver = stable_tags.get(highest_tag, target_semver)
     publish_digest = file_digest(publish_decision)
     ledger_digest = file_digest(proof_ledger)
+    inventory = read_json(remote_inventory, "remote release asset inventory")
+    manifest = read_json(upload_manifest, "release upload manifest")
+    inventory_digest = file_digest(remote_inventory)
+    inventory_errors = validate_remote_inventory(
+        inventory,
+        upload_manifest=manifest,
+        release_tag=release_tag,
+    )
+    if inventory_errors:
+        decision = decision_payload(
+            release_tag=release_tag,
+            generated_at=generated_at,
+            decision="refused",
+            highest_stable_public_tag=highest_tag,
+            highest_stable_public_semver=list(highest_semver),
+            rollback_receipt_digest=None,
+            publish_decision_digest=publish_digest,
+            proof_ledger_digest=ledger_digest,
+            remote_inventory_digest=inventory_digest,
+            reason="remote inventory is invalid: " + "; ".join(inventory_errors),
+            remediation="redownload public release assets and regenerate m80-release-remote-assets.json before moving latest",
+        )
+        raise PromotionError("latest promotion refused: remote inventory is invalid", decision)
 
     if target_semver >= highest_semver:
         return decision_payload(
@@ -90,6 +124,7 @@ def build_decision(
             rollback_receipt_digest=None,
             publish_decision_digest=publish_digest,
             proof_ledger_digest=ledger_digest,
+            remote_inventory_digest=inventory_digest,
             reason="target release is not older than the highest public stable release",
             remediation=None,
         )
@@ -104,6 +139,7 @@ def build_decision(
             rollback_receipt_digest=None,
             publish_decision_digest=publish_digest,
             proof_ledger_digest=ledger_digest,
+            remote_inventory_digest=inventory_digest,
             reason="target release is older than the highest public stable release",
             remediation=(
                 "publish a newer stable tag or commit docs/operations/"
@@ -132,6 +168,7 @@ def build_decision(
             rollback_receipt_digest=receipt_digest,
             publish_decision_digest=publish_digest,
             proof_ledger_digest=ledger_digest,
+            remote_inventory_digest=inventory_digest,
             reason="rollback receipt is invalid: " + "; ".join(receipt_errors),
             remediation="fix or remove docs/operations/release-latest-rollback-receipt.json",
         )
@@ -146,6 +183,7 @@ def build_decision(
         rollback_receipt_digest=receipt_digest,
         publish_decision_digest=publish_digest,
         proof_ledger_digest=ledger_digest,
+        remote_inventory_digest=inventory_digest,
         reason=require_nonempty_str(receipt, "reason", "rollback receipt"),
         remediation=None,
     )
@@ -205,6 +243,129 @@ def validate_rollback_receipt(
     return errors
 
 
+def validate_remote_inventory(inventory: Any, *, upload_manifest: Any, release_tag: str) -> list[str]:
+    errors: list[str] = []
+    manifest_assets, manifest_errors = normalized_manifest_assets(upload_manifest, release_tag)
+    errors.extend(manifest_errors)
+    inventory_assets, inventory_errors = normalized_inventory_assets(inventory, release_tag)
+    errors.extend(inventory_errors)
+    if errors:
+        return errors
+
+    manifest_by_name = {asset["name"]: asset for asset in manifest_assets}
+    inventory_by_name = {asset["name"]: asset for asset in inventory_assets}
+    missing = sorted(set(manifest_by_name) - set(inventory_by_name))
+    extra = sorted(set(inventory_by_name) - set(manifest_by_name))
+    if missing:
+        errors.append("remote inventory missing asset(s): " + ", ".join(missing))
+    if extra:
+        errors.append("remote inventory extra asset(s): " + ", ".join(extra))
+    for name in sorted(set(manifest_by_name) & set(inventory_by_name)):
+        manifest_asset = manifest_by_name[name]
+        inventory_asset = inventory_by_name[name]
+        for field in ("kind", "sha256", "size_bytes"):
+            if manifest_asset[field] != inventory_asset[field]:
+                errors.append(f"remote inventory {name} {field} mismatch")
+    return errors
+
+
+def normalized_manifest_assets(manifest: Any, release_tag: str) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    if not isinstance(manifest, dict):
+        return [], ["release upload manifest must be a JSON object"]
+    if manifest.get("release_tag") != release_tag:
+        errors.append(f"release upload manifest release_tag must be {release_tag}")
+    assets = manifest.get("public_assets")
+    if not isinstance(assets, list):
+        return [], errors + ["release upload manifest public_assets must be a list"]
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(assets):
+        label = f"release upload manifest public_assets[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        asset = normalized_asset_row(row, label, require_id=False, errors=errors)
+        if asset is None:
+            continue
+        if asset["name"] in seen:
+            errors.append(f"release upload manifest duplicate asset name: {asset['name']}")
+        seen.add(asset["name"])
+        result.append(asset)
+    return result, errors
+
+
+def normalized_inventory_assets(inventory: Any, release_tag: str) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    if not isinstance(inventory, dict):
+        return [], ["remote inventory must be a JSON object"]
+    if inventory.get("kind") != REMOTE_INVENTORY_KIND:
+        errors.append(f"remote inventory kind must be {REMOTE_INVENTORY_KIND}")
+    if inventory.get("release_tag") != release_tag:
+        errors.append(f"remote inventory release_tag must be {release_tag}")
+    assets = inventory.get("assets")
+    if not isinstance(assets, list):
+        return [], errors + ["remote inventory assets must be a list"]
+    result: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    seen_ids: set[int] = set()
+    for index, row in enumerate(assets):
+        label = f"remote inventory assets[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        asset = normalized_asset_row(row, label, require_id=True, errors=errors)
+        if asset is None:
+            continue
+        if asset["name"] in seen_names:
+            errors.append(f"remote inventory duplicate asset name: {asset['name']}")
+        seen_names.add(asset["name"])
+        asset_id = asset["id"]
+        if asset_id in seen_ids:
+            errors.append(f"remote inventory duplicate asset id: {asset_id}")
+        seen_ids.add(asset_id)
+        result.append(asset)
+    return result, errors
+
+
+def normalized_asset_row(
+    row: dict[str, Any],
+    label: str,
+    *,
+    require_id: bool,
+    errors: list[str],
+) -> dict[str, Any] | None:
+    name = row.get("name")
+    kind = row.get("kind")
+    sha256 = row.get("sha256")
+    size_bytes = row.get("size_bytes")
+    ok = True
+    if not isinstance(name, str) or DIST_NAME_RE.fullmatch(name) is None or name in {"", ".", ".."}:
+        errors.append(f"{label} name must be a flat asset name")
+        ok = False
+    if not isinstance(kind, str) or not kind.strip():
+        errors.append(f"{label} kind must be a nonempty string")
+        ok = False
+    if not isinstance(sha256, str) or RAW_SHA256_RE.fullmatch(sha256) is None:
+        errors.append(f"{label} sha256 must be a lowercase sha256")
+        ok = False
+    if not isinstance(size_bytes, int) or size_bytes < 0:
+        errors.append(f"{label} size_bytes must be a non-negative integer")
+        ok = False
+    asset_id = None
+    if require_id:
+        asset_id = row.get("id")
+        if not isinstance(asset_id, int) or asset_id <= 0:
+            errors.append(f"{label} id must be a positive integer")
+            ok = False
+    if not ok:
+        return None
+    result = {"name": name, "kind": kind, "sha256": sha256, "size_bytes": size_bytes}
+    if require_id:
+        result["id"] = asset_id
+    return result
+
+
 def stable_public_tags(release_list: Any) -> dict[str, tuple[int, int, int]]:
     releases = normalize_release_list(release_list)
     result: dict[str, tuple[int, int, int]] = {}
@@ -242,6 +403,7 @@ def normalize_release_list(value: Any) -> list[dict[str, Any]]:
             rollback_receipt_digest=None,
             publish_decision_digest="sha256:" + "0" * 64,
             proof_ledger_digest="sha256:" + "0" * 64,
+            remote_inventory_digest="sha256:" + "0" * 64,
             reason="release list shape is invalid",
             remediation="capture GitHub release list JSON before latest promotion",
         ),
@@ -258,6 +420,7 @@ def decision_payload(
     rollback_receipt_digest: str | None,
     publish_decision_digest: str,
     proof_ledger_digest: str,
+    remote_inventory_digest: str,
     reason: str,
     remediation: str | None,
 ) -> dict[str, Any]:
@@ -272,6 +435,7 @@ def decision_payload(
         "rollback_receipt_digest": rollback_receipt_digest,
         "publish_decision_digest": publish_decision_digest,
         "proof_ledger_digest": proof_ledger_digest,
+        "remote_inventory_digest": remote_inventory_digest,
         "reason": reason,
         "remediation": remediation,
     }
@@ -289,6 +453,7 @@ def verify_decision(decision: dict[str, Any]) -> None:
         "rollback_receipt_digest",
         "publish_decision_digest",
         "proof_ledger_digest",
+        "remote_inventory_digest",
         "reason",
         "remediation",
     }
@@ -313,7 +478,7 @@ def verify_decision(decision: dict[str, Any]) -> None:
         ),
         "highest_stable_public_semver invalid",
     )
-    for field in ["publish_decision_digest", "proof_ledger_digest"]:
+    for field in ["publish_decision_digest", "proof_ledger_digest", "remote_inventory_digest"]:
         require(isinstance(decision[field], str) and SHA256_RE.fullmatch(decision[field]) is not None, f"{field} invalid")
     rollback_digest = decision["rollback_receipt_digest"]
     require(
