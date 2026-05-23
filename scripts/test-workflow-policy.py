@@ -1731,6 +1731,13 @@ jobs:
           name: m80-latest-promotion-decision-${{{{ github.run_id }}}}
           path: ${{{{ steps.publish-scratch.outputs.upload_dir }}}}/m80-latest-promotion-decision.json
           if-no-files-found: error
+      - name: Upload latest rollback receipt
+        if: ${{{{ hashFiles('docs/operations/release-latest-rollback-receipt.json') != '' }}}}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-latest-rollback-receipt-${{{{ github.run_id }}}}
+          path: docs/operations/release-latest-rollback-receipt.json
+          if-no-files-found: error
       - name: Cleanup release publish scratch dirs
         if: always()
         run: |

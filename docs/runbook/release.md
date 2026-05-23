@@ -919,9 +919,12 @@ Emergency rollback is explicit and auditable. Commit
 workflow runs. It must contain `kind: m80_release_latest_rollback_receipt`,
 `decision: approved`, the older `release_tag`, the currently highest stable
 public tag, a reason, actor, and the exact publish decision and proof ledger
-digests. Stale, missing, or mismatched rollback receipts fail before
-`gh release edit --latest`; normal releases do not need this file. The behavior
-contract lives in
+digests. Its `generated_at` must be a parseable timestamp. Stale, missing,
+malformed, or mismatched rollback receipts fail before `gh release edit
+--latest`; normal releases do not need this file. When present, the workflow
+uploads the receipt as `m80-latest-rollback-receipt-<run_id>` so the operator
+approval survives alongside the latest-promotion decision. The behavior contract
+lives in
 `docs/behaviors/release/latest-promotion-monotonicity.md`.
 
 After latest promotion, the publish job also writes

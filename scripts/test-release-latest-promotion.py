@@ -85,6 +85,36 @@ class ReleaseLatestPromotionTest(unittest.TestCase):
             self.assertEqual(decision["decision"], "refused")
             self.assertIn("proof_ledger_digest mismatch", decision["reason"])
 
+    def test_missing_rollback_receipt_field_is_refused(self) -> None:
+        with fixture(release_tag="v1.2.3") as paths:
+            paths.release_list.write_text(json.dumps(releases("v1.2.3", "v1.2.4")))
+            write_rollback_receipt(paths, highest="v1.2.4")
+            payload = json.loads(paths.rollback.read_text())
+            payload.pop("actor")
+            paths.rollback.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_promotion(paths, rollback=True)
+
+            self.assertNotEqual(result.returncode, 0)
+            decision = json.loads(paths.out.read_text())
+            self.assertEqual(decision["decision"], "refused")
+            self.assertIn("missing fields: actor", decision["reason"])
+
+    def test_malformed_rollback_receipt_timestamp_is_refused(self) -> None:
+        with fixture(release_tag="v1.2.3") as paths:
+            paths.release_list.write_text(json.dumps(releases("v1.2.3", "v1.2.4")))
+            write_rollback_receipt(paths, highest="v1.2.4")
+            payload = json.loads(paths.rollback.read_text())
+            payload["generated_at"] = "not-a-timestamp"
+            paths.rollback.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_promotion(paths, rollback=True)
+
+            self.assertNotEqual(result.returncode, 0)
+            decision = json.loads(paths.out.read_text())
+            self.assertEqual(decision["decision"], "refused")
+            self.assertIn("generated_at must be an ISO-8601 timestamp", decision["reason"])
+
     def test_missing_remote_inventory_is_refused(self) -> None:
         with fixture(release_tag="v1.2.4") as paths:
             paths.remote_inventory.unlink()

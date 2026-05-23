@@ -1518,6 +1518,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("${{ steps.publish-scratch.outputs.redownload_dir }}/release-readiness-public-access.json", workflow)
         self.assertIn("m80-latest-promotion-decision-${{ github.run_id }}", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.upload_dir }}/m80-latest-promotion-decision.json", workflow)
+        self.assertIn("m80-latest-rollback-receipt-${{ github.run_id }}", workflow)
+        self.assertIn("docs/operations/release-latest-rollback-receipt.json", workflow)
         self.assertIn("${{ steps.publish-scratch.outputs.prepublish_dir }}/**", workflow)
         for name in [
             BUNDLE_NAME,

@@ -803,6 +803,8 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         "--remote-inventory \"$REDOWNLOAD_DIR/m80-release-remote-assets.json\"": "latest promotion decision must bind verified remote asset state",
         "--out \"$UPLOAD_DIR/m80-latest-promotion-decision.json\"": "latest promotion decision must preserve an evidence artifact",
         "name: m80-latest-promotion-decision-${{ github.run_id }}": "publish job must upload the latest promotion decision artifact",
+        "name: m80-latest-rollback-receipt-${{ github.run_id }}": "publish job must upload rollback receipt evidence when present",
+        "path: docs/operations/release-latest-rollback-receipt.json": "rollback receipt upload must preserve the validated operator receipt",
     }
     for token, message in required_publish_tokens.items():
         if token not in publish_text:

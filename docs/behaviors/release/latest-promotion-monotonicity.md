@@ -42,7 +42,10 @@ An older target requires a checked rollback receipt at
 schema-versioned `m80_release_latest_rollback_receipt` with `decision:
 approved`, the target release tag, the highest stable public tag being
 overridden, a reason, actor, publish decision digest, proof ledger digest, and a
-generation timestamp. Stale or mismatched receipts fail before latest moves.
+parseable generation timestamp. Stale, malformed, or mismatched receipts fail
+before latest moves. When present, the protected workflow uploads the receipt as
+`m80-latest-rollback-receipt-<run_id>` so the operator approval is durable
+release evidence, not just a transient checkout file.
 
 ## Verification
 
@@ -54,4 +57,4 @@ timestamp drift, and malformed timestamp refusal.
 
 `scripts/test-release-bundle.py` checks that the release workflow runs the
 latest promotion decision before `gh release edit --latest` and uploads the
-decision receipt as durable evidence.
+decision and rollback receipts as durable evidence.

@@ -232,6 +232,9 @@ def validate_rollback_receipt(
         value = receipt.get(field)
         if not isinstance(value, str) or not value.strip():
             errors.append(f"{field} must be a nonempty string")
+    generated_at = receipt.get("generated_at")
+    if isinstance(generated_at, str) and generated_at.strip() and parse_timestamp(generated_at) is None:
+        errors.append("generated_at must be an ISO-8601 timestamp")
     if receipt.get("publish_decision_digest") != publish_decision_digest:
         errors.append("publish_decision_digest mismatch")
     if receipt.get("proof_ledger_digest") != proof_ledger_digest:
