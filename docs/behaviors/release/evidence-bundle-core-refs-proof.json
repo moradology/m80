@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_core_refs_proof",
+  "bead_id": "m80-o3uh9.13.39.3.1",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures validated core ref digest recomputation without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.1 && br dep cycles && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 274 tests in 62.681s OK; workflow policy ok; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.967s OK; actionlint wrapper ok; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.958s OK; verify-release-tracker-policy ok; br lint m80-o3uh9.13.39.3.1 ok; br dep cycles ok; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 274 tests in 62.681s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.967s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.1 && br dep cycles && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 46 tests in 2.958s\\n\\nOK\\nrelease tracker policy ok: .beads/issues.jsonl\\nNo template warnings found (1 issues checked)\\nNo dependency cycles detected.",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "upload_manifest ref is recomputed from m80-release-upload-manifest.json under the dist artifact root",
+    "build_handoff ref is recomputed from m80-release-build.json under the dist artifact root",
+    "publish_decision_receipt ref is recomputed from m80-release-publish-decision.json under the dist artifact root",
+    "proof_ledger ref is recomputed from m80-release-proof-ledger.jsonl under the dist artifact root",
+    "proofs[hostless-quickstart].file is recomputed from m80-quickstart-proof-hostless.json under the dist artifact root",
+    "bundle path admission requires m80-release-evidence.json to be a top-level file in the dist artifact root",
+    "missing core files, stale digest, wrong size, path escape, duplicate proof file name, and wrong proof artifact class fail closed",
+    "core ref diagnostics name the field path, expected and actual name, digest, size, and repair command",
+    "docs/behaviors/release/evidence-bundle.md lists the core refs every evidence bundle version must verify"
+  ],
+  "review": {
+    "agent": "review_o3uh9_13_39_3_1",
+    "result": "No regressions identified; added direct bundle path escape test for the noted residual gap."
+  }
+}

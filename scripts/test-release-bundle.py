@@ -2529,7 +2529,9 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("proof hostless-quickstart file mismatch", result.stderr)
+            self.assertIn("proofs[hostless-quickstart].file name mismatch", result.stderr)
+            self.assertIn(f"expected_name={HOSTLESS_QUICKSTART_PROOF_NAME}", result.stderr)
+            self.assertIn(f"actual_name={RELEASE_PROOF_LEDGER_NAME}", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_quickstart_proof_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2735,15 +2737,58 @@ class ReleaseBundleTest(unittest.TestCase):
                 if artifact["name"] == HOSTLESS_QUICKSTART_PROOF_NAME:
                     artifact["sha256"] = sha256(proof_path)
                     artifact["size_bytes"] = proof_path.stat().st_size
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+            upload_manifest = out_dir / UPLOAD_MANIFEST_NAME
+            payload["upload_manifest"]["sha256"] = f"sha256:{sha256(upload_manifest)}"
+            payload["upload_manifest"]["size_bytes"] = upload_manifest.stat().st_size
             (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
-                f"workflow-only artifact {HOSTLESS_QUICKSTART_PROOF_NAME} sha256 mismatch",
+                "proofs[hostless-quickstart].file digest mismatch",
                 result.stderr,
             )
+            self.assertIn("expected_sha256=sha256:", result.stderr)
+            self.assertIn("actual_sha256=sha256:", result.stderr)
+            self.assertIn("repair=rerun the quickstart proof lane", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_upload_manifest_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["upload_manifest"]["sha256"] = "sha256:" + ("0" * 64)
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("upload_manifest digest mismatch", result.stderr)
+            self.assertIn(f"expected_name={UPLOAD_MANIFEST_NAME}", result.stderr)
+            self.assertIn("expected_sha256=sha256:", result.stderr)
+            self.assertIn("actual_sha256=sha256:000000", result.stderr)
+            self.assertIn("expected_size_bytes=", result.stderr)
+            self.assertIn("actual_size_bytes=", result.stderr)
+            self.assertIn("repair=rerun scripts/release_evidence_bundle.py --write", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_build_handoff_ref_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["build_handoff"]["size_bytes"] += 1
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build_handoff size mismatch", result.stderr)
+            self.assertIn(f"expected_name={BUILD_MANIFEST_NAME}", result.stderr)
+            self.assertIn("expected_sha256=sha256:", result.stderr)
+            self.assertIn("actual_sha256=sha256:", result.stderr)
+            self.assertIn("expected_size_bytes=", result.stderr)
+            self.assertIn("actual_size_bytes=", result.stderr)
+            self.assertIn("repair=rerun scripts/package-release-bundle.py", result.stderr)
 
     def test_release_evidence_bundle_rejects_stale_verifier_result_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2779,6 +2824,18 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("duplicate proof file: m80-quickstart-proof-hostless.json", result.stderr)
 
+    def test_release_evidence_bundle_rejects_wrong_proof_artifact_class(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["proofs"][0]["artifact_class"] = "public"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof hostless-quickstart public artifact not listed as public", result.stderr)
+
     def test_release_evidence_bundle_rejects_stale_proof_ledger_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = evidence_bundle_fixture(Path(tmp))
@@ -2787,7 +2844,58 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_release_evidence_bundle(out_dir, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("proof ledger mismatch", result.stderr)
+            self.assertIn("proof_ledger digest mismatch", result.stderr)
+            self.assertIn(f"expected_name={RELEASE_PROOF_LEDGER_NAME}", result.stderr)
+            self.assertIn("repair=rerun the release proof ledger producer", result.stderr)
+
+    def test_release_evidence_bundle_rejects_missing_core_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / RELEASE_PROOF_LEDGER_NAME).unlink()
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof_ledger referenced file missing", result.stderr)
+            self.assertIn(f"expected_name={RELEASE_PROOF_LEDGER_NAME}", result.stderr)
+            self.assertIn("expected_sha256=<missing>", result.stderr)
+            self.assertIn("actual_sha256=sha256:", result.stderr)
+            self.assertIn("repair=rerun the release proof ledger producer", result.stderr)
+
+    def test_release_evidence_bundle_rejects_core_ref_path_outside_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = evidence_bundle_fixture(root)
+            outside_manifest = root / "outside-upload-manifest.json"
+            outside_manifest.write_text((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--upload-manifest",
+                str(outside_manifest),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("upload_manifest path outside artifact root", result.stderr)
+            self.assertIn("repair=rerun scripts/release_evidence_bundle.py --write", result.stderr)
+
+    def test_release_evidence_bundle_rejects_bundle_path_outside_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = evidence_bundle_fixture(root)
+            outside_bundle = root / EVIDENCE_BUNDLE_NAME
+            outside_bundle.write_text((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--bundle",
+                str(outside_bundle),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release evidence bundle path outside artifact root", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_required_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

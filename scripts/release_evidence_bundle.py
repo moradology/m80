@@ -179,6 +179,7 @@ def main() -> int:
         )
         write_json(bundle_path, bundle)
 
+    verify_bundle_path(bundle_path, dist_dir)
     bundle = read_json(bundle_path, "release evidence bundle")
     verify_bundle(
         bundle,
@@ -322,10 +323,38 @@ def verify_bundle(
     )
     require(parse_timestamp(bundle["generated_at"]) is not None, "release evidence bundle generated_at invalid")
 
-    upload_ref = verify_file_ref(bundle["upload_manifest"], dist_dir, upload_manifest, "upload manifest")
-    build_ref = verify_file_ref(bundle["build_handoff"], dist_dir, build_handoff, "build handoff")
-    receipt_ref = verify_file_ref(bundle["publish_decision_receipt"], dist_dir, publish_receipt, "publish decision receipt")
-    proof_ref = verify_file_ref(bundle["proof_ledger"], dist_dir, proof_ledger, "proof ledger")
+    upload_ref = verify_file_ref(
+        bundle["upload_manifest"],
+        dist_dir,
+        upload_manifest,
+        field_path="upload_manifest",
+        label="upload manifest",
+        repair_command="rerun scripts/release_evidence_bundle.py --write after regenerating the upload manifest",
+    )
+    build_ref = verify_file_ref(
+        bundle["build_handoff"],
+        dist_dir,
+        build_handoff,
+        field_path="build_handoff",
+        label="build handoff",
+        repair_command="rerun scripts/package-release-bundle.py then scripts/release_evidence_bundle.py --write",
+    )
+    receipt_ref = verify_file_ref(
+        bundle["publish_decision_receipt"],
+        dist_dir,
+        publish_receipt,
+        field_path="publish_decision_receipt",
+        label="publish decision receipt",
+        repair_command="rerun scripts/release_publish_receipt.py --write then scripts/release_evidence_bundle.py --write",
+    )
+    proof_ref = verify_file_ref(
+        bundle["proof_ledger"],
+        dist_dir,
+        proof_ledger,
+        field_path="proof_ledger",
+        label="proof ledger",
+        repair_command="rerun the release proof ledger producer then scripts/release_evidence_bundle.py --write",
+    )
     del upload_ref, build_ref, receipt_ref, proof_ref
 
     manifest = read_json(upload_manifest, "release upload manifest")
@@ -531,8 +560,15 @@ def require_proofs(
         seen_file_names.add(file["name"])
         expected_file = expected_files.get(lane_id)
         if expected_file is not None:
-            expected_ref = file_ref(dist_dir, expected_file, f"proof {lane_id}")
-            require(file == expected_ref, f"release evidence bundle proof {lane_id} file mismatch")
+            expected_ref = verify_file_ref(
+                proof["file"],
+                dist_dir,
+                expected_file,
+                field_path=f"proofs[{lane_id}].file",
+                label=f"proof {lane_id}",
+                repair_command="rerun the quickstart proof lane then scripts/release_evidence_bundle.py --write",
+            )
+            del expected_ref
     return seen_lane_ids
 
 
@@ -1097,11 +1133,58 @@ def file_ref(dist_dir: Path, path: Path, label: str) -> dict[str, Any]:
     return {"name": name, "sha256": f"sha256:{sha256_file(path)}", "size_bytes": path.stat().st_size}
 
 
-def verify_file_ref(value: object, dist_dir: Path, path: Path, label: str) -> dict[str, Any]:
+def verify_file_ref(
+    value: object,
+    dist_dir: Path,
+    path: Path,
+    *,
+    field_path: str,
+    label: str,
+    repair_command: str,
+) -> dict[str, Any]:
     observed = normalized_file_ref(value, f"release evidence bundle {label}")
+    require(
+        path.is_file(),
+        (
+            f"release evidence bundle {field_path} referenced file missing: expected_name={path.name} "
+            f"expected_sha256=<missing> actual_sha256={observed['sha256']} "
+            f"expected_size_bytes=<missing> actual_size_bytes={observed['size_bytes']} "
+            f"repair={repair_command}"
+        ),
+    )
+    try:
+        path.relative_to(dist_dir)
+    except ValueError as exc:
+        raise SystemExit(
+            f"release evidence bundle {field_path} path outside artifact root: {path} repair={repair_command}"
+        ) from exc
     expected = file_ref(dist_dir, path, label)
-    require(observed == expected, f"release evidence bundle {label} mismatch")
+    for key, noun in (("name", "name"), ("sha256", "digest"), ("size_bytes", "size")):
+        require(
+            observed[key] == expected[key],
+            (
+                f"release evidence bundle {field_path} {noun} mismatch: "
+                f"expected_name={expected['name']} actual_name={observed['name']} "
+                f"expected_sha256={expected['sha256']} actual_sha256={observed['sha256']} "
+                f"expected_size_bytes={expected['size_bytes']} actual_size_bytes={observed['size_bytes']} "
+                f"repair={repair_command}"
+            ),
+        )
     return expected
+
+
+def verify_bundle_path(bundle_path: Path, dist_dir: Path) -> None:
+    require(bundle_path.is_file(), f"release evidence bundle missing: {bundle_path}")
+    try:
+        rel = bundle_path.relative_to(dist_dir)
+    except ValueError as exc:
+        raise SystemExit(f"release evidence bundle path outside artifact root: {bundle_path}") from exc
+    require(len(rel.parts) == 1, f"release evidence bundle path must be a top-level dist file: {bundle_path}")
+    name = require_dist_name(rel.name, "release evidence bundle name")
+    require(
+        name == EVIDENCE_BUNDLE_NAME,
+        f"release evidence bundle path mismatch: expected {EVIDENCE_BUNDLE_NAME}, got {name}",
+    )
 
 
 def normalized_file_ref(value: object, label: str) -> dict[str, Any]:

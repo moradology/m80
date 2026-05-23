@@ -95,3 +95,24 @@ freshness proof is substituted for a release publish proof, or the observed
 proof substrate is not allowed by the readiness config. Diagnostics name the
 lane id, required substrate, observed substrate or proof kind, proof file, and
 config path.
+
+Every evidence bundle schema version must verify these core refs before publish
+can move mutable release state:
+
+- `upload_manifest` -> `m80-release-upload-manifest.json`
+- `build_handoff` -> `m80-release-build.json`
+- `publish_decision_receipt` -> `m80-release-publish-decision.json`
+- `proof_ledger` -> `m80-release-proof-ledger.jsonl`
+- `proofs[hostless-quickstart].file` ->
+  `m80-quickstart-proof-hostless.json`
+- the bundle file itself must be read from the top-level dist artifact root as
+  `m80-release-evidence.json`
+
+The verifier recomputes each core file ref from bytes under the dist artifact
+root and fails closed when the referenced file is missing, the digest or size is
+stale, the expected path escapes the artifact root, the proof file name is
+duplicated, or the proof artifact class points at the wrong artifact set. Core
+ref diagnostics include the field path, expected and actual name, digest, size,
+and a repair command. A byte-for-byte digest of `m80-release-evidence.json` is
+owned by the external publish receipt/evidence entrypoint rather than embedded
+inside the same JSON file.
