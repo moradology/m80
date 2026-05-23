@@ -47,9 +47,9 @@ m80 --json logs <vm-id> > m80-logs.json
 
 ## Verification
 
-- `crates/m80-cli/src/cmds/env.rs` tests that the JSON dump has the standard
+- `crates/m80-cli/src/cmds/env/tests.rs` tests that the JSON dump has the standard
   envelope, a payload version, and bug-report sections without requiring KVM.
-- `crates/m80-cli/src/cmds/env.rs::tests::env_json_reports_selected_installed_profile_paths`
+- `crates/m80-cli/src/cmds/env/tests.rs::env_json_reports_selected_installed_profile_paths`
   proves selected profile paths are reported and preferred over ambient
   artifact/helper environment variables.
 - `crates/m80-cli/src/profile/report.rs` tests prove active install pointers

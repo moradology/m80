@@ -160,7 +160,7 @@ and config contents where they existed. Missing files are removed again.
   helpers feed backend/preflight config without artifact/helper env vars, and
   that operator config owns `run_root`. They also prove preflight JSON includes
   the selected runtime-profile report alongside host prerequisites.
-- `crates/m80-cli/src/cmds/env.rs` unit tests prove `m80 env` reports selected
+- `crates/m80-cli/src/cmds/env/tests.rs` unit tests prove `m80 env` reports selected
   profile source and exact installed paths from an isolated hostless profile.
 - `crates/m80-cli/src/cmds/quickstart/probe.rs` unit tests pin the m80
   environment overrides removed from the runnable probe.

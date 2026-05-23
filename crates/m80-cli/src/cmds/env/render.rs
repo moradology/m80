@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use super::EnvDump;
+use super::model::EnvDump;
 
 pub(super) fn render_env_human(dump: &EnvDump) -> String {
     let mut out = String::new();
