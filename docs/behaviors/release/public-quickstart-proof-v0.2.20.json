@@ -1,0 +1,58 @@
+{
+  "bundle": {
+    "guest_protocol_version": 4,
+    "m80_version": "v0.2.20",
+    "manifest_schema_version": 5,
+    "metadata_path": "public-quickstart-bundle-v0.2.20.json",
+    "release_tag": "v0.2.20"
+  },
+  "command": {
+    "argv": [
+      "m80",
+      "run",
+      "--",
+      "echo",
+      "hello"
+    ],
+    "display": "m80 run -- echo hello",
+    "expected_exit_status": 0,
+    "expected_nonzero": false,
+    "observed_exit_status": 0
+  },
+  "host_binaries": {
+    "firecracker_version": "v1.15.1",
+    "jailer_version": "v1.15.1",
+    "manifest_path": "public-quickstart-host-binaries-v0.2.20.manifest.json"
+  },
+  "install": {
+    "active_pointer": "/opt/m80/active",
+    "default_profile": "/etc/m80/profiles/default.toml",
+    "root": "/opt/m80"
+  },
+  "m80": {
+    "release_tag": "v0.2.20",
+    "version": "v0.2.20",
+    "version_status": "release"
+  },
+  "proof_kind": "real-kvm",
+  "release": {
+    "install_url": "https://github.com/moradology/m80/releases/download/v0.2.20/install.sh",
+    "requested": "latest",
+    "resolved_tag": "v0.2.20"
+  },
+  "schema_version": 1,
+  "stderr": {
+    "path": "public-quickstart-stderr-v0.2.20.txt"
+  },
+  "stdout": {
+    "excerpt": "hello\n"
+  },
+  "stream_expectations": {
+    "stderr_contains": "",
+    "stdout_contains": "hello"
+  },
+  "substrate": {
+    "kind": "real-kvm",
+    "summary": "real /dev/kvm host run; default public latest install v0.2.20; loaded tap module; m80 run -- echo hello exited 0 and printed hello"
+  }
+}

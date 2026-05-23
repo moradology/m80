@@ -1,0 +1,25 @@
+{
+  "bundle_metadata": {
+    "digest": "sha256:58da1b2fdcf8609fa4b22bb4e2969ccaff8d331a5688de00464f82665b73763e",
+    "path": "public-quickstart-bundle-v0.2.20.json"
+  },
+  "command": {
+    "display": "m80 run -- echo hello",
+    "expected_exit_status": 0,
+    "observed_exit_status": 0
+  },
+  "install": {
+    "active_pointer": "<redacted>/active",
+    "default_profile": "<redacted>/default.toml"
+  },
+  "m80_version": "v0.2.20",
+  "passed": true,
+  "proof_artifact": "public-quickstart-proof-v0.2.20.json",
+  "proof_artifact_digest": "sha256:9b241fb40ed19f18b0062874bbf614269f80c25e514141154c6193199c5fba11",
+  "proof_type": "real-kvm",
+  "release_tag": "v0.2.20",
+  "schema_version": 1,
+  "substrate": "real-kvm",
+  "summary": "quickstart proof validated",
+  "verifier": "verify-quickstart-proof.py"
+}

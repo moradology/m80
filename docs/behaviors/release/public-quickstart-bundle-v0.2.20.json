@@ -1,0 +1,66 @@
+{
+  "arch": "x86_64",
+  "build_receipt_manifest_path": "/opt/m80/versions/v0.2.20/artifacts/output.ext4.manifest.json",
+  "build_receipt_schema_version": 1,
+  "expected_firecracker_version": "v1.15.1",
+  "files": [
+    {
+      "path": "artifacts/m80-guestd",
+      "sha256": "a58aaf46f2cd5782f4a82a4257eb97cc1a8cb889878c6cfca82e6252916121ad",
+      "size_bytes": 2689376
+    },
+    {
+      "path": "artifacts/output.ext4",
+      "sha256": "062d0330850583dbdbd6792268e78acd6411237cb4790e2afbd31b9b51a35ae0",
+      "size_bytes": 268435456
+    },
+    {
+      "path": "artifacts/output.ext4.build-receipt.json",
+      "sha256": "469d7f0160918b2bc8f9a6677533fa8833915b5cc7091d57b5b71f817a5aa571",
+      "size_bytes": 801
+    },
+    {
+      "path": "artifacts/output.ext4.manifest.json",
+      "sha256": "57c891d45f5dce7f377ca9331ac536db0e506e3eb2bb7cf67d49b67c148801dd",
+      "size_bytes": 868
+    },
+    {
+      "path": "artifacts/vmlinux",
+      "sha256": "c453f36520d2f2792ab8e4532a814e4a647a4a41a4c94d4e9083a502800159b1",
+      "size_bytes": 39670952
+    },
+    {
+      "path": "bin/m80",
+      "sha256": "4a4f356c04bcaa47bfa2f17d0d639722484d3207d1a17cb6e4500ce26d486042",
+      "size_bytes": 5743112
+    },
+    {
+      "path": "bin/m80-jailer-harden",
+      "sha256": "560ce80d452d7176cfbd25f169d652af3c897e7c6904454086c97595a45544a2",
+      "size_bytes": 457192
+    },
+    {
+      "path": "bin/m80-net-helper",
+      "sha256": "15149c02d64d743fecbc5515c6cf86ec1cfdce4491a78f4f282f106f94f03d18",
+      "size_bytes": 2251304
+    },
+    {
+      "path": "install.sh",
+      "sha256": "43ac3b3d19ccdab2f9ac06251b8156a3ab10e4a257e57ad2cc90fa745c6e5b3a",
+      "size_bytes": 52692
+    }
+  ],
+  "guest_protocol_version": 4,
+  "guestd_package_version": "0.2.20",
+  "image_kind": "minimal",
+  "install_provenance_required": true,
+  "install_provenance_schema_version": 1,
+  "m80_protocol_version": 4,
+  "m80_version": "v0.2.20",
+  "manifest_schema_version": 5,
+  "os": "linux",
+  "package_version": "0.2.20",
+  "release_tag": "v0.2.20",
+  "schema_version": 1,
+  "target": "linux-x86_64"
+}
