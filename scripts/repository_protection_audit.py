@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 1
@@ -176,7 +177,7 @@ def check_tag_ruleset(payload: Any, tag_pattern: str) -> dict[str, Any]:
             unavailable,
             "make repository rulesets readable and add an active rule for release tags",
         )
-    rulesets = payload if isinstance(payload, list) else []
+    rulesets = hydrate_rulesets(payload if isinstance(payload, list) else [])
     matching = [
         ruleset_summary(ruleset)
         for ruleset in rulesets
@@ -207,6 +208,39 @@ def ruleset_matches_tag_pattern(ruleset: dict[str, Any], tag_pattern: str) -> bo
     includes = ruleset_ref_includes(ruleset)
     expected = {tag_pattern, f"refs/tags/{tag_pattern}"}
     return any(include in expected for include in includes)
+
+
+def hydrate_rulesets(rulesets: list[Any]) -> list[Any]:
+    return [hydrate_ruleset(ruleset) for ruleset in rulesets]
+
+
+def hydrate_ruleset(ruleset: Any) -> Any:
+    if not isinstance(ruleset, dict) or ruleset_ref_includes(ruleset):
+        return ruleset
+    endpoint = ruleset_detail_endpoint(ruleset)
+    if endpoint is None:
+        return ruleset
+    detail = load_payload_or_gh(None, endpoint, f"tag ruleset {ruleset.get('id')}")
+    return detail if isinstance(detail, dict) else ruleset
+
+
+def ruleset_detail_endpoint(ruleset: dict[str, Any]) -> str | None:
+    links = ruleset.get("_links")
+    if not isinstance(links, dict):
+        return None
+    self_link = links.get("self")
+    if not isinstance(self_link, dict):
+        return None
+    href = self_link.get("href")
+    if not isinstance(href, str) or not href:
+        return None
+    parsed = urlparse(href)
+    if parsed.netloc and parsed.netloc != "api.github.com":
+        return None
+    path = parsed.path.lstrip("/")
+    if not path:
+        return None
+    return f"{path}?{parsed.query}" if parsed.query else path
 
 
 def ruleset_ref_includes(ruleset: dict[str, Any]) -> list[str]:

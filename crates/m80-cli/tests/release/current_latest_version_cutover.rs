@@ -28,16 +28,16 @@ fn current_latest_version_cutover_names_real_repair_tag() {
             .expect("read installer layout fixture");
 
     assert!(
-        cargo_toml.contains("version = \"0.2.13\""),
+        cargo_toml.contains("version = \"0.2.14\""),
         "workspace package version must match the current repair tag"
     );
     assert!(
-        runbook.contains("workspace package version `0.2.13`")
-            && runbook.contains("expected release tag is `v0.2.13`"),
+        runbook.contains("workspace package version `0.2.14`")
+            && runbook.contains("expected release tag is `v0.2.14`"),
         "release runbook must document the real current repair version"
     );
     assert!(
-        behavior.contains("matching stable tag is `v0.2.13`")
+        behavior.contains("matching stable tag is `v0.2.14`")
             && behavior.contains("`v0.2.7` installer handoff"),
         "behavior doc must name the repaired tag and the superseded latest state"
     );

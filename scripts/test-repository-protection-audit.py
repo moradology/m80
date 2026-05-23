@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from repository_protection_audit import ruleset_detail_endpoint
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUDIT = REPO_ROOT / "scripts" / "repository_protection_audit.py"
@@ -71,6 +73,26 @@ class RepositoryProtectionAuditTest(unittest.TestCase):
             self.assertIn("release-tag-ruleset: unavailable", result.stderr)
             audit = json.loads(paths.out.read_text())
             self.assertEqual(audit["status"], "unavailable")
+
+    def test_ruleset_detail_endpoint_accepts_github_api_self_link(self) -> None:
+        endpoint = ruleset_detail_endpoint(
+            {
+                "_links": {
+                    "self": {
+                        "href": "https://api.github.com/repos/moradology/m80/rulesets/17"
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(endpoint, "repos/moradology/m80/rulesets/17")
+
+    def test_ruleset_detail_endpoint_rejects_non_github_api_link(self) -> None:
+        endpoint = ruleset_detail_endpoint(
+            {"_links": {"self": {"href": "https://example.com/rulesets/17"}}}
+        )
+
+        self.assertIsNone(endpoint)
 
 
 class FixturePaths:
