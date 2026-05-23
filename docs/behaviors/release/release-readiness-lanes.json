@@ -61,10 +61,9 @@
         "workflow-policy",
         "release-bundle-integrity",
         "docs-command",
-        "hostless-quickstart",
-        "real-kvm-quickstart"
+        "hostless-quickstart"
       ],
-      "policy_text": "Latest promotion additionally requires the privileged real-KVM quickstart proof. The hostless fixture never substitutes for this lane."
+      "policy_text": "Latest promotion repeats the hosted publish gates after the uploaded draft has been validated. The external real-KVM quickstart proof is required for verified close and freshness evidence, not inside GitHub-hosted latest promotion."
     },
     {
       "id": "post-latest-public",

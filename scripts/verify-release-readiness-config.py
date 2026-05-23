@@ -73,7 +73,6 @@ REQUIRED_STAGE_LANES = {
         "docs-command",
         "release-bundle-integrity",
         "hostless-quickstart",
-        "real-kvm-quickstart",
     },
     "post-latest-public": REQUIRED_LANE_IDS,
 }

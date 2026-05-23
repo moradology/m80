@@ -27,9 +27,11 @@ artifacts.
 
 `scripts/release_readiness_decision.py` consumes a stage plus explicit
 `lane_id=path` inputs and writes the aggregate decision. `pre-upload` gates
-publish authority and upload. `pre-latest` adds real-KVM quickstart proof before
-latest promotion. `post-latest-public` includes the unauthenticated public
-latest proof after the latest pointer moves. Missing stage lanes, stale tag or
-commit, authenticated public-access proof, blocking statuses, and fixture
-substitution for real-substrate lanes fail before a publish hook can consume
-the decision.
+publish authority and upload. `pre-latest` repeats those hosted gates after
+draft validation and before latest promotion. `post-latest-public` includes the
+unauthenticated public latest proof after the latest pointer moves. The
+real-KVM quickstart lane remains a required external proof for verified close
+and freshness evidence, not a GitHub-hosted latest-promotion input. Missing
+stage lanes, stale tag or commit, authenticated public-access proof, blocking
+statuses, and fixture substitution for real-substrate lanes fail before a
+publish hook can consume the decision.

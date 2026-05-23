@@ -794,7 +794,7 @@ def lint_release_artifact_origin(path: Path, text: str, lines: list[str]) -> lis
         "--dist-dir \"$UPLOAD_DIR\"": "publish manifest check must inspect the downloaded release artifact set",
         "scripts/release_readiness_decision.py": "publish job must run the aggregate readiness decision before release mutation",
         "--stage pre-upload": "publish job must write the pre-upload readiness decision",
-        "--stage pre-latest": "publish job must require the real-KVM readiness stage before latest promotion",
+        "--stage pre-latest": "publish job must recheck hosted readiness before latest promotion",
         "--out \"$UPLOAD_DIR/m80-release-readiness-decision.json\"": "publish job must preserve the pre-upload readiness decision",
         "--readiness-decision \"$UPLOAD_DIR/m80-release-readiness-decision.json\"": "publish decision must bind the readiness decision",
         "name: m80-release-readiness-decision-${{ github.run_id }}": "publish job must upload the readiness decision artifact",

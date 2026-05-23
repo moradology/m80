@@ -16,10 +16,12 @@ Stages keep the release order honest:
 - `pre-upload` requires workflow-policy, release-bundle-integrity,
   docs-command, and hostless-quickstart receipts before publish authority or
   upload can run.
-- `pre-latest` additionally requires the real-KVM quickstart receipt before
-  the workflow can move the release to latest.
+- `pre-latest` repeats those hosted receipts after the uploaded draft has been
+  validated and before the workflow can move the release to latest.
 - `post-latest-public` adds the unauthenticated public latest receipt after the
-  latest pointer has moved.
+  latest pointer has moved. The external real-KVM quickstart proof is required
+  for verified close and freshness evidence, not inside GitHub-hosted latest
+  promotion.
 
 Required stage lanes must be present and current. The command fails closed for
 missing lanes, stale tag or commit, unknown lane state, blocking statuses,

@@ -846,7 +846,6 @@ jobs:
             --receipt "release-bundle-integrity=$UPLOAD_DIR/m80-readiness-release-bundle-integrity.json" \
             --receipt "docs-command=$UPLOAD_DIR/m80-readiness-docs-command.json" \
             --receipt "hostless-quickstart=$UPLOAD_DIR/m80-readiness-hostless-quickstart.json" \
-            --receipt "real-kvm-quickstart=$UPLOAD_DIR/m80-readiness-real-kvm-quickstart.json" \
             --out "$UPLOAD_DIR/m80-release-readiness-pre-latest-decision.json" \
             --write
           gh release list \

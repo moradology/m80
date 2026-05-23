@@ -65,7 +65,7 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
                 ["docs-command", "hostless-quickstart", "release-bundle-integrity", "workflow-policy"],
             )
 
-    def test_pre_latest_stage_requires_real_kvm(self) -> None:
+    def test_pre_latest_stage_uses_hosted_lanes_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             receipts = write_all_receipts(root)
@@ -74,8 +74,13 @@ class ReleaseReadinessDecisionTests(unittest.TestCase):
 
             result = run_decision(receipts, root / "decision.json", stage="pre-latest")
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("missing required readiness lane(s): real-kvm-quickstart", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            decision = json.loads((root / "decision.json").read_text())
+            self.assertEqual(decision["stage"], "pre-latest")
+            self.assertEqual(
+                decision["required_lane_ids"],
+                ["docs-command", "hostless-quickstart", "release-bundle-integrity", "workflow-policy"],
+            )
 
     def test_stale_commit_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
