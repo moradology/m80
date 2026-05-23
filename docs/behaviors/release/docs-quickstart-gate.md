@@ -50,6 +50,11 @@ Unclassified `curl`, `m80 install`, `m80 quickstart`, `sudo sh install.sh`, or
 keeps secondary docs from growing stale raw-main, wrong-owner, or artifact-only
 latest instructions outside the marked README/runbook snippets.
 
+CLI help is part of the same drift surface. `crates/m80-cli/tests/help_smoke.rs`
+pins `m80 quickstart --help` as an operator/test override and rejects mutable
+raw-main installer URLs or artifact-only latest release URLs in both
+`m80 quickstart --help` and `m80 install --help`.
+
 Tracker text is part of the same public contract. `scripts/verify-release-tracker-policy.py`
 scans release epoch titles, descriptions, acceptance criteria, and close
 reasons for stale common-path claims. Public tracker prose may name latest or

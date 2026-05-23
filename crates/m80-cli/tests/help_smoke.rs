@@ -47,6 +47,7 @@ fn help_quickstart() {
             && stdout.contains("--no-run"),
         "quickstart help should expose the override-only artifact flow, got: {stdout}"
     );
+    assert_no_stale_public_quickstart_urls("quickstart help", &stdout);
 }
 
 #[test]
@@ -63,6 +64,7 @@ fn help_install() {
             && !stdout.contains("--bootstrap-tag"),
         "install help should expose user-facing installer inputs only, got: {stdout}"
     );
+    assert_no_stale_public_quickstart_urls("install help", &stdout);
 }
 
 #[test]
@@ -196,4 +198,18 @@ fn help_template_actions() {
 #[test]
 fn help_version() {
     m80().args(["version", "--help"]).assert().success();
+}
+
+fn assert_no_stale_public_quickstart_urls(surface: &str, text: &str) {
+    assert!(
+        !text.contains("raw.githubusercontent.com") && !text.contains("/main/install.sh"),
+        "{surface} must not point users at mutable raw main installers, got: {text}"
+    );
+    assert!(
+        !text
+            .split_ascii_whitespace()
+            .any(|token| token.contains("/releases/latest/download/")
+                && !token.contains("/releases/latest/download/install.sh")),
+        "{surface} must not point users at artifact-only latest release assets, got: {text}"
+    );
 }
