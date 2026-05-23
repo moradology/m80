@@ -12,12 +12,16 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 KIND = "m80_release_evidence_bundle"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 BUILD_HANDOFF_NAME = "m80-release-build.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
+READINESS_DECISION_NAME = "m80-release-readiness-decision.json"
+TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
+REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
+PUBLIC_ACCESS_RECEIPT_NAME = "release-readiness-public-access.json"
 HOSTLESS_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 REAL_KVM_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
@@ -38,6 +42,7 @@ TOP_LEVEL_FIELDS = {
     "build_handoff",
     "publish_decision_receipt",
     "proof_ledger",
+    "receipt_refs",
     "public_assets",
     "workflow_only_artifacts",
     "proofs",
@@ -50,6 +55,16 @@ FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
 PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subject"}
 WORKFLOW_ARTIFACT_FIELDS = {"name", "reason", "sha256", "size_bytes"}
 WORKFLOW_INVENTORY_FIELDS = {"name", "reason", "sha256", "size_bytes"}
+RECEIPT_REF_FIELDS = {
+    "id",
+    "artifact_class",
+    "file",
+    "schema_version",
+    "kind",
+    "release_tag",
+    "commit_sha",
+    "workflow_run_id",
+}
 PROOF_FIELDS = {"lane_id", "proof_kind", "substrate", "artifact_class", "file"}
 HOST_BINARIES_FIELDS = {
     "lane_id",
@@ -125,6 +140,48 @@ PROOF_KINDS_BY_LANE = {
     "release-bundle-integrity": "release-integrity-predicate",
 }
 ARTIFACT_CLASSES = {"public", "workflow-only"}
+RECEIPT_DEFINITIONS = {
+    "publish-decision": {
+        "name": PUBLISH_RECEIPT_NAME,
+        "kind": "m80_release_publish_decision",
+        "schema_version": 4,
+        "artifact_class": "workflow-only",
+        "commit_field": "commit_sha",
+        "workflow_field": "workflow_run_id",
+    },
+    "readiness-decision": {
+        "name": READINESS_DECISION_NAME,
+        "kind": "m80_release_readiness_decision",
+        "schema_version": 1,
+        "artifact_class": "workflow-only",
+        "commit_field": "commit_sha",
+        "workflow_field": "workflow_run_id",
+    },
+    "token-authority": {
+        "name": TOKEN_AUTHORITY_NAME,
+        "kind": "m80_release_publish_token_authority",
+        "schema_version": 1,
+        "artifact_class": "workflow-only",
+        "commit_field": "commit_sha",
+        "workflow_field": "workflow_run_id",
+    },
+    "remote-asset-inventory": {
+        "name": REMOTE_INVENTORY_NAME,
+        "kind": "m80_release_remote_asset_inventory",
+        "schema_version": 1,
+        "artifact_class": "workflow-only",
+        "commit_field": None,
+        "workflow_field": None,
+    },
+    "public-access": {
+        "name": PUBLIC_ACCESS_RECEIPT_NAME,
+        "kind": "m80_release_readiness_public_access",
+        "schema_version": 1,
+        "artifact_class": "workflow-only",
+        "commit_field": "commit_sha",
+        "workflow_field": None,
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -248,6 +305,13 @@ def build_bundle(
         "build_handoff": file_ref(dist_dir, build_handoff, "build handoff"),
         "publish_decision_receipt": file_ref(dist_dir, publish_receipt, "publish decision receipt"),
         "proof_ledger": file_ref(dist_dir, proof_ledger, "proof ledger"),
+        "receipt_refs": receipt_ref_rows(
+            dist_dir=dist_dir,
+            release_tag=release_tag,
+            commit_sha=commit_sha,
+            workflow_run_id=workflow_run_id,
+            present_paths=present_receipt_paths(dist_dir, publish_receipt),
+        ),
         "public_assets": normalized_public_assets(manifest.get("public_assets")),
         "workflow_only_artifacts": workflow_only,
         "proofs": [
@@ -363,6 +427,21 @@ def verify_bundle(
     require(observed_public == expected_public, "release evidence bundle public_assets mismatch")
 
     observed_workflow = normalized_workflow_artifacts(bundle["workflow_only_artifacts"])
+    expected_receipts = receipt_ref_rows(
+        dist_dir=dist_dir,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        workflow_run_id=workflow_run_id,
+        present_paths=present_receipt_paths(dist_dir, publish_receipt),
+    )
+    observed_receipts = normalized_receipt_refs(
+        bundle["receipt_refs"],
+        dist_dir=dist_dir,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+        workflow_run_id=workflow_run_id,
+    )
+    require(observed_receipts == expected_receipts, "release evidence bundle receipt_refs mismatch")
 
     public_names = {row["name"] for row in observed_public}
     workflow_names = {row["name"] for row in observed_workflow}
@@ -522,6 +601,177 @@ def normalized_workflow_artifacts(value: object) -> list[dict[str, Any]]:
     names = [row["name"] for row in result]
     require(len(names) == len(set(names)), "release evidence bundle workflow-only artifact duplicate name")
     return sorted(result, key=lambda row: row["name"])
+
+
+def present_receipt_paths(dist_dir: Path, publish_receipt: Path) -> dict[str, Path]:
+    paths = {"publish-decision": publish_receipt}
+    for receipt_id, definition in RECEIPT_DEFINITIONS.items():
+        if receipt_id == "publish-decision":
+            continue
+        path = dist_dir / definition["name"]
+        if path.is_file():
+            paths[receipt_id] = path
+    return paths
+
+
+def receipt_ref_rows(
+    *,
+    dist_dir: Path,
+    release_tag: str,
+    commit_sha: str,
+    workflow_run_id: str,
+    present_paths: dict[str, Path],
+) -> list[dict[str, Any]]:
+    rows = []
+    for receipt_id, path in sorted(present_paths.items()):
+        definition = receipt_definition(receipt_id)
+        payload = read_json(path, f"{receipt_id} receipt")
+        validate_receipt_payload(
+            receipt_id=receipt_id,
+            payload=payload,
+            release_tag=release_tag,
+            commit_sha=commit_sha,
+            workflow_run_id=workflow_run_id,
+        )
+        rows.append(
+            {
+                "id": receipt_id,
+                "artifact_class": definition["artifact_class"],
+                "file": file_ref(dist_dir, path, f"{receipt_id} receipt"),
+                "schema_version": definition["schema_version"],
+                "kind": definition["kind"],
+                "release_tag": release_tag,
+                "commit_sha": commit_sha,
+                "workflow_run_id": workflow_run_id,
+            }
+        )
+    return rows
+
+
+def normalized_receipt_refs(
+    value: object,
+    *,
+    dist_dir: Path,
+    release_tag: str,
+    commit_sha: str,
+    workflow_run_id: str,
+) -> list[dict[str, Any]]:
+    rows = require_list(value, "release evidence bundle receipt_refs")
+    result = []
+    seen_ids: set[str] = set()
+    seen_files: set[str] = set()
+    for row in rows:
+        require(isinstance(row, dict), "release evidence bundle receipt_ref must be an object")
+        require_exact_fields(row, RECEIPT_REF_FIELDS, "release evidence bundle receipt_ref")
+        receipt_id = require_receipt_id(row["id"], "release evidence bundle receipt_ref id")
+        require(receipt_id not in seen_ids, f"release evidence bundle duplicate receipt_ref id: {receipt_id}")
+        seen_ids.add(receipt_id)
+        definition = receipt_definition(receipt_id)
+        require(
+            row["artifact_class"] == definition["artifact_class"],
+            f"release evidence bundle receipt_refs[{receipt_id}] artifact_class mismatch",
+        )
+        require(
+            row["schema_version"] == definition["schema_version"],
+            f"release evidence bundle receipt_refs[{receipt_id}] schema_version mismatch",
+        )
+        require(
+            row["kind"] == definition["kind"],
+            f"release evidence bundle receipt_refs[{receipt_id}] kind mismatch",
+        )
+        require(
+            row["release_tag"] == release_tag,
+            f"release evidence bundle receipt_refs[{receipt_id}] release_tag mismatch",
+        )
+        require(
+            row["commit_sha"] == commit_sha,
+            f"release evidence bundle receipt_refs[{receipt_id}] commit_sha mismatch",
+        )
+        require(
+            row["workflow_run_id"] == workflow_run_id,
+            f"release evidence bundle receipt_refs[{receipt_id}] workflow_run_id mismatch",
+        )
+        expected_path = dist_dir / definition["name"]
+        file = verify_file_ref(
+            row["file"],
+            dist_dir,
+            expected_path,
+            field_path=f"receipt_refs[{receipt_id}].file",
+            label=f"{receipt_id} receipt",
+            repair_command="rerun the receipt producer then scripts/release_evidence_bundle.py --write",
+        )
+        require(
+            file["name"] not in seen_files,
+            f"release evidence bundle duplicate receipt_ref file: {file['name']}",
+        )
+        seen_files.add(file["name"])
+        payload = read_json(expected_path, f"{receipt_id} receipt")
+        validate_receipt_payload(
+            receipt_id=receipt_id,
+            payload=payload,
+            release_tag=release_tag,
+            commit_sha=commit_sha,
+            workflow_run_id=workflow_run_id,
+        )
+        result.append(
+            {
+                "id": receipt_id,
+                "artifact_class": row["artifact_class"],
+                "file": file,
+                "schema_version": row["schema_version"],
+                "kind": row["kind"],
+                "release_tag": row["release_tag"],
+                "commit_sha": row["commit_sha"],
+                "workflow_run_id": row["workflow_run_id"],
+            }
+        )
+    return sorted(result, key=lambda row: row["id"])
+
+
+def validate_receipt_payload(
+    *,
+    receipt_id: str,
+    payload: dict[str, Any],
+    release_tag: str,
+    commit_sha: str,
+    workflow_run_id: str,
+) -> None:
+    definition = receipt_definition(receipt_id)
+    require(
+        payload.get("schema_version") == definition["schema_version"],
+        f"release evidence bundle receipt_refs[{receipt_id}] payload schema_version mismatch",
+    )
+    require(
+        payload.get("kind") == definition["kind"],
+        f"release evidence bundle receipt_refs[{receipt_id}] payload kind mismatch",
+    )
+    require(
+        payload.get("release_tag") == release_tag,
+        f"release evidence bundle receipt_refs[{receipt_id}] payload release_tag mismatch",
+    )
+    commit_field = definition["commit_field"]
+    if commit_field is not None:
+        require(
+            payload.get(commit_field) == commit_sha,
+            f"release evidence bundle receipt_refs[{receipt_id}] payload commit_sha mismatch",
+        )
+    workflow_field = definition["workflow_field"]
+    if workflow_field is not None:
+        require(
+            payload.get(workflow_field) == workflow_run_id,
+            f"release evidence bundle receipt_refs[{receipt_id}] payload workflow_run_id mismatch",
+        )
+
+
+def receipt_definition(receipt_id: str) -> dict[str, Any]:
+    definition = RECEIPT_DEFINITIONS.get(receipt_id)
+    require(definition is not None, f"release evidence bundle unknown receipt_ref id: {receipt_id}")
+    return definition
+
+
+def require_receipt_id(value: object, label: str) -> str:
+    require(isinstance(value, str) and value in RECEIPT_DEFINITIONS, f"{label} unknown")
+    return value
 
 
 def require_proofs(

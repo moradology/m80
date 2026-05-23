@@ -26,6 +26,13 @@ payload and `docs/behaviors/release/release-readiness-lanes.json`; they name
 the lane, logical proof kind, observed proof/substrate kind, required substrate
 class, fixture status, and whether that proof can satisfy publish or latest
 promotion for its own lane. None of these fields carry host-local paths.
+Schema version 6 adds `receipt_refs`: digest-bound refs for publish/latest-time
+receipts that may arrive after build and proof collection. Each row names a
+known receipt id, artifact class, file ref, schema version, kind, release tag,
+commit SHA, and workflow run id. The verifier recomputes the receipt file
+digest and size from the artifact root, rejects unknown receipt ids, and checks
+the receipt payload's schema, kind, release tag, commit SHA, and workflow run id
+when that payload owns those fields.
 
 The schema keeps three artifact classes distinct:
 
@@ -57,6 +64,12 @@ The schema keeps three artifact classes distinct:
   hostless publish lane but may not satisfy latest promotion or the
   `real-kvm-quickstart` lane. The real-KVM lane must carry an observed
   `real-kvm` substrate from a real-KVM proof file.
+- `receipt_refs`: publish/latest-time receipts that are optional because they
+  appear at different points in the workflow. The evidence bundle always binds
+  the publish decision receipt when present as a top-level mandatory ref and as
+  a typed receipt row. It also binds the token-authority receipt, readiness
+  decision, remote asset inventory, and public-access receipt whenever those
+  files are present in the artifact root.
 
 Hostless proof never satisfies real-KVM proof. A hostless quickstart fixture is
 recorded with `lane_id=hostless-quickstart`, `substrate=hostless`, and
@@ -66,11 +79,41 @@ not yet have a proof entry must appear in `missing_required_lane_ids`, so the
 bundle can distinguish "required and absent" from "satisfied by the wrong
 substrate."
 
+Build/proof-time refs are mandatory because publish cannot even evaluate the
+release without them:
+
+- `upload_manifest`
+- `build_handoff`
+- `publish_decision_receipt`
+- `proof_ledger`
+- quickstart `proofs[*].file`
+- proof-derived `host_binaries`, `release_identity`, and `substrate_policy`
+  rows
+
+Publish/latest-time receipt refs are optional at write time but strict once
+present:
+
+- `receipt_refs[publish-decision]` ->
+  `m80-release-publish-decision.json`
+- `receipt_refs[token-authority]` ->
+  `m80-release-token-authority.json`
+- `receipt_refs[readiness-decision]` ->
+  `m80-release-readiness-decision.json`
+- `receipt_refs[remote-asset-inventory]` ->
+  `m80-release-remote-assets.json`
+- `receipt_refs[public-access]` ->
+  `release-readiness-public-access.json`
+
+Optional does not mean best-effort. If a row is present and the file is missing,
+stale, has the wrong schema or kind, or disagrees with the bundle release tag,
+commit SHA, or workflow run id, verification fails closed and publish/latest
+state must not move.
+
 The redaction rule is part of the schema contract: evidence bundles may contain
 flat release file names, sizes, digests, release tags, commit SHA, workflow run
 ids, m80 version, lane ids, proof kinds, and substrate names. They must not
 contain host absolute paths, secrets, tokens, or environment dumps. Follow-up
-redaction leaves may add stronger scanners, but schema version 5 names these
+redaction leaves may add stronger scanners, but schema version 6 names these
 forbidden categories and validates that generated bundle strings do not leak
 common absolute host path prefixes.
 
@@ -95,6 +138,11 @@ freshness proof is substituted for a release publish proof, or the observed
 proof substrate is not allowed by the readiness config. Diagnostics name the
 lane id, required substrate, observed substrate or proof kind, proof file, and
 config path.
+Receipt-ref verification fails closed when a receipt row points at stale bytes,
+the receipt file is missing, the row names an unknown receipt id, the row's
+schema/kind/tag/commit/workflow context disagrees with the bundle, or the
+payload's schema, kind, release tag, commit SHA, or workflow run id disagrees
+with the bundle context.
 
 Every evidence bundle schema version must verify these core refs before publish
 can move mutable release state:

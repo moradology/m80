@@ -48,6 +48,7 @@ PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 READINESS_DECISION_NAME = "m80-release-readiness-decision.json"
 TOKEN_AUTHORITY_NAME = "m80-release-token-authority.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
+PUBLIC_ACCESS_RECEIPT_NAME = "release-readiness-public-access.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 HOSTLESS_QUICKSTART_VERIFIER_RESULT_NAME = "m80-quickstart-proof-hostless.verifier-result.json"
@@ -2280,7 +2281,7 @@ class ReleaseBundleTest(unittest.TestCase):
             bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
-            self.assertEqual(bundle["schema_version"], 5)
+            self.assertEqual(bundle["schema_version"], 6)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
             self.assertEqual(bundle["release_tag"], "v0.2.11")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
@@ -2291,6 +2292,16 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(bundle["build_handoff"]["name"], BUILD_MANIFEST_NAME)
             self.assertEqual(bundle["publish_decision_receipt"]["name"], PUBLISH_RECEIPT_NAME)
             self.assertEqual(bundle["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
+            receipt_refs = {row["id"]: row for row in bundle["receipt_refs"]}
+            self.assertEqual(set(receipt_refs), {"publish-decision", "readiness-decision", "token-authority"})
+            self.assertEqual(receipt_refs["publish-decision"]["file"]["name"], PUBLISH_RECEIPT_NAME)
+            self.assertEqual(receipt_refs["readiness-decision"]["file"]["name"], READINESS_DECISION_NAME)
+            self.assertEqual(receipt_refs["token-authority"]["file"]["name"], TOKEN_AUTHORITY_NAME)
+            for row in receipt_refs.values():
+                self.assertEqual(row["artifact_class"], "workflow-only")
+                self.assertEqual(row["release_tag"], "v0.2.11")
+                self.assertEqual(row["commit_sha"], INTEGRITY_COMMIT_SHA)
+                self.assertEqual(row["workflow_run_id"], "12345")
             self.assertIn("real-kvm-quickstart", bundle["required_lane_ids"])
             self.assertIn("real-kvm-quickstart", bundle["missing_required_lane_ids"])
             self.assertNotIn("hostless-quickstart", bundle["missing_required_lane_ids"])
@@ -2384,6 +2395,145 @@ class ReleaseBundleTest(unittest.TestCase):
             )
             self.assertNotIn("/tmp/m80-hostless-install-root", json.dumps(bundle))
             self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
+
+    def test_release_evidence_bundle_writes_clean_optional_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = evidence_bundle_fixture(root)
+            write_remote_inventory_receipt_fixture(root, out_dir)
+            write_public_access_receipt_fixture(out_dir)
+
+            run_release_evidence_bundle(out_dir, "--write")
+            bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            receipt_refs = {row["id"]: row for row in bundle["receipt_refs"]}
+
+            self.assertEqual(
+                set(receipt_refs),
+                {
+                    "publish-decision",
+                    "readiness-decision",
+                    "token-authority",
+                    "remote-asset-inventory",
+                    "public-access",
+                },
+            )
+            self.assertEqual(receipt_refs["remote-asset-inventory"]["file"]["name"], REMOTE_INVENTORY_NAME)
+            self.assertEqual(receipt_refs["public-access"]["file"]["name"], PUBLIC_ACCESS_RECEIPT_NAME)
+
+    def test_release_evidence_bundle_rejects_stale_publish_receipt_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            receipt_ref(payload, "publish-decision")["file"]["sha256"] = "sha256:" + ("0" * 64)
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[publish-decision].file digest mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_token_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            token = out_dir / TOKEN_AUTHORITY_NAME
+            token.write_text(token.read_text() + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[token-authority].file digest mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_remote_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = evidence_bundle_fixture(root)
+            write_remote_inventory_receipt_fixture(root, out_dir)
+            run_release_evidence_bundle(out_dir, "--write")
+            remote_inventory = out_dir / REMOTE_INVENTORY_NAME
+            remote_inventory.write_text(remote_inventory.read_text() + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[remote-asset-inventory].file digest mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_receipt_tag_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            mutate_json(out_dir / READINESS_DECISION_NAME, {"release_tag": "v9.9.9"})
+            refresh_evidence_receipt_ref(out_dir, "readiness-decision")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[readiness-decision] payload release_tag mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_receipt_commit_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            mutate_json(out_dir / TOKEN_AUTHORITY_NAME, {"commit_sha": "f" * 40})
+            refresh_evidence_receipt_ref(out_dir, "token-authority")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[token-authority] payload commit_sha mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_receipt_workflow_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            mutate_json(out_dir / READINESS_DECISION_NAME, {"workflow_run_id": "99999"})
+            refresh_evidence_receipt_ref(out_dir, "readiness-decision")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[readiness-decision] payload workflow_run_id mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_unknown_receipt_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            mutate_json(out_dir / TOKEN_AUTHORITY_NAME, {"schema_version": 999})
+            refresh_evidence_receipt_ref(out_dir, "token-authority")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[token-authority] payload schema_version mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_missing_optional_receipt_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / TOKEN_AUTHORITY_NAME).unlink()
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_refs[token-authority].file referenced file missing", result.stderr)
+
+    def test_release_evidence_bundle_rejects_unknown_receipt_ref_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["receipt_refs"][0]["id"] = "surprise-receipt"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("receipt_ref id unknown", result.stderr)
+
+    def test_release_evidence_bundle_rejects_duplicate_receipt_ref_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["receipt_refs"].append(dict(receipt_ref(payload, "token-authority")))
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate receipt_ref id: token-authority", result.stderr)
 
     def test_release_evidence_bundle_accepts_latest_resolved_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6339,6 +6489,47 @@ def evidence_bundle_fixture(root: Path) -> Path:
     return out_dir
 
 
+def write_remote_inventory_receipt_fixture(root: Path, out_dir: Path) -> Path:
+    redownload = root / "redownload"
+    copy_manifest_public_assets(out_dir, redownload)
+    metadata = write_remote_release_metadata(out_dir, redownload)
+    assets_metadata = write_remote_release_assets_metadata(metadata)
+    inventory = out_dir / REMOTE_INVENTORY_NAME
+    run_remote_asset_inventory(
+        redownload,
+        out_dir,
+        metadata,
+        "--write",
+        "--inventory",
+        str(inventory),
+        assets_metadata=assets_metadata,
+    )
+    return inventory
+
+
+def write_public_access_receipt_fixture(out_dir: Path) -> Path:
+    receipt = out_dir / PUBLIC_ACCESS_RECEIPT_NAME
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "m80_release_readiness_public_access",
+                "lane_id": "public-access-latest",
+                "proof_kind": "public-access-proof",
+                "status": "passed",
+                "repository": "moradology/m80",
+                "release_tag": "v0.2.11",
+                "commit_sha": INTEGRITY_COMMIT_SHA,
+                "verification_time": "2026-05-21T00:00:00Z",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return receipt
+
+
 def write_publish_proof_ledger(out_dir: Path) -> Path:
     write_workflow_only_proof_sidecars(out_dir)
     write_pre_upload_readiness_decision(out_dir)
@@ -6756,6 +6947,29 @@ def refresh_workflow_inventory_artifact(out_dir: Path, name: str) -> None:
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
             return
     raise AssertionError(f"workflow artifact missing from fixture inventory: {name}")
+
+
+def refresh_evidence_receipt_ref(out_dir: Path, receipt_id: str) -> None:
+    bundle_path = out_dir / EVIDENCE_BUNDLE_NAME
+    payload = json.loads(bundle_path.read_text())
+    row = receipt_ref(payload, receipt_id)
+    path = out_dir / row["file"]["name"]
+    row["file"]["sha256"] = f"sha256:{sha256(path)}"
+    row["file"]["size_bytes"] = path.stat().st_size
+    bundle_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def receipt_ref(bundle: dict, receipt_id: str) -> dict:
+    for row in bundle["receipt_refs"]:
+        if row["id"] == receipt_id:
+            return row
+    raise AssertionError(f"missing receipt ref: {receipt_id}")
+
+
+def mutate_json(path: Path, updates: dict) -> None:
+    payload = json.loads(path.read_text())
+    payload.update(updates)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def write_release_proof_ledger_placeholder(out_dir: Path) -> Path:

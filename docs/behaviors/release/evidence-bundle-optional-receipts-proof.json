@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_optional_receipts_proof",
+  "bead_id": "m80-o3uh9.13.39.3.2",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures validated optional receipt refs without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 285 tests in 66.479s OK; workflow policy ok; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.969s OK; actionlint wrapper ok; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.927s OK; verify-release-tracker-policy ok; br lint m80-o3uh9.13.39.3.2 ok; br dep cycles ok; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 285 tests in 66.479s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.969s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 46 tests in 2.927s\\n\\nOK\\nrelease tracker policy ok: .beads/issues.jsonl\\nNo template warnings found (1 issues checked)\\nNo dependency cycles detected.",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "schema version 6 evidence bundles include receipt_refs",
+    "publish decision, readiness decision, token authority, remote asset inventory, and public-access receipt refs are recognized when present",
+    "each receipt ref carries artifact_class, file ref, schema_version, kind, release_tag, commit_sha, and workflow_run_id",
+    "receipt file refs are recomputed from bytes under the artifact root",
+    "stale publish receipt refs fail closed",
+    "stale token authority receipts fail closed",
+    "stale remote asset inventory receipts fail closed",
+    "receipt payload release_tag mismatch fails closed",
+    "receipt payload commit_sha mismatch fails closed",
+    "receipt payload workflow_run_id mismatch fails closed",
+    "unknown receipt payload schema_version fails closed",
+    "missing optional receipt files fail closed when a receipt_ref row is present",
+    "unknown and duplicate receipt_ref rows fail closed",
+    "docs/behaviors/release/evidence-bundle.md explains mandatory build/proof refs versus optional publish/latest-time receipt refs"
+  ],
+  "review": {
+    "agent": "review_o3uh9_13_39_3_2",
+    "result": "No blocking regressions identified; added explicit unknown and duplicate receipt_ref row tests for the noted coverage gap."
+  }
+}
