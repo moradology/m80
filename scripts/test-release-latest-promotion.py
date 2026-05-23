@@ -141,6 +141,31 @@ class ReleaseLatestPromotionTest(unittest.TestCase):
             decision = json.loads(paths.out.read_text())
             self.assertIn("remote inventory duplicate asset name: install.sh", decision["reason"])
 
+    def test_remote_inventory_timestamp_drift_is_diagnostic(self) -> None:
+        with fixture(release_tag="v1.2.4") as paths:
+            inventory = json.loads(paths.remote_inventory.read_text())
+            inventory["assets"][0]["updated_at"] = "2026-05-24T00:00:00Z"
+            inventory["assets"][1]["created_at"] = "2026-05-25T00:00:00Z"
+            paths.remote_inventory.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n")
+
+            result = run_promotion(paths)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            decision = json.loads(paths.out.read_text())
+            self.assertEqual(decision["decision"], "approved")
+
+    def test_remote_inventory_malformed_timestamp_is_refused(self) -> None:
+        with fixture(release_tag="v1.2.4") as paths:
+            inventory = json.loads(paths.remote_inventory.read_text())
+            inventory["assets"][0]["updated_at"] = "not-a-timestamp"
+            paths.remote_inventory.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n")
+
+            result = run_promotion(paths)
+
+            self.assertNotEqual(result.returncode, 0)
+            decision = json.loads(paths.out.read_text())
+            self.assertIn("remote inventory assets[0] updated_at must be an ISO-8601 timestamp", decision["reason"])
+
 
 class Paths:
     def __init__(self, root: Path, release_tag: str) -> None:

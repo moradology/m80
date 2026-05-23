@@ -27,6 +27,12 @@ not omit or add public assets, and each row's kind, size, and SHA256 digest must
 match the upload manifest. Missing, stale, incomplete, duplicate, or mismatched
 remote state is refused before `gh release edit --latest`.
 
+Remote inventory timestamps are evidence, not identity. `created_at` and
+`updated_at` must be parseable timestamps, but promotion does not compare them
+against the upload manifest and does not refuse solely because GitHub reports a
+changed `updated_at` for otherwise identical bytes. The blocking identity check
+stays on tag, asset name, asset id validity/uniqueness, kind, size, and digest.
+
 Normal promotion is approved only when the target tag is greater than or equal
 to the highest public stable tag. Drafts, prereleases, and non-stable tag names
 do not define the highest stable tag.
@@ -43,7 +49,8 @@ generation timestamp. Stale or mismatched receipts fail before latest moves.
 `scripts/test-release-latest-promotion.py` covers highest-stable approval,
 lower-tag refusal, explicit rollback approval, draft/prerelease exclusion,
 stale rollback receipt digest refusal, missing remote inventory, stale remote
-inventory, extra remote assets, and duplicate remote asset names.
+inventory, extra remote assets, duplicate remote asset names, diagnostic
+timestamp drift, and malformed timestamp refusal.
 
 `scripts/test-release-bundle.py` checks that the release workflow runs the
 latest promotion decision before `gh release edit --latest` and uploads the

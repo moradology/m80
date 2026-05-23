@@ -324,6 +324,10 @@ def normalized_inventory_assets(inventory: Any, release_tag: str) -> tuple[list[
         if asset_id in seen_ids:
             errors.append(f"remote inventory duplicate asset id: {asset_id}")
         seen_ids.add(asset_id)
+        for field in ["created_at", "updated_at"]:
+            value = row.get(field)
+            if parse_timestamp(value) is None:
+                errors.append(f"{label} {field} must be an ISO-8601 timestamp")
         result.append(asset)
     return result, errors
 
@@ -521,6 +525,15 @@ def first_bool(obj: dict[str, Any], *keys: str) -> bool | None:
         if isinstance(value, bool):
             return value
     return None
+
+
+def parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def file_digest(path: Path) -> str:

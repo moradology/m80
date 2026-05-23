@@ -36,6 +36,8 @@ ASSET_FIELDS = {
     "created_at",
     "updated_at",
 }
+ASSET_IDENTITY_FIELDS = {"id", "name", "kind", "size_bytes", "sha256", "download_url"}
+ASSET_TIMESTAMP_FIELDS = {"created_at", "updated_at"}
 PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subject"}
 BUILD_HANDOFF_FIELDS = {
     "schema_version",
@@ -225,7 +227,12 @@ def verify_inventory(
 
     observed_assets = normalized_inventory_assets(inventory["assets"])
     expected_assets = normalized_inventory_assets(expected["assets"])
-    require(observed_assets == expected_assets, "remote release asset inventory assets mismatch")
+    observed_identity = asset_identity_rows(observed_assets)
+    expected_identity = asset_identity_rows(expected_assets)
+    require(
+        observed_identity == expected_identity,
+        "remote release asset inventory identity mismatch",
+    )
 
 
 def verify_rerun_preflight(
@@ -493,8 +500,8 @@ def normalized_inventory_assets(value: object) -> list[dict]:
         require_non_negative_int(row["size_bytes"], f"remote release asset inventory asset {name} size_bytes")
         require_sha256(row["sha256"], f"remote release asset inventory asset {name} sha256")
         require_safe_string(row["download_url"], f"remote release asset inventory asset {name} download_url")
-        require_timestamp(row["created_at"], f"remote release asset inventory asset {name} created_at")
-        require_timestamp(row["updated_at"], f"remote release asset inventory asset {name} updated_at")
+        for field in sorted(ASSET_TIMESTAMP_FIELDS):
+            require_timestamp(row[field], f"remote release asset inventory asset {name} {field}")
         result.append(
             {
                 "id": asset_id,
@@ -508,6 +515,13 @@ def normalized_inventory_assets(value: object) -> list[dict]:
             }
         )
     return sorted(result, key=lambda row: row["name"])
+
+
+def asset_identity_rows(assets: list[dict]) -> list[dict]:
+    return [
+        {field: asset[field] for field in sorted(ASSET_IDENTITY_FIELDS)}
+        for asset in sorted(assets, key=lambda row: row["name"])
+    ]
 
 
 def release_metadata_id(metadata: dict, release_tag: str) -> int:

@@ -2371,6 +2371,80 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("duplicate asset id", result.stderr)
 
+    def test_remote_release_asset_inventory_allows_diagnostic_timestamp_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            write_result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write")
+            drift_remote_release_metadata_timestamp(
+                metadata,
+                field="updated_at",
+                value="2026-05-23T23:59:59Z",
+            )
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata)
+
+            self.assertEqual(write_result.returncode, 0, write_result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_identity_id_drift_with_same_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            write_result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write")
+            drift_remote_release_metadata_id(metadata, delta=10000)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, check=False)
+
+            self.assertEqual(write_result.returncode, 0, write_result.stderr)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("remote release asset inventory identity mismatch", result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_identity_digest_drift_with_same_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            stale = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            stale_path = redownload / stale
+            stale_path.write_bytes(b"x" * stale_path.stat().st_size)
+            refresh_remote_release_metadata_size(metadata, stale, stale_path.stat().st_size)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"remote release asset {stale} sha256 mismatch", result.stderr)
+
+    def test_remote_release_asset_inventory_allows_clock_order_edge_as_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            drift_remote_release_metadata_timestamp(
+                metadata,
+                field="created_at",
+                value="2026-05-24T00:00:00Z",
+            )
+            drift_remote_release_metadata_timestamp(
+                metadata,
+                field="updated_at",
+                value="2026-05-23T00:00:00Z",
+            )
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_remote_release_rerun_preflight_accepts_matching_receipts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -5611,6 +5685,20 @@ def refresh_remote_release_metadata_size(metadata_path: Path, name: str, size: i
     for asset in metadata["assets"]:
         if asset["name"] == name:
             asset["size"] = size
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+
+def drift_remote_release_metadata_timestamp(metadata_path: Path, *, field: str, value: str) -> None:
+    metadata = json.loads(metadata_path.read_text())
+    for asset in metadata["assets"]:
+        asset[field] = value
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+
+def drift_remote_release_metadata_id(metadata_path: Path, *, delta: int) -> None:
+    metadata = json.loads(metadata_path.read_text())
+    for asset in metadata["assets"]:
+        asset["id"] += delta
     metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
 
 

@@ -10,6 +10,12 @@ browser download URL, `created_at`, and `updated_at`. The digest is computed
 from the re-downloaded file under `/tmp/m80-release-redownload`; API metadata
 alone is not accepted as proof of bytes.
 
+The blocking identity fields are release tag, release id, asset id, asset name,
+kind, size, SHA256 digest, and browser download URL. `created_at` and
+`updated_at` are diagnostic fields: they must be valid timestamps so the
+evidence is readable, but later verification does not fail just because GitHub
+reports a harmless timestamp change or non-monotonic asset clock ordering.
+
 The verifier consumes three inputs:
 
 - `m80-release-upload-manifest.json`, which names the expected public assets;
@@ -21,7 +27,9 @@ ids, omits a manifest asset, contains an unexpected asset, reports the wrong
 size, lacks a browser download URL, or when any re-downloaded file is missing
 or has a stale digest. That catches API pagination/truncation gaps and local
 redownload failures before later rerun or latest-promotion gates can trust the
-release state.
+release state. Reupload or manual replacement is still caught by identity:
+asset id changes fail even when the bytes match, and digest changes fail even
+when the asset name is unchanged.
 
 Rerun preflight mode adds the local release decision inputs to that comparison:
 the upload manifest, `m80-release-build.json`, and
