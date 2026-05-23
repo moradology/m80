@@ -35,6 +35,15 @@ bundle row records:
 - `manifest_schema_version`;
 - `expected_firecracker_version`.
 
+The bundle `sha256` and `size_bytes` fields are installer inputs, not advisory
+metadata. Indexed release-tag and bootstrap installs pass them through to the
+release-material verifier with the selected bundle URL and checksum asset name.
+Verification refuses to extract if `size_bytes` is missing, zero, or different
+from the downloaded bundle length, or if the indexed sha256 disagrees with the
+checksum sidecar or computed bundle digest. Explicit local `file://` fixture
+installs bypass index selection and are the only path that may omit these
+indexed size and digest fields.
+
 The default Linux quickstart row is the single asset with `os: "linux"`,
 `arch: "x86_64"`, and `image_kind: "minimal"` whose `release_tag` and
 `m80_version` match the running release binary. Duplicate defaults fail closed;

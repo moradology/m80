@@ -13,6 +13,7 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) tamper_bundle: bool,
     pub(super) wrong_bundle_checksum: bool,
     pub(super) stale_asset_index: bool,
+    pub(super) stale_bundle_size: bool,
     pub(super) mismatched_attestation: bool,
     pub(super) wrong_attestation_signer: bool,
     pub(super) wrong_attestation_issuer: bool,
@@ -110,7 +111,7 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     } else {
         bundle_sha256.clone()
     };
-    let row_bundle_size = if options.stale_asset_index {
+    let row_bundle_size = if options.stale_asset_index || options.stale_bundle_size {
         bundle_size as u64 + 1
     } else {
         bundle_size as u64

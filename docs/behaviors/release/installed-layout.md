@@ -77,9 +77,14 @@ failure. Remote bundle downloads first land as
 `<install-root>/.staging/layout-<pid>/bundle.tar.gz`, and the adjacent
 `<URL>.sha256` is downloaded and checked before extraction. The final effective
 download URL must stay on the release host/CDN allowlist, or on the same local
-test fixture authority. Indexed size and digest metadata handoff is tracked by
-`m80-o3uh9.3.10`; this leaf's explicit remote URL path is checksum-sidecar
-verified.
+test fixture authority. For indexed release-tag and bootstrap installs, the
+selected asset-index row's bundle URL, sha256, `size_bytes`, checksum asset,
+metadata identity, release tag, target tuple, image kind, and m80 version are
+carried into release-material verification before extraction. The bundle is not
+accepted unless its checksum sidecar digest, computed sha256, and downloaded
+byte length match the selected index material. Explicit local `file://` fixture
+bundles are the only install source that may omit indexed size and digest
+material.
 
 Verification failures never write `<install-root>/active`. Failures after a
 previous install leave the previous active symlink selected. Profile-write,

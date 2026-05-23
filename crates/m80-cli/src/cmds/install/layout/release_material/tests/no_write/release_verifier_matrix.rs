@@ -179,6 +179,25 @@ fn asset_index_digest_mismatch_aborts_before_install_root_mutation() {
 }
 
 #[test]
+fn indexed_bundle_size_mismatch_aborts_before_install_root_mutation() {
+    assert_failure_preserves_install_root(FailureScenario {
+        name: "indexed bundle size mismatch",
+        options: ReleaseFixtureOptions {
+            stale_bundle_size: true,
+            ..ReleaseFixtureOptions::default()
+        },
+        expected: &[
+            "release material bundle size mismatch",
+            "expected_size_bytes=",
+            "observed_size_bytes=",
+            "release_tag=v0.0.0",
+            "material_class=bundle",
+        ],
+        expect_bundle_download: true,
+    });
+}
+
+#[test]
 fn native_attestation_bundle_failure_aborts_before_install_root_mutation() {
     assert_failure_preserves_install_root(FailureScenario {
         name: "bad attestation",
