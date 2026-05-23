@@ -4,7 +4,8 @@ use m80_firecracker::{ConfigFilePaths, ConfigSource};
 
 use super::*;
 use crate::install_state::{
-    ActivePointerReport, ActivePointerStatus, InstallConfigReport, InstallMetadataReport,
+    ActivePointerReport, ActivePointerStatus, InstallAttemptMetadata, InstallAttemptReport,
+    InstallAttemptStatus, InstallAttemptType, InstallConfigReport, InstallMetadataReport,
     InstallProfileReport, InstallStatePaths, InstallStateReport, MetadataFileReport,
     MetadataFileStatus,
 };
@@ -40,6 +41,14 @@ fn json_output_reports_active_install_paths() {
         "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json"
     );
     assert_eq!(data["proof_cache"]["status"], "available");
+    assert_eq!(data["last_attempt"]["status"], "present");
+    assert_eq!(data["last_attempt"]["attempt_type"], "successful_upgrade");
+    assert_eq!(data["last_attempt"]["target_tag"], "v1.2.3");
+    assert!(data["last_attempt"]["failure_stage"].is_null());
+    assert_eq!(
+        data["last_attempt"]["repair_command"],
+        "m80 run -- echo hello"
+    );
     assert_eq!(
         data["proof_cache"]["cache_dir"],
         "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache"
@@ -82,6 +91,11 @@ fn human_output_reports_active_install_paths() {
         "proof_cache_manifest_path=/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json"
     ));
     assert!(rendered.contains("proof_cache_status=available"));
+    assert!(rendered.contains("last_attempt_status=present"));
+    assert!(rendered.contains("last_attempt_type=successful_upgrade"));
+    assert!(rendered.contains("last_attempt_target_tag=v1.2.3"));
+    assert!(rendered.contains("last_attempt_failure_stage=<unavailable>"));
+    assert!(rendered.contains("last_attempt_repair_command=m80 run -- echo hello"));
     assert!(rendered.contains("proof_cache_manifest_digest=1111111111111111111111111111111111111111111111111111111111111111"));
     assert!(rendered.contains("proof_cache_material_0_role=integrity_predicate"));
     assert!(rendered.contains("proof_cache_material_0_sha256=2222222222222222222222222222222222222222222222222222222222222222"));
@@ -543,6 +557,42 @@ fn human_output_for_missing_install_has_next_action() {
 }
 
 #[test]
+fn status_output_reports_failed_attempt_without_temp_paths() {
+    let mut report = active_report();
+    report.last_attempt = InstallAttemptReport {
+        path: PathBuf::from("/opt/m80/last-install-attempt.json"),
+        status: InstallAttemptStatus::Present,
+        attempt: Some(InstallAttemptMetadata::new(
+            InstallAttemptType::VerificationFailed,
+            Some("v1.2.4".to_owned()),
+            Some("bundle_verification"),
+            Some(
+                "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh"
+                    .to_owned(),
+            ),
+        )),
+    };
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let attempt = &parsed["data"]["last_attempt"];
+
+    assert_eq!(attempt["attempt_type"], "verification_failed");
+    assert_eq!(attempt["target_tag"], "v1.2.4");
+    assert_eq!(attempt["failure_stage"], "bundle_verification");
+    assert_eq!(
+        attempt["repair_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh"
+    );
+    assert!(
+        !rendered.contains(".staging") && !rendered.contains("/tmp/"),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn reinstall_action_uses_safe_pinned_release_tag() {
     let mut report = active_report();
     report.state = InstallStateKind::TamperedProofCache;
@@ -621,6 +671,16 @@ fn active_report() -> InstallStateReport {
             host_binaries: None,
             proof_cache: Some(proof_cache_report(&artifacts_dir)),
         }),
+        last_attempt: InstallAttemptReport {
+            path: PathBuf::from("/opt/m80/last-install-attempt.json"),
+            status: InstallAttemptStatus::Present,
+            attempt: Some(InstallAttemptMetadata::new(
+                InstallAttemptType::SuccessfulUpgrade,
+                Some("v1.2.3".to_owned()),
+                None,
+                Some("m80 run -- echo hello".to_owned()),
+            )),
+        },
         diagnostics: Vec::new(),
     }
 }

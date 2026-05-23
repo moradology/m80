@@ -11,10 +11,15 @@ use serde::Serialize;
 use crate::profile::{self, ProfileBodySource, ProfileFilePaths, RuntimeProfile};
 
 mod active;
+mod attempt;
 mod metadata;
 mod state;
 
 pub(crate) use active::{ActivePointerReport, ActivePointerStatus};
+pub(crate) use attempt::{
+    write_last_install_attempt, InstallAttemptMetadata, InstallAttemptReport, InstallAttemptStatus,
+    InstallAttemptType,
+};
 pub(crate) use metadata::{
     read_proof_cache_metadata_from_artifact_dir, InstallMetadataReport, MetadataFileReport,
     MetadataFileStatus, ProofCacheMaterialReport, ProofCacheMetadataReport, ProofCacheReport,
@@ -83,6 +88,7 @@ pub(crate) struct InstallStateReport {
     pub(crate) config: InstallConfigReport,
     pub(crate) profile: Option<InstallProfileReport>,
     pub(crate) metadata: Option<metadata::InstallMetadataReport>,
+    pub(crate) last_attempt: attempt::InstallAttemptReport,
     pub(crate) diagnostics: Vec<InstallStateDiagnostic>,
 }
 
@@ -258,6 +264,7 @@ pub(crate) fn resolve_install_state(request: InstallStateRequest) -> InstallStat
 
     InstallStateReport {
         state,
+        last_attempt: attempt::read_last_install_attempt(&install_root),
         install_root,
         active_pointer,
         config,

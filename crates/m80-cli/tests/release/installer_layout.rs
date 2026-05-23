@@ -206,6 +206,14 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         stdout.contains("next_command=m80 run -- echo hello"),
         "{stdout}"
     );
+    let attempt = read_last_attempt_json(&install_root);
+    assert_eq!(attempt["attempt_type"], "successful_upgrade", "{attempt}");
+    assert_eq!(attempt["target_tag"], bundle.release_tag, "{attempt}");
+    assert!(attempt["failure_stage"].is_null(), "{attempt}");
+    assert_eq!(
+        attempt["repair_command"], "m80 run -- echo hello",
+        "{attempt}"
+    );
     let profile = fs::read_to_string(&profile_path).unwrap();
     assert!(profile.contains("host_binaries_manifest = "), "{profile}");
     assert!(
@@ -272,6 +280,30 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         "artifacts/output.ext4.build-receipt.json",
         &receipt_path,
     );
+}
+
+#[test]
+fn failed_bundle_verification_records_diagnostic_attempt_metadata() {
+    let bundle = write_release_bundle_with_hook(None, |src| {
+        fs::write(src.join("bin/m80"), b"corrupted after metadata").unwrap();
+    });
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install(&bundle, &install_root, Some(&host), &[], &[]);
+
+    assert!(
+        !output.status.success(),
+        "corrupt bundle install unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let attempt = read_last_attempt_json(&install_root);
+    assert_eq!(attempt["attempt_type"], "verification_failed", "{attempt}");
+    assert!(attempt["target_tag"].is_null(), "{attempt}");
+    assert_eq!(attempt["failure_stage"], "bundle_verification", "{attempt}");
+    assert!(attempt["repair_command"].is_null(), "{attempt}");
 }
 
 #[test]
@@ -989,10 +1021,19 @@ fn clear_install_env(command: &mut assert_cmd::Command) {
         "M80_INSTALL_INJECT_PROOF_CACHE_DIGEST_FAILURE",
         "M80_INSTALL_INJECT_PROOF_CACHE_MODE_FAILURE",
         "M80_INSTALL_INJECT_ACTIVE_FLIP_FAILURE",
+        "M80_INSTALL_INJECT_ATTEMPT_METADATA_FAILURE",
         "M80_RELEASE_ATTESTATION_GH",
     ] {
         command.env_remove(key);
     }
+}
+
+fn read_last_attempt_json(install_root: &Path) -> serde_json::Value {
+    serde_json::from_slice(
+        &fs::read(install_root.join("last-install-attempt.json"))
+            .expect("read last install attempt"),
+    )
+    .expect("last install attempt should parse")
 }
 
 fn seed_previous_active_install(install_root: &Path) -> PathBuf {

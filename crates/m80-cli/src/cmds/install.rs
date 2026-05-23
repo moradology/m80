@@ -6,6 +6,9 @@ use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
 
 use crate::args::{InstallArgs, InstallSmokeGateArg};
+use crate::install_state::{
+    write_last_install_attempt, InstallAttemptMetadata, InstallAttemptType,
+};
 use crate::release::{VersionIdentity, VersionStatus};
 use crate::release_asset_index;
 use crate::release_policy::{
@@ -34,6 +37,7 @@ fn cmd_install_with_identity(
     let plan = match install_plan(&args, identity) {
         Ok(plan) => plan,
         Err(err) => {
+            record_install_plan_error_attempt(&args, &err);
             let err = with_install_retry_context(err, &args);
             return Ok(render_install_error(
                 &err,
@@ -55,6 +59,7 @@ fn cmd_install_with_identity(
                     err
                 };
                 let err = InstallError::Fc(err);
+                record_install_error_attempt(&args, &err);
                 return Ok(render_install_error(
                     &err,
                     json_mode,
@@ -62,9 +67,123 @@ fn cmd_install_with_identity(
                 ));
             }
         };
+        record_install_success_attempt(&args, &summary.release_tag);
         render_layout_summary(&summary, json_mode);
     }
     Ok(0)
+}
+
+fn record_install_success_attempt(args: &InstallArgs, release_tag: &str) {
+    if args.dry_run {
+        return;
+    }
+    record_install_attempt(
+        args,
+        InstallAttemptMetadata::new(
+            InstallAttemptType::SuccessfulUpgrade,
+            Some(release_tag.to_owned()),
+            None,
+            Some("m80 run -- echo hello".to_owned()),
+        ),
+    );
+}
+
+fn record_install_error_attempt(args: &InstallArgs, err: &InstallError) {
+    if args.dry_run {
+        return;
+    }
+    let attempt = match err {
+        InstallError::ReleaseTransition(report)
+            if report.state == ReleaseTransitionState::DowngradeRefused =>
+        {
+            InstallAttemptMetadata::new(
+                InstallAttemptType::DowngradeRefused,
+                report
+                    .target_tag
+                    .as_deref()
+                    .or_else(|| install_release_tag_hint(args))
+                    .and_then(bounded_attempt_tag),
+                Some("release_transition"),
+                report
+                    .active_tag
+                    .as_deref()
+                    .filter(|tag| release_tag_is_url_safe(tag))
+                    .map(pinned_install_command),
+            )
+        }
+        InstallError::ReleaseTransition(report) => InstallAttemptMetadata::new(
+            InstallAttemptType::RollbackUnsupported,
+            report
+                .target_tag
+                .as_deref()
+                .or_else(|| install_release_tag_hint(args))
+                .and_then(bounded_attempt_tag),
+            Some("release_transition"),
+            report
+                .active_tag
+                .as_deref()
+                .filter(|tag| release_tag_is_url_safe(tag))
+                .map(pinned_install_command),
+        ),
+        InstallError::Fc(err) => InstallAttemptMetadata::new(
+            fc_attempt_type(err),
+            install_release_tag_hint(args).and_then(bounded_attempt_tag),
+            Some(fc_failure_stage(err)),
+            install_release_tag_hint(args)
+                .filter(|tag| release_tag_is_url_safe(tag))
+                .map(pinned_install_command),
+        ),
+        InstallError::AssetIndex(err) => InstallAttemptMetadata::new(
+            InstallAttemptType::VerificationFailed,
+            bounded_attempt_tag(&err.diagnostic().requested_release_tag),
+            Some("asset_index"),
+            err.diagnostic().repair_command.clone(),
+        ),
+    };
+    record_install_attempt(args, attempt);
+}
+
+fn record_install_plan_error_attempt(args: &InstallArgs, err: &InstallError) {
+    if matches!(err, InstallError::ReleaseTransition(_)) {
+        record_install_error_attempt(args, err);
+    }
+}
+
+fn bounded_attempt_tag(tag: &str) -> Option<String> {
+    release_tag_is_url_safe(tag).then(|| tag.to_owned())
+}
+
+fn record_install_attempt(args: &InstallArgs, attempt: InstallAttemptMetadata) {
+    if let Ok(install_root) = layout::normalize_install_root(&args.install_root) {
+        let _ = write_last_install_attempt(&install_root, &attempt);
+    }
+}
+
+fn fc_attempt_type(err: &FcError) -> InstallAttemptType {
+    match err {
+        FcError::UnsupportedOperation { operation, .. } if operation.contains("rollback") => {
+            InstallAttemptType::RollbackUnsupported
+        }
+        _ => InstallAttemptType::VerificationFailed,
+    }
+}
+
+fn fc_failure_stage(err: &FcError) -> &'static str {
+    match err {
+        FcError::Preflight(_) => "preflight",
+        FcError::Manifest(_) => "bundle_verification",
+        FcError::Config(ConfigError::InvalidValue { field, .. }) if field.starts_with("bundle") => {
+            "bundle_verification"
+        }
+        FcError::Config(ConfigError::InvalidValue { field, .. })
+            if field.starts_with("install") =>
+        {
+            "install_finalization"
+        }
+        FcError::PathIo { .. } | FcError::HostIo { .. } => "install_io",
+        FcError::UnsupportedOperation { .. } => "unsupported_operation",
+        _ => "install_verification",
+    }
 }
 
 fn with_install_retry_context(err: InstallError, args: &InstallArgs) -> InstallError {

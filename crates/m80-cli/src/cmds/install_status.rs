@@ -5,12 +5,12 @@ use serde::Serialize;
 
 use crate::args::InstallStatusArgs;
 use crate::install_state::{
-    resolve_install_state, ActivePointerReport, ActivePointerStatus, InstallConfigReport,
-    InstallMetadataReport, InstallProfileReport, InstallStateDiagnostic,
-    InstallStateDiagnosticCode, InstallStateKind, InstallStatePaths, InstallStateReport,
-    InstallStateRequest, MetadataFileReport, MetadataFileStatus, ProofCacheMaterialReport,
-    ProofCacheMetadataReport, ProofCacheReport, ProofCacheTrustPolicyReport,
-    ProofCacheVerifierVersionsReport,
+    resolve_install_state, ActivePointerReport, ActivePointerStatus, InstallAttemptReport,
+    InstallAttemptStatus, InstallAttemptType, InstallConfigReport, InstallMetadataReport,
+    InstallProfileReport, InstallStateDiagnostic, InstallStateDiagnosticCode, InstallStateKind,
+    InstallStatePaths, InstallStateReport, InstallStateRequest, MetadataFileReport,
+    MetadataFileStatus, ProofCacheMaterialReport, ProofCacheMetadataReport, ProofCacheReport,
+    ProofCacheTrustPolicyReport, ProofCacheVerifierVersionsReport,
 };
 use crate::json;
 use crate::profile::RuntimeProfileReport;
@@ -185,6 +185,7 @@ fn render_human(output: &InstallStatusOutput) -> String {
         push_unavailable_metadata_file(&mut text, "install_provenance");
         push_unavailable_metadata_file(&mut text, "proof_cache_manifest");
     }
+    push_last_attempt(&mut text, &output.last_attempt);
     push_proof_cache(&mut text, &output.proof_cache);
     push_line(&mut text, "diagnostic_count", output.diagnostics.len());
     for (index, diagnostic) in output.diagnostics.iter().enumerate() {
@@ -253,6 +254,35 @@ fn push_metadata_file(text: &mut String, prefix: &str, file: &MetadataFileOutput
 fn push_unavailable_metadata_file(text: &mut String, prefix: &str) {
     push_line(text, &format!("{prefix}_path"), "<unavailable>");
     push_line(text, &format!("{prefix}_status"), "unavailable");
+}
+
+fn push_last_attempt(text: &mut String, attempt: &InstallAttemptOutput) {
+    push_line(text, "last_attempt_path", attempt.path.display());
+    push_line(
+        text,
+        "last_attempt_status",
+        attempt_status_label(attempt.status),
+    );
+    push_optional(
+        text,
+        "last_attempt_type",
+        attempt.attempt_type.map(attempt_type_label),
+    );
+    push_optional(
+        text,
+        "last_attempt_target_tag",
+        attempt.target_tag.as_deref(),
+    );
+    push_optional(
+        text,
+        "last_attempt_failure_stage",
+        attempt.failure_stage.as_deref(),
+    );
+    push_optional(
+        text,
+        "last_attempt_repair_command",
+        attempt.repair_command.as_deref(),
+    );
 }
 
 fn push_proof_cache(text: &mut String, proof_cache: &ProofCacheStatusOutput) {
@@ -380,6 +410,7 @@ struct InstallStatusOutput {
     selected_config: ConfigStatusOutput,
     selected_profile: Option<ProfileStatusOutput>,
     metadata: Option<MetadataStatusOutput>,
+    last_attempt: InstallAttemptOutput,
     proof_cache: ProofCacheStatusOutput,
     diagnostics: Vec<DiagnosticOutput>,
     mismatches: Vec<InstallStatusMismatch>,
@@ -402,6 +433,7 @@ impl InstallStatusOutput {
                 .metadata
                 .as_ref()
                 .map(MetadataStatusOutput::from_report),
+            last_attempt: InstallAttemptOutput::from_report(&report.last_attempt),
             proof_cache: ProofCacheStatusOutput::from_install_report(report),
             diagnostics: report
                 .diagnostics
@@ -410,6 +442,30 @@ impl InstallStatusOutput {
                 .collect(),
             mismatches: install_status_mismatches(report),
             next_action: next_action(report),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct InstallAttemptOutput {
+    path: PathBuf,
+    status: InstallAttemptStatus,
+    attempt_type: Option<InstallAttemptType>,
+    target_tag: Option<String>,
+    failure_stage: Option<String>,
+    repair_command: Option<String>,
+}
+
+impl InstallAttemptOutput {
+    fn from_report(report: &InstallAttemptReport) -> Self {
+        let attempt = report.attempt.as_ref();
+        Self {
+            path: report.path.clone(),
+            status: report.status,
+            attempt_type: attempt.map(|attempt| attempt.attempt_type),
+            target_tag: attempt.and_then(|attempt| attempt.target_tag.clone()),
+            failure_stage: attempt.and_then(|attempt| attempt.failure_stage.clone()),
+            repair_command: attempt.and_then(|attempt| attempt.repair_command.clone()),
         }
     }
 }
@@ -1067,6 +1123,23 @@ fn metadata_status_label(status: MetadataFileStatus) -> &'static str {
         MetadataFileStatus::Missing => "missing",
         MetadataFileStatus::Invalid => "invalid",
         MetadataFileStatus::Stale => "stale",
+    }
+}
+
+fn attempt_status_label(status: InstallAttemptStatus) -> &'static str {
+    match status {
+        InstallAttemptStatus::Missing => "missing",
+        InstallAttemptStatus::Present => "present",
+        InstallAttemptStatus::Invalid => "invalid",
+    }
+}
+
+fn attempt_type_label(attempt_type: InstallAttemptType) -> &'static str {
+    match attempt_type {
+        InstallAttemptType::SuccessfulUpgrade => "successful_upgrade",
+        InstallAttemptType::VerificationFailed => "verification_failed",
+        InstallAttemptType::DowngradeRefused => "downgrade_refused",
+        InstallAttemptType::RollbackUnsupported => "rollback_unsupported",
     }
 }
 

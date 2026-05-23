@@ -536,6 +536,85 @@ fn release_transition_json_payload_carries_downgrade_tags() {
 }
 
 #[test]
+fn refused_downgrade_records_last_attempt_metadata() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+    let identity = VersionIdentity::from_parts(
+        "1.2.2",
+        Some("v1.2.2"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let mut args = args_with_release_tag("v1.2.2");
+    args.install_root = install_root.clone();
+    args.dry_run = false;
+
+    let exit_code = cmd_install_with_identity(args, false, &identity).unwrap();
+
+    assert_eq!(exit_code, crate::errors::EXIT_CONFIG);
+    let attempt = read_last_attempt_json(&install_root);
+    assert_eq!(attempt["attempt_type"], "downgrade_refused");
+    assert_eq!(attempt["target_tag"], "v1.2.2");
+    assert_eq!(attempt["failure_stage"], "release_transition");
+    assert_eq!(
+        attempt["repair_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh"
+    );
+}
+
+#[test]
+fn attempt_metadata_write_failure_does_not_mask_primary_install_failure() {
+    let _env_lock = crate::test_support::PROCESS_ENV_LOCK.lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "M80_INSTALL_INJECT_ATTEMPT_METADATA_FAILURE",
+    ]);
+    std::env::set_var("M80_INSTALL_INJECT_ATTEMPT_METADATA_FAILURE", "1");
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+    let identity = VersionIdentity::from_parts(
+        "1.2.2",
+        Some("v1.2.2"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let mut args = args_with_release_tag("v1.2.2");
+    args.install_root = install_root.clone();
+    args.dry_run = false;
+
+    let exit_code = cmd_install_with_identity(args, false, &identity).unwrap();
+
+    assert_eq!(exit_code, crate::errors::EXIT_CONFIG);
+    assert!(
+        !install_root.join("last-install-attempt.json").exists(),
+        "injected attempt metadata failure should not be hidden by a partial file"
+    );
+}
+
+#[test]
+fn unsupported_rollback_error_records_last_attempt_metadata() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    let mut args = args_with_release_tag("v1.2.3");
+    args.install_root = install_root.clone();
+    args.dry_run = false;
+    let err = InstallError::Fc(FcError::UnsupportedOperation {
+        operation: "install rollback",
+        reason: "rollback is manual active-pointer selection in this tranche".to_owned(),
+    });
+
+    record_install_error_attempt(&args, &err);
+
+    let attempt = read_last_attempt_json(&install_root);
+    assert_eq!(attempt["attempt_type"], "rollback_unsupported");
+    assert_eq!(attempt["target_tag"], "v1.2.3");
+    assert_eq!(attempt["failure_stage"], "unsupported_operation");
+    assert_eq!(
+        attempt["repair_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh"
+    );
+}
+
+#[test]
 fn same_version_reinstall_is_not_downgrade_refused() {
     let temp = tempfile::tempdir().expect("create tempdir");
     let install_root = temp.path().join("install-root");
@@ -860,6 +939,14 @@ fn release_transition_json_payload(err: &InstallError) -> serde_json::Value {
             panic!("expected release-transition error, got asset index {err}")
         }
     }
+}
+
+fn read_last_attempt_json(install_root: &Path) -> serde_json::Value {
+    serde_json::from_slice(
+        &fs::read(install_root.join("last-install-attempt.json"))
+            .expect("read last install attempt"),
+    )
+    .expect("last install attempt should parse")
 }
 
 fn seed_active_release(install_root: &Path, tag: &str) {

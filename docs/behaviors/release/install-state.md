@@ -5,7 +5,7 @@ Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
 `m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`,
 `m80-o3uh9.16.7.6`, `m80-o3uh9.16.8.4`,
-`m80-o3uh9.16.11`.
+`m80-o3uh9.16.11`, `m80-o3uh9.16.12.6`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -98,13 +98,16 @@ Human output is line-oriented and includes:
   `proof_cache_material_<n>_*` group per saved public proof artifact. Missing
   active installs and local development profiles report explicit non-cache
   statuses rather than omitting the field.
+- `last_attempt_status`, `last_attempt_type`, `last_attempt_target_tag`,
+  `last_attempt_failure_stage`, and `last_attempt_repair_command` from
+  `<install-root>/last-install-attempt.json`.
 - `next_action`, plus `next_action_command` when the state has an executable
   repair or smoke command.
 
 `m80 --json install-status` wraps the same contract in the CLI JSON envelope
 with `schema_version: 1`. The stable top-level payload fields are `status`,
 `install_root`, `active`, `selected_config`, `selected_profile`, `metadata`,
-`proof_cache`, `diagnostics`, and `next_action`. `status` uses the resolver
+`last_attempt`, `proof_cache`, `diagnostics`, and `next_action`. `status` uses the resolver
 state enum; `active.status` uses `live`, `missing`, `dangling`, or `invalid`;
 metadata file statuses use `present`, `missing`, `invalid`, or `stale` when
 metadata is available; proof-cache status uses `available`,
@@ -131,6 +134,11 @@ JSON field table:
 | `metadata.host_binaries_manifest.path/status/sha256` | Host-binaries manifest path, status, and digest. | Evidence for final host-side TCB paths after install. |
 | `metadata.install_provenance.path/status/sha256` | Install provenance path, status, and digest. | Evidence for relocation/installer provenance. |
 | `metadata.proof_cache_manifest.path/status/sha256` | Proof-cache manifest path, status, and digest. | Evidence that public verification material was preserved. |
+| `last_attempt.status` | Whether bounded diagnostic attempt metadata is missing, present, or invalid. | Shows whether the installer left local explanation state after its last command. |
+| `last_attempt.attempt_type` | `successful_upgrade`, `verification_failed`, `downgrade_refused`, or `rollback_unsupported`. | Explains the last install-policy outcome without reading logs. |
+| `last_attempt.target_tag` | Release tag selected by the attempted install when known. | Names the requested release without preserving source URLs or temp paths. |
+| `last_attempt.failure_stage` | Bounded stage label such as `bundle_verification`, `release_transition`, or `unsupported_operation`. | Points support at the failed phase without leaking staging paths or secrets. |
+| `last_attempt.repair_command` | Copyable next command when the outcome has one. | Lets status repeat the command after the original install output is gone. |
 | `proof_cache.status` | Local cached-proof state. | Distinguishes available proof material from missing active installs, local dev profiles, missing manifests, invalid manifests, and stale material. |
 | `proof_cache.cache_dir` and `proof_cache.manifest_path` | Versioned proof-cache directory and manifest path. | Shows the exact installed tree used for offline evidence. |
 | `proof_cache.manifest_sha256` and `proof_cache.manifest_digest` | Full manifest file digest and canonical payload digest. | Confirms both the saved JSON file and payload contract. |
@@ -313,6 +321,35 @@ local cache problem and includes the proof-cache diagnostic plus a pinned
 release reinstall command when the affected release tag is URL-safe. This does
 not decide whether the release is current; it only blocks reuse of local saved
 trust material until repair or reinstall.
+
+## Last Attempt Metadata
+
+The installer writes `<install-root>/last-install-attempt.json` as bounded
+diagnostic state after successful upgrades, failed verification, refused
+downgrades, and unsupported rollback requests. This file is intentionally
+outside the versioned bundle, generated host-binaries manifest, install
+provenance, and proof cache. Trust decisions never read it; it only lets
+`m80 install-status` explain the last command after stdout/stderr have been
+lost.
+
+The schema is small by design:
+
+```json
+{
+  "schema_version": 1,
+  "attempt_type": "downgrade_refused",
+  "target_tag": "v1.2.2",
+  "failure_stage": "release_transition",
+  "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh"
+}
+```
+
+The writer records only finite attempt types, release tags, finite failure
+stage labels, and repair commands. It does not persist raw bundle URLs,
+temporary extraction paths, request IDs, environment variables, or verifier
+stderr. If writing this metadata fails, the installer still returns the primary
+install failure or success; attempt metadata write errors are diagnostic loss,
+not install-state authority.
 
 ## Repair And Rollback Diagnostics
 

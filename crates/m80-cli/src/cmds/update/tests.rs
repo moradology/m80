@@ -5,7 +5,8 @@ use m80_firecracker::{ConfigError, ConfigFilePaths, ConfigSource, FcError};
 use super::latest_status::parse_latest_status;
 use super::*;
 use crate::install_state::{
-    ActivePointerReport, ActivePointerStatus, InstallConfigReport, InstallMetadataReport,
+    ActivePointerReport, ActivePointerStatus, InstallAttemptMetadata, InstallAttemptReport,
+    InstallAttemptStatus, InstallAttemptType, InstallConfigReport, InstallMetadataReport,
     InstallProfileReport, MetadataFileReport, MetadataFileStatus, ProofCacheMaterialReport,
     ProofCacheReport, ProofCacheTrustPolicyReport, ProofCacheVerifierVersionsReport,
 };
@@ -561,6 +562,16 @@ fn active_report(tag: &str) -> InstallStateReport {
             host_binaries: None,
             proof_cache: Some(proof_cache_report(&artifacts_dir, tag)),
         }),
+        last_attempt: InstallAttemptReport {
+            path: PathBuf::from("/opt/m80/last-install-attempt.json"),
+            status: InstallAttemptStatus::Present,
+            attempt: Some(InstallAttemptMetadata::new(
+                InstallAttemptType::SuccessfulUpgrade,
+                Some(tag.to_owned()),
+                None,
+                Some("m80 run -- echo hello".to_owned()),
+            )),
+        },
         diagnostics: Vec::new(),
     }
 }
