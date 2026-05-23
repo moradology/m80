@@ -1,0 +1,552 @@
+{
+  "epoch_id": "m80-o3uh9",
+  "generated_at": "2026-05-23T22:00:58Z",
+  "kind": "release_final_close_matrix",
+  "rows": [
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.10",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.2.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.2.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.11",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.12",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.13",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.14",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.15",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.6",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.7",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.8",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.20.9",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "id": "m80-o3uh9.3",
+      "proof_artifact": "docs/behaviors/install/install-transaction-proof.json",
+      "requires_real_substrate": false,
+      "requires_verified_close": true,
+      "status": "closed"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.10",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.11",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.12",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.6",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.7",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.8",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.3.9",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.4.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.4.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.5.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.5.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.5.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.5.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.7",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": true,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.6",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.3.7",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": true,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.6",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.7",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.8.8",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": true,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.5",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.5.1",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.5.2",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.5.3",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.5.4",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    },
+    {
+      "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+      "id": "m80-o3uh9.9.6",
+      "requires_real_substrate": false,
+      "requires_verified_close": false,
+      "status": "closed",
+      "test_command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json"
+    }
+  ],
+  "schema_version": 1,
+  "tracker_digest": "sha256:2f8b694d220db77844f343f524da9ca9de60fa458e13a41c4bfb2f1e60246bac"
+}
