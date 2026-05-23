@@ -2280,7 +2280,7 @@ class ReleaseBundleTest(unittest.TestCase):
             bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
-            self.assertEqual(bundle["schema_version"], 4)
+            self.assertEqual(bundle["schema_version"], 5)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
             self.assertEqual(bundle["release_tag"], "v0.2.11")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
@@ -2363,6 +2363,25 @@ class ReleaseBundleTest(unittest.TestCase):
                     }
                 ],
             )
+            self.assertEqual(
+                bundle["substrate_policy"],
+                [
+                    {
+                        "config": "docs/behaviors/release/release-readiness-lanes.json",
+                        "lane_id": "hostless-quickstart",
+                        "may_satisfy_latest": False,
+                        "may_satisfy_publish": True,
+                        "observed_proof_kind": "hostless",
+                        "observed_substrate": "hostless",
+                        "proof": hostless_proof_ref,
+                        "proof_fixture": True,
+                        "proof_kind": "quickstart-proof",
+                        "publish_blocking": True,
+                        "required_substrate_class": "fixture",
+                        "required_substrates": ["hostless"],
+                    }
+                ],
+            )
             self.assertNotIn("/tmp/m80-hostless-install-root", json.dumps(bundle))
             self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
 
@@ -2410,6 +2429,13 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(real_kvm["jailer_version"], "v1.15.1")
             self.assertEqual(real_kvm["install_root_classification"], "default-install-root")
             self.assertEqual(real_kvm["manifest"]["name"], REAL_KVM_QUICKSTART_HOST_BINARIES_NAME)
+            policy = {row["lane_id"]: row for row in bundle["substrate_policy"]}
+            self.assertEqual(policy["real-kvm-quickstart"]["observed_substrate"], "real-kvm")
+            self.assertEqual(policy["real-kvm-quickstart"]["required_substrates"], ["real-kvm"])
+            self.assertEqual(policy["real-kvm-quickstart"]["required_substrate_class"], "real-kvm")
+            self.assertFalse(policy["real-kvm-quickstart"]["proof_fixture"])
+            self.assertTrue(policy["real-kvm-quickstart"]["may_satisfy_publish"])
+            self.assertTrue(policy["real-kvm-quickstart"]["may_satisfy_latest"])
             self.assertNotIn("/opt/m80", json.dumps(bundle))
 
     def test_release_evidence_bundle_rejects_uninventoried_real_kvm_proof(self) -> None:
@@ -2432,6 +2458,66 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("real-kvm proof must be listed as a workflow-only artifact", result.stderr)
+
+    def test_release_evidence_bundle_rejects_hostless_file_as_real_kvm_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--write",
+                "--real-kvm-proof",
+                str(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("real-kvm-quickstart substrate mismatch", result.stderr)
+            self.assertIn("required real-kvm", result.stderr)
+            self.assertIn("got hostless", result.stderr)
+            self.assertIn(f"proof={HOSTLESS_QUICKSTART_PROOF_NAME}", result.stderr)
+            self.assertIn("config=docs/behaviors/release/release-readiness-lanes.json", result.stderr)
+
+    def test_release_evidence_bundle_rejects_real_kvm_file_as_hostless_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            real_kvm_proof = write_real_kvm_quickstart_proof_placeholder(out_dir)
+            add_workflow_inventory_artifact(
+                out_dir,
+                REAL_KVM_QUICKSTART_HOST_BINARIES_NAME,
+                "real-KVM host-binaries manifest",
+            )
+
+            result = run_release_evidence_bundle(
+                out_dir,
+                "--write",
+                "--hostless-proof",
+                str(real_kvm_proof),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("hostless-quickstart substrate mismatch", result.stderr)
+            self.assertIn("required hostless, got real-kvm", result.stderr)
+            self.assertIn(f"proof={REAL_KVM_QUICKSTART_PROOF_NAME}", result.stderr)
+            self.assertIn("config=docs/behaviors/release/release-readiness-lanes.json", result.stderr)
+
+    def test_release_evidence_bundle_rejects_freshness_proof_as_publish_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof = json.loads(proof_path.read_text())
+            proof["proof_kind"] = "freshness-proof"
+            proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+            refresh_workflow_inventory_artifact(out_dir, HOSTLESS_QUICKSTART_PROOF_NAME)
+
+            result = run_release_evidence_bundle(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("hostless-quickstart proof_kind mismatch", result.stderr)
+            self.assertIn("expected hostless, got freshness-proof", result.stderr)
+            self.assertIn(f"proof={HOSTLESS_QUICKSTART_PROOF_NAME}", result.stderr)
+            self.assertIn("config=docs/behaviors/release/release-readiness-lanes.json", result.stderr)
 
     def test_release_evidence_bundle_rejects_proof_row_ledger_swap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

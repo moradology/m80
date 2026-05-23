@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_substrate_policy_proof",
+  "bead_id": "m80-o3uh9.13.39.2.3",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic release evidence-bundle fixtures and policy gates validated substrate-policy collection without requiring KVM."
+  },
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.3 && br dep cycles --json && git diff --check",
+  "exit_status": 0,
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 268 tests in 60.687s OK; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.965s OK; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.970s OK; verify-release-tracker-policy ok; br lint ok; br dep cycles count=0; git diff --check ok",
+  "stderr": "",
+  "commands": [
+    {
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "stdout": "Ran 268 tests in 60.687s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.965s\\n\\nOK",
+      "stderr": ""
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.2.3 && br dep cycles --json && git diff --check",
+      "exit_status": 0,
+      "stdout": "Ran 46 tests in 2.970s\\n\\nOK\\nrelease tracker policy ok: docs/behaviors/release/release-tracker-policy.json\\nNo template warnings found (1 issues checked)\\ncycles: []\\ncount: 0",
+      "stderr": ""
+    }
+  ],
+  "observables": [
+    "release evidence bundle schema_version is 5",
+    "substrate_policy records lane_id, proof_kind, observed proof kind, observed substrate, required substrates, required substrate class, fixture status, publish satisfaction, latest satisfaction, proof ref, and config path",
+    "hostless fixture proof may satisfy its configured publish lane but may_satisfy_latest is false",
+    "clean real-KVM evidence records required_substrate_class real-kvm, proof_fixture false, may_satisfy_publish true, and may_satisfy_latest true",
+    "hostless proof supplied as real-kvm input fails closed with lane id, required substrate, observed substrate, proof file, and config path",
+    "real-KVM proof supplied as hostless input fails closed with lane id, required substrate, observed substrate, proof file, and config path",
+    "freshness proof supplied as release publish proof fails closed before evidence is accepted",
+    "behavior docs identify substrate_policy as normalized readiness input, not informational log text"
+  ]
+}

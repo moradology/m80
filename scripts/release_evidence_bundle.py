@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 KIND = "m80_release_evidence_bundle"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
@@ -43,6 +43,7 @@ TOP_LEVEL_FIELDS = {
     "proofs",
     "host_binaries",
     "release_identity",
+    "substrate_policy",
     "redaction",
 }
 FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
@@ -72,6 +73,20 @@ RELEASE_IDENTITY_FIELDS = {
     "guest_protocol_version",
     "bundle_metadata",
 }
+SUBSTRATE_POLICY_FIELDS = {
+    "lane_id",
+    "proof_kind",
+    "observed_proof_kind",
+    "observed_substrate",
+    "required_substrates",
+    "required_substrate_class",
+    "proof_fixture",
+    "publish_blocking",
+    "may_satisfy_publish",
+    "may_satisfy_latest",
+    "proof",
+    "config",
+}
 REDACTION_FIELDS = {"policy", "forbidden"}
 REDACTION_FORBIDDEN = ["absolute-host-paths", "secrets", "tokens", "environment-dumps"]
 
@@ -83,6 +98,18 @@ LANE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 VERSION_TAG_RE = re.compile(r"^v[A-Za-z0-9][A-Za-z0-9._+-]*$")
 PROOF_SUBSTRATES_BY_LANE = {
     "hostless-quickstart": "hostless",
+    "real-kvm-quickstart": "real-kvm",
+    "public-access-latest": "public-github",
+    "latest-freshness": "public-github",
+    "workflow-policy": "github-actions",
+    "release-bundle-integrity": "github-actions",
+}
+PROOF_PAYLOAD_KINDS_BY_LANE = {
+    "hostless-quickstart": "hostless",
+    "real-kvm-quickstart": "real-kvm",
+}
+REQUIRED_SUBSTRATE_CLASS_BY_LANE = {
+    "hostless-quickstart": "fixture",
     "real-kvm-quickstart": "real-kvm",
     "public-access-latest": "public-github",
     "latest-freshness": "public-github",
@@ -165,6 +192,7 @@ def main() -> int:
         build_handoff=build_handoff,
         publish_receipt=publish_receipt,
         proof_ledger=proof_ledger,
+        readiness_config=args.readiness_config,
         hostless_proof=hostless_proof,
         real_kvm_proof=real_kvm_proof,
     )
@@ -190,7 +218,10 @@ def build_bundle(
     real_kvm_proof: Path | None,
 ) -> dict[str, Any]:
     manifest = read_json(upload_manifest, "release upload manifest")
-    required_lane_ids = required_lanes(read_json(readiness_config, "release readiness config"))
+    readiness = read_json(readiness_config, "release readiness config")
+    lane_policy_by_id = readiness_lanes_by_id(readiness)
+    latest_lane_ids = latest_stage_lane_ids(readiness)
+    required_lane_ids = required_lanes(readiness)
     proof_inputs = {"hostless-quickstart": hostless_proof}
     if real_kvm_proof is not None:
         proof_inputs["real-kvm-quickstart"] = real_kvm_proof
@@ -233,6 +264,8 @@ def build_bundle(
             dist_dir=dist_dir,
             proof_inputs=proof_inputs,
             workflow_by_name=workflow_by_name,
+            lane_policy_by_id=lane_policy_by_id,
+            config_path=readiness_config,
         ),
         "release_identity": release_identity_summaries(
             dist_dir=dist_dir,
@@ -240,6 +273,13 @@ def build_bundle(
             release_tag=release_tag,
             resolved_install_tag=resolved_install_tag,
             m80_version=m80_version,
+        ),
+        "substrate_policy": substrate_policy_summaries(
+            dist_dir=dist_dir,
+            proof_inputs=proof_inputs,
+            lane_policy_by_id=lane_policy_by_id,
+            latest_lane_ids=latest_lane_ids,
+            config_path=readiness_config,
         ),
         "redaction": {
             "policy": "Evidence names flat release files and sha256 digests only; host paths, secrets, tokens, and environment dumps are forbidden.",
@@ -261,6 +301,7 @@ def verify_bundle(
     build_handoff: Path,
     publish_receipt: Path,
     proof_ledger: Path,
+    readiness_config: Path,
     hostless_proof: Path,
     real_kvm_proof: Path | None,
 ) -> None:
@@ -302,6 +343,9 @@ def verify_bundle(
     expected_workflow = workflow_only_artifacts(manifest, dist_dir)
     require(observed_workflow == expected_workflow, "release evidence bundle workflow_only_artifacts mismatch")
     workflow_by_name = {row["name"]: row for row in expected_workflow}
+    readiness = read_json(readiness_config, "release readiness config")
+    lane_policy_by_id = readiness_lanes_by_id(readiness)
+    latest_lane_ids = latest_stage_lane_ids(readiness)
 
     required_lane_ids = require_lane_ids(bundle["required_lane_ids"], "release evidence bundle required_lane_ids")
     require(set(required_lane_ids), "release evidence bundle required_lane_ids must be nonempty")
@@ -326,6 +370,8 @@ def verify_bundle(
         dist_dir=dist_dir,
         proof_inputs=proof_inputs,
         workflow_by_name=workflow_by_name,
+        lane_policy_by_id=lane_policy_by_id,
+        config_path=readiness_config,
     )
     observed_host_binaries = normalized_host_binaries(bundle["host_binaries"])
     require(
@@ -343,6 +389,18 @@ def verify_bundle(
     require(
         observed_release_identity == expected_release_identity,
         "release evidence bundle release_identity mismatch",
+    )
+    expected_substrate_policy = substrate_policy_summaries(
+        dist_dir=dist_dir,
+        proof_inputs=proof_inputs,
+        lane_policy_by_id=lane_policy_by_id,
+        latest_lane_ids=latest_lane_ids,
+        config_path=readiness_config,
+    )
+    observed_substrate_policy = normalized_substrate_policy(bundle["substrate_policy"])
+    require(
+        observed_substrate_policy == expected_substrate_policy,
+        "release evidence bundle substrate_policy mismatch",
     )
     required = set(required_lane_ids)
     missing = set(missing_lane_ids)
@@ -483,12 +541,21 @@ def host_binaries_summaries(
     dist_dir: Path,
     proof_inputs: dict[str, Path],
     workflow_by_name: dict[str, dict[str, Any]],
+    lane_policy_by_id: dict[str, dict[str, Any]],
+    config_path: Path,
 ) -> list[dict[str, Any]]:
     rows = []
     for lane_id, proof_path in sorted(proof_inputs.items()):
         proof = read_json(proof_path, f"{lane_id} quickstart proof")
+        validate_quickstart_proof_policy(
+            lane_id=lane_id,
+            proof=proof,
+            proof_path=proof_path,
+            lane_policy_by_id=lane_policy_by_id,
+            config_path=config_path,
+        )
         require(
-            proof.get("proof_kind") == PROOF_SUBSTRATES_BY_LANE[lane_id],
+            proof.get("proof_kind") == PROOF_PAYLOAD_KINDS_BY_LANE[lane_id],
             f"{lane_id} quickstart proof proof_kind mismatch",
         )
         host_binaries = require_object(proof.get("host_binaries"), f"{lane_id} quickstart proof host_binaries")
@@ -782,6 +849,179 @@ def normalized_release_identity(value: object) -> list[dict[str, Any]]:
     return sorted(result, key=lambda row: row["lane_id"])
 
 
+def substrate_policy_summaries(
+    *,
+    dist_dir: Path,
+    proof_inputs: dict[str, Path],
+    lane_policy_by_id: dict[str, dict[str, Any]],
+    latest_lane_ids: set[str],
+    config_path: Path,
+) -> list[dict[str, Any]]:
+    rows = []
+    for lane_id, proof_path in sorted(proof_inputs.items()):
+        proof = read_json(proof_path, f"{lane_id} quickstart proof")
+        lane = validate_quickstart_proof_policy(
+            lane_id=lane_id,
+            proof=proof,
+            proof_path=proof_path,
+            lane_policy_by_id=lane_policy_by_id,
+            config_path=config_path,
+        )
+        observed_substrate = require_proof_substrate_kind(
+            proof,
+            f"{lane_id} quickstart proof substrate",
+        )
+        observed_proof_kind = require_nonempty_string(
+            proof.get("proof_kind"),
+            f"{lane_id} quickstart proof proof_kind",
+        )
+        allowed_substrates = sorted(require_string_list(lane["allowed_substrates"], f"{lane_id} allowed_substrates"))
+        proof_fixture = observed_substrate in {"hostless", "local-fixture"} or bool(
+            require_object(proof.get("substrate"), f"{lane_id} quickstart proof substrate").get("fixture") is True
+        )
+        publish_blocking = lane["publish_blocking"] is True
+        may_satisfy_publish = publish_blocking and observed_substrate in allowed_substrates
+        may_satisfy_latest = lane_id in latest_lane_ids and may_satisfy_publish and not proof_fixture
+        rows.append(
+            {
+                "lane_id": lane_id,
+                "proof_kind": lane["proof_kind"],
+                "observed_proof_kind": observed_proof_kind,
+                "observed_substrate": observed_substrate,
+                "required_substrates": allowed_substrates,
+                "required_substrate_class": REQUIRED_SUBSTRATE_CLASS_BY_LANE.get(lane_id, "configured"),
+                "proof_fixture": proof_fixture,
+                "publish_blocking": publish_blocking,
+                "may_satisfy_publish": may_satisfy_publish,
+                "may_satisfy_latest": may_satisfy_latest,
+                "proof": file_ref(dist_dir, proof_path, f"{lane_id} proof"),
+                "config": config_path.as_posix(),
+            }
+        )
+    return rows
+
+
+def normalized_substrate_policy(value: object) -> list[dict[str, Any]]:
+    rows = require_list(value, "release evidence bundle substrate_policy")
+    result = []
+    for row in rows:
+        require(isinstance(row, dict), "release evidence bundle substrate_policy row must be an object")
+        require_exact_fields(row, SUBSTRATE_POLICY_FIELDS, "release evidence bundle substrate_policy row")
+        lane_id = require_lane_id(row["lane_id"], "release evidence bundle substrate_policy lane_id")
+        result.append(
+            {
+                "lane_id": lane_id,
+                "proof_kind": require_nonempty_string(
+                    row["proof_kind"],
+                    f"release evidence bundle substrate_policy {lane_id} proof_kind",
+                ),
+                "observed_proof_kind": require_nonempty_string(
+                    row["observed_proof_kind"],
+                    f"release evidence bundle substrate_policy {lane_id} observed_proof_kind",
+                ),
+                "observed_substrate": require_nonempty_string(
+                    row["observed_substrate"],
+                    f"release evidence bundle substrate_policy {lane_id} observed_substrate",
+                ),
+                "required_substrates": require_string_list(
+                    row["required_substrates"],
+                    f"release evidence bundle substrate_policy {lane_id} required_substrates",
+                ),
+                "required_substrate_class": require_nonempty_string(
+                    row["required_substrate_class"],
+                    f"release evidence bundle substrate_policy {lane_id} required_substrate_class",
+                ),
+                "proof_fixture": require_bool(
+                    row["proof_fixture"],
+                    f"release evidence bundle substrate_policy {lane_id} proof_fixture",
+                ),
+                "publish_blocking": require_bool(
+                    row["publish_blocking"],
+                    f"release evidence bundle substrate_policy {lane_id} publish_blocking",
+                ),
+                "may_satisfy_publish": require_bool(
+                    row["may_satisfy_publish"],
+                    f"release evidence bundle substrate_policy {lane_id} may_satisfy_publish",
+                ),
+                "may_satisfy_latest": require_bool(
+                    row["may_satisfy_latest"],
+                    f"release evidence bundle substrate_policy {lane_id} may_satisfy_latest",
+                ),
+                "proof": normalized_file_ref(
+                    row["proof"],
+                    f"release evidence bundle substrate_policy {lane_id} proof",
+                ),
+                "config": require_nonempty_string(
+                    row["config"],
+                    f"release evidence bundle substrate_policy {lane_id} config",
+                ),
+            }
+        )
+    lane_ids = [row["lane_id"] for row in result]
+    require(len(lane_ids) == len(set(lane_ids)), "release evidence bundle substrate_policy duplicate lane_id")
+    return sorted(result, key=lambda row: row["lane_id"])
+
+
+def validate_quickstart_proof_policy(
+    *,
+    lane_id: str,
+    proof: dict[str, Any],
+    proof_path: Path,
+    lane_policy_by_id: dict[str, dict[str, Any]],
+    config_path: Path,
+) -> dict[str, Any]:
+    lane = lane_policy_by_id.get(lane_id)
+    require(
+        lane is not None,
+        f"{lane_id} substrate policy missing lane in {config_path.as_posix()}",
+    )
+    observed_substrate = require_proof_substrate_kind(
+        proof,
+        f"{lane_id} quickstart proof substrate",
+    )
+    allowed_substrates = set(require_string_list(lane["allowed_substrates"], f"{lane_id} allowed_substrates"))
+    require(
+        observed_substrate in allowed_substrates,
+        f"{lane_id} substrate mismatch: required {comma_or_none(sorted(allowed_substrates))}, got {observed_substrate}; proof={proof_path.name}; config={config_path.as_posix()}",
+    )
+    expected_proof_kind = PROOF_PAYLOAD_KINDS_BY_LANE[lane_id]
+    observed_proof_kind = require_nonempty_string(
+        proof.get("proof_kind"),
+        f"{lane_id} quickstart proof proof_kind",
+    )
+    require(
+        observed_proof_kind == expected_proof_kind,
+        f"{lane_id} proof_kind mismatch: expected {expected_proof_kind}, got {observed_proof_kind}; proof={proof_path.name}; config={config_path.as_posix()}",
+    )
+    return lane
+
+
+def readiness_lanes_by_id(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    lanes = require_list(config.get("lanes"), "release readiness config lanes")
+    result: dict[str, dict[str, Any]] = {}
+    for lane in lanes:
+        require(isinstance(lane, dict), "release readiness config lane must be an object")
+        lane_id = require_lane_id(lane.get("id"), "release readiness config lane id")
+        require(lane_id not in result, f"release readiness config duplicate lane id: {lane_id}")
+        result[lane_id] = lane
+    return result
+
+
+def latest_stage_lane_ids(config: dict[str, Any]) -> set[str]:
+    result: set[str] = set()
+    for stage in require_list(config.get("readiness_stages"), "release readiness config readiness_stages"):
+        require(isinstance(stage, dict), "release readiness config stage must be an object")
+        if stage.get("id") in {"pre-latest", "post-latest-public"}:
+            result.update(require_lane_ids(stage.get("required_lane_ids"), "release readiness config stage required_lane_ids"))
+    return result
+
+
+def require_proof_substrate_kind(proof: dict[str, Any], label: str) -> str:
+    substrate = require_object(proof.get("substrate"), label)
+    require_exact_fields(substrate, {"kind", "summary"}, label)
+    return require_nonempty_string(substrate["kind"], f"{label} kind")
+
+
 def install_root_classification(proof: dict[str, Any]) -> str:
     substrate = proof.get("proof_kind")
     if substrate == "hostless":
@@ -914,6 +1154,11 @@ def require_string_list(value: object, label: str) -> list[str]:
         result.append(require_nonempty_string(row, f"{label} item"))
     require(len(result) == len(set(result)), f"{label} duplicate item")
     return result
+
+
+def require_bool(value: object, label: str) -> bool:
+    require(isinstance(value, bool), f"{label} must be a boolean")
+    return value
 
 
 def require_list(value: object, label: str) -> list[object]:

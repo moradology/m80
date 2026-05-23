@@ -13,15 +13,19 @@ ledger and each lane proof JSON as distinct file refs: the top-level
 quickstart proof row points at `m80-quickstart-proof-hostless.json`. Top-level
 file refs use flat release file names plus `sha256:<digest>` and `size_bytes`;
 public and workflow-only artifact rows use raw lowercase sha256 digests to
-mirror the upload manifest. Schema version 4 records `host_binaries` and
-`release_identity` summary rows for quickstart proof lanes. These rows are
+mirror the upload manifest. Schema version 5 records `host_binaries`,
+`release_identity`, and `substrate_policy` summary rows for quickstart proof lanes. These rows are
 normalized evidence inputs, not log scrapes: host-binaries rows are built from
 the quickstart proof's relative `host_binaries.manifest_path`, the upload
 manifest's digest inventory for that manifest, the proof/manifest Firecracker
 and jailer versions, and an install-root classification. Release-identity rows
 are built from the proof's requested/resolved tag, m80 version/release tag, and
 the bundle metadata file's release tag, m80 version, manifest schema version,
-and guest protocol version. None of these fields carry host-local paths.
+and guest protocol version. Substrate-policy rows are built from the proof
+payload and `docs/behaviors/release/release-readiness-lanes.json`; they name
+the lane, logical proof kind, observed proof/substrate kind, required substrate
+class, fixture status, and whether that proof can satisfy publish or latest
+promotion for its own lane. None of these fields carry host-local paths.
 
 The schema keeps three artifact classes distinct:
 
@@ -48,6 +52,11 @@ The schema keeps three artifact classes distinct:
   release tag, bundle release tag, bundle m80 version, manifest schema version,
   guest protocol version, and digest-bound bundle metadata file ref. These are
   release identity inputs, not informational log text.
+- `substrate_policy`: lane-specific substrate summaries from the readiness
+  config and proof payload. Hostless fixture proof may satisfy the configured
+  hostless publish lane but may not satisfy latest promotion or the
+  `real-kvm-quickstart` lane. The real-KVM lane must carry an observed
+  `real-kvm` substrate from a real-KVM proof file.
 
 Hostless proof never satisfies real-KVM proof. A hostless quickstart fixture is
 recorded with `lane_id=hostless-quickstart`, `substrate=hostless`, and
@@ -61,7 +70,7 @@ The redaction rule is part of the schema contract: evidence bundles may contain
 flat release file names, sizes, digests, release tags, commit SHA, workflow run
 ids, m80 version, lane ids, proof kinds, and substrate names. They must not
 contain host absolute paths, secrets, tokens, or environment dumps. Follow-up
-redaction leaves may add stronger scanners, but schema version 4 names these
+redaction leaves may add stronger scanners, but schema version 5 names these
 forbidden categories and validates that generated bundle strings do not leak
 common absolute host path prefixes.
 
@@ -80,3 +89,9 @@ resolved install tag is not concrete, the m80 version/release tag disagrees with
 the evidence command inputs, the proof bundle tag/version disagrees, or the
 bundle metadata's release tag, m80 version, manifest schema version, or guest
 protocol version no longer matches the proof fields.
+Substrate-policy collection fails closed when a hostless proof is supplied for
+the real-KVM lane, a real-KVM proof is supplied for the hostless lane, a
+freshness proof is substituted for a release publish proof, or the observed
+proof substrate is not allowed by the readiness config. Diagnostics name the
+lane id, required substrate, observed substrate or proof kind, proof file, and
+config path.
