@@ -112,6 +112,11 @@ PUBLIC_PROOF_EXCLUSION_RE = re.compile(
     r"(public[- ]release|public release|public asset|public download)",
     re.IGNORECASE,
 )
+PUBLIC_PROOF_CONTRACT_ONLY_RE = re.compile(
+    r"public[- ]access receipt refs?[^.\n]*when present|"
+    r"receipt refs?[^.\n]*public[- ]access[^.\n]*when present",
+    re.IGNORECASE,
+)
 FRESHNESS_PUBLIC_PROOF_RE = re.compile(
     r"public asset|installer-consumed public asset|published sums",
     re.IGNORECASE,
@@ -849,6 +854,7 @@ def issue_requires_public_substrate(issue: dict[str, Any]) -> bool:
         for field in ["title", "description", "acceptance_criteria", "notes"]
     )
     text = PUBLIC_PROOF_EXCLUSION_RE.sub("", text)
+    text = PUBLIC_PROOF_CONTRACT_ONLY_RE.sub("", text)
     if PUBLIC_PROOF_REQUIRING_RE.search(text) is not None:
         return True
     return (

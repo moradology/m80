@@ -296,6 +296,38 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_receipt_ref_verifier_leaf_does_not_require_public_substrate(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "optional-receipt-proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_hostless_generic_proof()))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.13.39.3.2",
+                        "Evidence verifier: optional receipt refs are checked when present",
+                        "Verifier recognizes publish decision receipt, token authority receipt, remote asset inventory, readiness receipt, and public-access receipt refs when present.",
+                        status="closed",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("optional receipt proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/optional-receipt-proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_fixture_scaffold_leaf_with_fixture_proof_passes(self) -> None:
         with tracker_repo() as repo:
             proof = repo.root / "artifacts" / "fixture-freshness-proof.json"

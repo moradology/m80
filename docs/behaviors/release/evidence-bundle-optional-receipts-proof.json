@@ -8,13 +8,13 @@
     "kind": "linux-hostless-ci-equivalent",
     "summary": "Deterministic release evidence-bundle fixtures validated optional receipt refs without requiring KVM."
   },
-  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
   "exit_status": 0,
-  "stdout": "python3 scripts/test-release-bundle.py: Ran 285 tests in 66.479s OK; workflow policy ok; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.969s OK; actionlint wrapper ok; python3 scripts/test-release-tracker-policy.py: Ran 46 tests in 2.927s OK; verify-release-tracker-policy ok; br lint m80-o3uh9.13.39.3.2 ok; br dep cycles ok; git diff --check ok",
+  "stdout": "python3 scripts/test-release-bundle.py: Ran 285 tests in 66.404s OK; workflow policy ok; python3 scripts/test-workflow-policy.py: Ran 80 tests in 2.955s OK; actionlint wrapper ok; python3 scripts/test-release-tracker-policy.py: Ran 47 tests in 3.020s OK; verify-release-tracker-policy ok; br lint m80-o3uh9.13.39.3.2 ok; br dep cycles ok; git diff --check ok",
   "stderr": "",
   "commands": [
     {
-      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py",
+      "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py",
       "exit_status": 0,
       "stdout": "",
       "stderr": ""
@@ -22,19 +22,19 @@
     {
       "command": "python3 scripts/test-release-bundle.py",
       "exit_status": 0,
-      "stdout": "Ran 285 tests in 66.479s\\n\\nOK",
+      "stdout": "Ran 285 tests in 66.404s\\n\\nOK",
       "stderr": ""
     },
     {
       "command": "python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
       "exit_status": 0,
-      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.969s\\n\\nOK",
+      "stdout": "workflow policy ok: .github/workflows\\nRan 80 tests in 2.955s\\n\\nOK",
       "stderr": ""
     },
     {
-      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.3.2 && br dep cycles && git diff --check",
       "exit_status": 0,
-      "stdout": "Ran 46 tests in 2.927s\\n\\nOK\\nrelease tracker policy ok: .beads/issues.jsonl\\nNo template warnings found (1 issues checked)\\nNo dependency cycles detected.",
+      "stdout": "Ran 47 tests in 3.020s\\n\\nOK\\nrelease tracker policy ok: docs/behaviors/release/release-tracker-policy.json\\nNo template warnings found (1 issues checked)\\nNo dependency cycles detected.",
       "stderr": ""
     }
   ],
@@ -52,6 +52,7 @@
     "unknown receipt payload schema_version fails closed",
     "missing optional receipt files fail closed when a receipt_ref row is present",
     "unknown and duplicate receipt_ref rows fail closed",
+    "release tracker policy does not require public substrate for schema/verifier-only public-access receipt ref leaves",
     "docs/behaviors/release/evidence-bundle.md explains mandatory build/proof refs versus optional publish/latest-time receipt refs"
   ],
   "review": {
