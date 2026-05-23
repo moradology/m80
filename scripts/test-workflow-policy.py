@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 import tempfile
@@ -732,6 +733,64 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_release_job_timeout_must_match_configured_budget(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 30
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            timeout_entries=[
+                {"path": "release-artifacts.yml", "job": "build", "timeout_minutes": 31}
+            ],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("timeout-minutes 30 does not match configured budget 31", result.stderr)
+
+    def test_release_job_requires_timeout_budget_config_entry(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 30
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            timeout_entries=[],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release job build missing timeout budget config entry", result.stderr)
+
     def test_reusable_release_job_timeout_marker_is_allowed(self) -> None:
         with workflow_dir(
             "proof.yml",
@@ -754,6 +813,32 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_reusable_release_job_timeout_marker_must_match_configured_budget(self) -> None:
+        with workflow_dir(
+            "proof.yml",
+            """
+            name: Release proof
+            on: workflow_call
+            permissions:
+              contents: read
+            concurrency:
+              group: proof-${{ github.ref_name }}
+            jobs:
+              real-kvm-proof:
+                # m80-lint: reusable-timeout-minutes=45
+                uses: ./.github/workflows/reusable-proof.yml
+                permissions:
+                  contents: read
+            """,
+            timeout_entries=[
+                {"path": "proof.yml", "job": "real-kvm-proof", "timeout_minutes": 46}
+            ],
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("timeout marker 45 does not match configured budget 46", result.stderr)
+
     def test_reusable_release_job_requires_documented_timeout(self) -> None:
         with workflow_dir(
             "proof.yml",
@@ -775,6 +860,39 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("release reusable job real-kvm-proof must declare timeout-minutes", result.stderr)
+
+    def test_timeout_budget_runbook_table_must_match_config(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 30
+                steps:
+                  - uses: actions/checkout@v6
+            """,
+            runbook_text="""
+            | Workflow | Job | Timeout |
+            | --- | --- | --- |
+            | `.github/workflows/release-artifacts.yml` | `build` | 31 minutes |
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workflow timeout budget table is stale", result.stderr)
+        self.assertIn("| `.github/workflows/release-artifacts.yml` | `build` | 30 minutes |", result.stderr)
 
     def test_release_attestation_requires_oidc_and_attestation_permissions(self) -> None:
         with workflow_dir(
@@ -1250,6 +1368,11 @@ def run_lint(workflow_dir: Path) -> subprocess.CompletedProcess[str]:
     policy_config = workflow_dir / "workflow-policy-scope.json"
     if policy_config.exists():
         command.extend(["--policy-config", str(policy_config)])
+    timeout_budget_config = workflow_dir / "workflow-timeout-budgets.json"
+    if timeout_budget_config.exists():
+        command.extend(["--timeout-budget-config", str(timeout_budget_config)])
+    runbook = workflow_dir / "release.md"
+    command.extend(["--runbook", str(runbook)])
     return subprocess.run(
         command,
         text=True,
@@ -1688,13 +1811,19 @@ class workflow_dir:
         *,
         scope: str | None = None,
         policy_entries: list[dict[str, str]] | None = None,
+        timeout_entries: list[dict[str, object]] | None = None,
+        runbook_text: str | None = None,
         write_policy: bool = True,
+        write_timeout_budget: bool = True,
     ) -> None:
         self.name = name
         self.body = textwrap.dedent(body).strip() + "\n"
         self.scope = infer_workflow_scope(name) if scope is None else scope
         self.policy_entries = policy_entries
+        self.timeout_entries = timeout_entries
+        self.runbook_text = runbook_text
         self.write_policy = write_policy
+        self.write_timeout_budget = write_timeout_budget
         self.temp: tempfile.TemporaryDirectory[str] | None = None
 
     def __enter__(self) -> Path:
@@ -1711,6 +1840,18 @@ class workflow_dir:
                 json.dumps({"schema_version": 1, "workflows": entries}, indent=2)
                 + "\n"
             )
+        if self.write_timeout_budget:
+            entries = (
+                infer_timeout_budget_entries(self.name, self.body)
+                if self.timeout_entries is None
+                else self.timeout_entries
+            )
+            (root / "workflow-timeout-budgets.json").write_text(
+                json.dumps({"schema_version": 1, "jobs": entries}, indent=2)
+                + "\n"
+            )
+        if self.runbook_text is not None:
+            (root / "release.md").write_text(textwrap.dedent(self.runbook_text).strip() + "\n")
         return root
 
     def __exit__(self, *args: object) -> None:
@@ -1726,6 +1867,55 @@ def infer_workflow_scope(name: str) -> str:
     if any(token in name for token in ["release", "latest", "freshness", "publish"]):
         return "release-authority"
     return "ordinary-ci"
+
+
+def infer_timeout_budget_entries(name: str, body: str) -> list[dict[str, object]]:
+    lines = body.splitlines()
+    entries: list[dict[str, object]] = []
+    for job_id, start, end in job_blocks_from_text(lines):
+        block = lines[start:end]
+        entries.append(
+            {
+                "path": name,
+                "job": job_id,
+                "timeout_minutes": infer_timeout_minutes(block),
+            }
+        )
+    return entries
+
+
+def job_blocks_from_text(lines: list[str]) -> list[tuple[str, int, int]]:
+    jobs_start = next((i for i, line in enumerate(lines) if line == "jobs:"), None)
+    if jobs_start is None:
+        return []
+    jobs: list[tuple[str, int, int]] = []
+    current: tuple[str, int] | None = None
+    for index in range(jobs_start + 1, len(lines)):
+        line = lines[index]
+        if line and not line.startswith(" "):
+            break
+        match = re.match(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$", line)
+        if match is None:
+            continue
+        if current is not None:
+            jobs.append((current[0], current[1], index))
+        current = (match.group(1), index)
+    if current is not None:
+        jobs.append((current[0], current[1], len(lines)))
+    return jobs
+
+
+def infer_timeout_minutes(lines: list[str]) -> int:
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("timeout-minutes:"):
+            value = stripped.split(":", 1)[1].split("#", 1)[0].strip()
+            if value.isdigit():
+                return int(value)
+        marker = re.search(r"m80-lint:\s*reusable-timeout-minutes=([0-9]+)\b", stripped)
+        if marker is not None:
+            return int(marker.group(1))
+    return 30
 
 
 if __name__ == "__main__":

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "jobs": [
+    {
+      "path": "ci.yml",
+      "job": "audit",
+      "timeout_minutes": 20
+    },
+    {
+      "path": "ci.yml",
+      "job": "test",
+      "timeout_minutes": 45
+    },
+    {
+      "path": "latest-freshness.yml",
+      "job": "hostless-public-freshness",
+      "timeout_minutes": 10
+    },
+    {
+      "path": "latest-freshness.yml",
+      "job": "publish-latest-freshness",
+      "timeout_minutes": 5
+    },
+    {
+      "path": "release-artifacts.yml",
+      "job": "build-release-artifacts",
+      "timeout_minutes": 90
+    },
+    {
+      "path": "release-artifacts.yml",
+      "job": "publish-release-artifacts",
+      "timeout_minutes": 30
+    }
+  ]
+}

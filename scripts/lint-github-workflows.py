@@ -32,6 +32,8 @@ REUSABLE_TIMEOUT_MARKER_RE = re.compile(
     r"m80-lint:\s*reusable-timeout-minutes=([0-9]+)\b"
 )
 WORKFLOW_POLICY_CONFIG = Path("docs/behaviors/ci/workflow-policy-scope.json")
+WORKFLOW_TIMEOUT_BUDGET_CONFIG = Path("docs/behaviors/ci/workflow-timeout-budgets.json")
+RELEASE_RUNBOOK = Path("docs/runbook/release.md")
 ALLOWED_WORKFLOW_SCOPES = {
     "ordinary-ci",
     "release-authority",
@@ -56,12 +58,29 @@ def parse_args() -> argparse.Namespace:
         default=WORKFLOW_POLICY_CONFIG,
         help="JSON config that assigns an explicit scope to every workflow file",
     )
+    parser.add_argument(
+        "--timeout-budget-config",
+        type=Path,
+        default=WORKFLOW_TIMEOUT_BUDGET_CONFIG,
+        help="JSON config that assigns exact timeout budgets to workflow jobs",
+    )
+    parser.add_argument(
+        "--runbook",
+        type=Path,
+        default=RELEASE_RUNBOOK,
+        help="release runbook whose timeout table is checked when present",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    errors = lint_workflow_dir(args.workflow_dir, policy_config=args.policy_config)
+    errors = lint_workflow_dir(
+        args.workflow_dir,
+        policy_config=args.policy_config,
+        timeout_budget_config=args.timeout_budget_config,
+        runbook=args.runbook,
+    )
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
@@ -74,6 +93,8 @@ def lint_workflow_dir(
     workflow_dir: Path,
     *,
     policy_config: Path = WORKFLOW_POLICY_CONFIG,
+    timeout_budget_config: Path = WORKFLOW_TIMEOUT_BUDGET_CONFIG,
+    runbook: Path = RELEASE_RUNBOOK,
 ) -> list[str]:
     files = sorted(set(workflow_dir.glob("*.yml")) | set(workflow_dir.glob("*.yaml")))
     if not files:
@@ -83,6 +104,14 @@ def lint_workflow_dir(
         workflow_dir=workflow_dir,
         files=files,
     )
+    timeout_budgets, timeout_errors = load_timeout_budget_policy(
+        timeout_budget_config=timeout_budget_config,
+        workflow_dir=workflow_dir,
+        files=files,
+    )
+    errors.extend(timeout_errors)
+    errors.extend(lint_timeout_budget_runbook(runbook, timeout_budgets))
+    seen_jobs: set[tuple[str, str]] = set()
     for path in files:
         text = path.read_text()
         lines = text.splitlines()
@@ -97,7 +126,7 @@ def lint_workflow_dir(
             errors.extend(lint_freshness_workflow(path, text, lines))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
-            errors.extend(lint_release_job_timeouts(path, lines))
+            errors.extend(lint_release_job_timeouts(path, lines, timeout_budgets=timeout_budgets))
             errors.extend(lint_release_cargo_locked(path, lines))
             errors.extend(lint_release_rust_toolchain_pins(path, lines))
             errors.extend(lint_release_artifact_origin(path, text, lines))
@@ -106,6 +135,12 @@ def lint_workflow_dir(
             errors.extend(lint_release_temp_isolation(path, text, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
+        errors.extend(lint_configured_timeout_jobs(path, lines, timeout_budgets, seen_jobs))
+    for workflow_name, job_id in sorted(set(timeout_budgets) - seen_jobs):
+        errors.append(
+            f"{timeout_budget_config}: configured timeout job is missing from workflows: "
+            f"{workflow_name}:{job_id}"
+        )
     return errors
 
 
@@ -176,6 +211,76 @@ def load_workflow_scope_policy(
         else:
             errors.append(f"{path}: workflow is not named in {policy_config}")
     return scope_by_name, errors
+
+
+def load_timeout_budget_policy(
+    *,
+    timeout_budget_config: Path,
+    workflow_dir: Path,
+    files: list[Path],
+) -> tuple[dict[tuple[str, str], int], list[str]]:
+    errors: list[str] = []
+    if not timeout_budget_config.exists():
+        return {}, [f"{timeout_budget_config}: workflow timeout budget config is missing"]
+
+    try:
+        payload = json.loads(timeout_budget_config.read_text())
+    except json.JSONDecodeError as exc:
+        return {}, [f"{timeout_budget_config}:{exc.lineno}: invalid JSON: {exc.msg}"]
+
+    if not isinstance(payload, dict):
+        return {}, [f"{timeout_budget_config}: timeout budget policy must be a JSON object"]
+    allowed_keys = {"schema_version", "jobs"}
+    for key in sorted(set(payload) - allowed_keys):
+        errors.append(f"{timeout_budget_config}: unknown timeout budget policy field: {key}")
+    if payload.get("schema_version") != 1:
+        errors.append(f"{timeout_budget_config}: schema_version must be 1")
+
+    entries = payload.get("jobs")
+    if not isinstance(entries, list):
+        errors.append(f"{timeout_budget_config}: jobs must be a list")
+        return {}, errors
+
+    names_on_disk = {path.name for path in files}
+    budgets: dict[tuple[str, str], int] = {}
+    for index, entry in enumerate(entries):
+        prefix = f"{timeout_budget_config}:jobs[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix}: timeout budget entry must be an object")
+            continue
+        for key in sorted(set(entry) - {"path", "job", "timeout_minutes"}):
+            errors.append(f"{prefix}: unknown timeout budget entry field: {key}")
+        workflow_path = entry.get("path")
+        job_id = entry.get("job")
+        timeout_minutes = entry.get("timeout_minutes")
+        if not isinstance(workflow_path, str) or not workflow_path:
+            errors.append(f"{prefix}: path must be a non-empty string")
+            continue
+        if "/" in workflow_path or workflow_path in {".", ".."} or workflow_path.startswith("."):
+            errors.append(f"{prefix}: path must be a workflow filename under {workflow_dir}")
+            continue
+        if workflow_path not in names_on_disk:
+            errors.append(f"{timeout_budget_config}: configured workflow is missing: {workflow_path}")
+        if not isinstance(job_id, str) or not job_id:
+            errors.append(f"{prefix}: job must be a non-empty string")
+            continue
+        if not isinstance(timeout_minutes, int) or isinstance(timeout_minutes, bool):
+            errors.append(f"{prefix}: timeout_minutes must be an integer")
+            continue
+        key = (workflow_path, job_id)
+        if key in budgets:
+            errors.append(f"{prefix}: duplicate timeout budget entry for {workflow_path}:{job_id}")
+            continue
+        errors.extend(
+            lint_timeout_budget(
+                timeout_budget_config,
+                line_no=index + 1,
+                subject=f"configured timeout budget {workflow_path}:{job_id}",
+                minutes=timeout_minutes,
+            )
+        )
+        budgets[key] = timeout_minutes
+    return budgets, errors
 
 
 def lint_action_refs(path: Path, lines: list[str]) -> list[str]:
@@ -355,10 +460,18 @@ def lint_release_rust_toolchain_pins(path: Path, lines: list[str]) -> list[str]:
     return errors
 
 
-def lint_release_job_timeouts(path: Path, lines: list[str]) -> list[str]:
+def lint_release_job_timeouts(
+    path: Path,
+    lines: list[str],
+    *,
+    timeout_budgets: dict[tuple[str, str], int],
+) -> list[str]:
     errors: list[str] = []
     for job_id, start, end in job_blocks(lines):
         block = lines[start:end]
+        budget = timeout_budgets.get((path.name, job_id))
+        if budget is None:
+            errors.append(f"{path}:{start + 1}: release job {job_id} missing timeout budget config entry")
         found_timeout = False
         valid_timeouts: list[tuple[int, int]] = []
         for offset, line in enumerate(block):
@@ -388,6 +501,11 @@ def lint_release_job_timeouts(path: Path, lines: list[str]) -> list[str]:
                     minutes=minutes,
                 )
             )
+            if budget is not None and minutes != budget:
+                errors.append(
+                    f"{path}:{start + offset + 1}: release job {job_id} timeout-minutes "
+                    f"{minutes} does not match configured budget {budget}"
+                )
             continue
         if found_timeout:
             continue
@@ -409,10 +527,106 @@ def lint_release_job_timeouts(path: Path, lines: list[str]) -> list[str]:
                         minutes=marker[0],
                     )
                 )
+                if budget is not None and marker[0] != budget:
+                    errors.append(
+                        f"{path}:{marker[2]}: release reusable job {job_id} timeout marker "
+                        f"{marker[0]} does not match configured budget {budget}"
+                    )
             continue
 
         errors.append(f"{path}:{start + 1}: release job {job_id} must declare timeout-minutes")
     return errors
+
+
+def lint_configured_timeout_jobs(
+    path: Path,
+    lines: list[str],
+    timeout_budgets: dict[tuple[str, str], int],
+    seen_jobs: set[tuple[str, str]],
+) -> list[str]:
+    errors: list[str] = []
+    for job_id, start, end in job_blocks(lines):
+        key = (path.name, job_id)
+        budget = timeout_budgets.get(key)
+        if budget is None:
+            continue
+        seen_jobs.add(key)
+        block = lines[start:end]
+        if job_uses_reusable_workflow(block):
+            marker = reusable_timeout_marker_minutes(path, job_id, start, block)
+            if marker[0] is None:
+                continue
+            if marker[0] != budget:
+                errors.append(
+                    f"{path}:{marker[2]}: configured job {job_id} reusable timeout marker "
+                    f"{marker[0]} does not match configured budget {budget}"
+                )
+            continue
+        timeout = job_timeout_minutes(block)
+        if timeout is None:
+            continue
+        minutes, line_no = timeout
+        if minutes != budget:
+            errors.append(
+                f"{path}:{start + line_no}: configured job {job_id} timeout-minutes "
+                f"{minutes} does not match configured budget {budget}"
+            )
+    return errors
+
+
+def job_timeout_minutes(lines: list[str]) -> tuple[int, int] | None:
+    for offset, line in enumerate(lines, start=1):
+        if not line.startswith("    timeout-minutes:"):
+            continue
+        value = line.split(":", 1)[1].split("#", 1)[0].strip()
+        if value.isdigit():
+            return int(value), offset
+        return None
+    return None
+
+
+def lint_timeout_budget_runbook(
+    runbook: Path,
+    timeout_budgets: dict[tuple[str, str], int],
+) -> list[str]:
+    if not timeout_budgets or not runbook.exists():
+        return []
+    text = runbook.read_text()
+    actual = extract_timeout_budget_table(text)
+    expected = expected_timeout_budget_table(timeout_budgets)
+    if actual == expected:
+        return []
+    return [
+        f"{runbook}: workflow timeout budget table is stale; expected:\n"
+        + "\n".join(expected)
+    ]
+
+
+def extract_timeout_budget_table(text: str) -> list[str]:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != "| Workflow | Job | Timeout |":
+            continue
+        table: list[str] = []
+        for current in lines[index:]:
+            if not current.startswith("|"):
+                break
+            table.append(current.rstrip())
+        return table
+    return []
+
+
+def expected_timeout_budget_table(timeout_budgets: dict[tuple[str, str], int]) -> list[str]:
+    rows = [
+        "| Workflow | Job | Timeout |",
+        "| --- | --- | --- |",
+    ]
+    for workflow_name, job_id in sorted(timeout_budgets):
+        rows.append(
+            f"| `.github/workflows/{workflow_name}` | `{job_id}` | "
+            f"{timeout_budgets[(workflow_name, job_id)]} minutes |"
+        )
+    return rows
 
 
 def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str]:

@@ -23,6 +23,9 @@ public release state.
 - Workflow release/latest/proof scope comes from
   `docs/behaviors/ci/workflow-policy-scope.json`, not filename guesses.
   Guarded-looking filenames without a policy entry still fail closed.
+- Release/latest/proof job timeout values come from
+  `docs/behaviors/ci/workflow-timeout-budgets.json`; the YAML value, reusable
+  workflow marker, and release runbook table must agree.
 - Pull-request workflows do not reference `secrets.*`.
 - `actions/*` refs are the trusted first-party exception documented in
   `docs/runbook/release-bundle.md`; third-party actions use a full 40-character
@@ -64,6 +67,9 @@ prelude. Workflow scope is declared in
 `docs/behaviors/ci/workflow-policy-scope.json`; the linter rejects missing
 workflow entries, missing configured files, duplicate entries, and unknown
 scope names.
+It also checks `docs/behaviors/ci/workflow-timeout-budgets.json` against the
+guarded workflow jobs and the release runbook timeout table, so timeout budget
+changes are one config edit plus matching YAML.
 
 `CI` installs the host test tools, then runs the m80 linter and the pinned
 actionlint syntax/run-block gate on every push and pull request before the
@@ -103,7 +109,9 @@ resulting `m80-repository-protection-audit.json` evidence artifact.
   the publish job, and the clean least-privilege layout. It also proves workflow
   policy scope is explicit: renamed release workflows stay guarded, ordinary CI
   is not forced through release-only checks, and missing, duplicate, or unknown
-  scope entries fail closed.
+  scope entries fail closed. Timeout budget coverage includes missing budget
+  entries, YAML mismatch, reusable marker mismatch, stale runbook tables, and
+  the clean repository workflow set.
 - `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports

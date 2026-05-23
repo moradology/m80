@@ -788,18 +788,22 @@ leaves in the `m80-o3uh9.13.39` family.
 
 | Workflow | Job | Timeout |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | `test` | 45 minutes |
 | `.github/workflows/ci.yml` | `audit` | 20 minutes |
+| `.github/workflows/ci.yml` | `test` | 45 minutes |
+| `.github/workflows/latest-freshness.yml` | `hostless-public-freshness` | 10 minutes |
+| `.github/workflows/latest-freshness.yml` | `publish-latest-freshness` | 5 minutes |
 | `.github/workflows/release-artifacts.yml` | `build-release-artifacts` | 90 minutes |
 | `.github/workflows/release-artifacts.yml` | `publish-release-artifacts` | 30 minutes |
 
 `scripts/lint-github-workflows.py` requires every workflow listed as
 `release-authority`, `latest-freshness`, or `proof` in
 `docs/behaviors/ci/workflow-policy-scope.json` to put `timeout-minutes` on every
-normal job, with a maximum of 120 minutes. A reusable workflow job that cannot
-own `timeout-minutes` must carry a YAML comment in the job body such as
-`# m80-lint: reusable-timeout-minutes=45`; that number is the documented budget
-of the called workflow and is linted against the same maximum.
+normal job, with the exact value from
+`docs/behaviors/ci/workflow-timeout-budgets.json` and a maximum of 120 minutes.
+A reusable workflow job that cannot own `timeout-minutes` must carry a YAML
+comment in the job body such as `# m80-lint: reusable-timeout-minutes=45`; that
+number is the documented budget of the called workflow and is checked against
+the same config.
 
 When adding, renaming, or splitting a release, proof, publish, latest, or
 freshness workflow, update `docs/behaviors/ci/workflow-policy-scope.json` in the
