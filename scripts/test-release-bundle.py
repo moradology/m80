@@ -475,6 +475,27 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(urls, [], "root preflight must run before release downloads")
             self.assertFalse(install_args.exists())
 
+    def test_rendered_install_script_non_root_with_sudo_prints_pinned_retry_before_curl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                id_u="1000",
+                sudo_present=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("root privileges required for install-root=/opt/m80", result.stderr)
+            self.assertIn(
+                "curl -fsSL https://github.com/moradology/m80/releases/download/v0.2.11/install.sh | sudo sh",
+                result.stderr,
+            )
+            self.assertNotIn("asset_url", result.stderr)
+            self.assertEqual(urls, [], "root preflight must run before release downloads")
+            self.assertFalse(install_args.exists())
+
     def test_rendered_install_script_selects_verified_selector_before_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -6252,6 +6273,7 @@ def run_rendered_install(
     curl_script: str | None = None,
     missing_tool: str | None = None,
     id_u: str = "0",
+    sudo_present: bool = False,
     extra_env: dict[str, str] | None = None,
     path_prefix: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
@@ -6262,6 +6284,11 @@ def run_rendered_install(
     tar_log = root / "tar.log"
     install_args = root / "install-args.log"
     write_install_test_tools(fakebin)
+    if sudo_present:
+        write_executable(
+            fakebin / "sudo",
+            "#!/bin/sh\nprintf 'unexpected sudo invocation\\n' >&2\nexit 99\n",
+        )
     if missing_tool is not None:
         (fakebin / missing_tool).unlink()
     if curl_script is not None:

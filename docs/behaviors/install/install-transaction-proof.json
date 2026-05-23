@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "m80_install_transaction_proof",
+  "bead_id": "m80-o3uh9.3",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "resolved_tag": "v0.2.11",
+  "substrate": {
+    "kind": "linux-hostless-ci-equivalent",
+    "summary": "Deterministic installer, bootstrap, and CLI release tests validated latest-to-pinned handoff, pinned install verification, install-root transaction safety, reinstall/update/downgrade policy, and installed status diagnostics without requiring KVM."
+  },
+  "command": "python3 scripts/test-release-bundle.py && python3 scripts/test-stable-latest-bootstrap.py && cargo test -p m80-cli --test release && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && git diff --check",
+  "exit_status": 0,
+  "stdout": "scripts/test-release-bundle.py: 290 tests OK; scripts/test-stable-latest-bootstrap.py: 22 tests OK; cargo test -p m80-cli --test release: 101 tests OK; scripts/test-release-tracker-policy.py: 47 tests OK; verify-release-tracker-policy.py: release tracker policy OK; git diff --check OK",
+  "stderr": "",
+  "observables": [
+    "versioned install.sh preflights local tools and root requirements before release downloads",
+    "non-root default install with sudo present prints the pinned install.sh retry command before curl",
+    "stable latest bootstrap resolves one concrete stable tag and emits only pinned versioned install inputs",
+    "pinned install rejects latest artifact URLs, prerelease tags, foreign repositories, raw branch URLs, and path-shaped release assets before install-root mutation",
+    "official release installs verify asset index, checksums, installer, bootstrap selector, build manifest, release-integrity predicate, attestation material, bundle metadata, and extracted m80 identity before activation",
+    "child install handoff uses the extracted release m80 binary and quarantines ambient M80_* environment overrides",
+    "install finalization flips the active pointer last after bundle, proof cache, profile, host manifest, ownership, modes, and smoke/preflight gates",
+    "failed verification, interruption, profile/config failure, proof-cache drift, smoke-gate failure, and active-pointer failure leave previous active state selected",
+    "same-version reinstall is idempotent for matching verified material and fails closed with exact repair for changed bytes or proof cache",
+    "update/downgrade policy refuses older, prerelease, yanked, or unsafe targets unless a separate explicit policy names the allowed action",
+    "install-status rechecks active bytes, metadata, profile/config selection, host manifest, proof cache, and repair commands without mutating install-root state"
+  ],
+  "supporting_docs": [
+    "docs/behaviors/install/transaction.md",
+    "docs/behaviors/release/installer-input-contract.md",
+    "docs/behaviors/release/stable-latest-bootstrap-handoff.md",
+    "docs/behaviors/release/install-invocation.md",
+    "docs/behaviors/release/install-finalization-transaction.md",
+    "docs/behaviors/release/install-state.md",
+    "docs/behaviors/release/downgrade-refusal.md",
+    "crates/m80-cli/README.md"
+  ],
+  "supporting_tests": [
+    "scripts/test-release-bundle.py",
+    "scripts/test-stable-latest-bootstrap.py",
+    "crates/m80-cli/tests/release.rs",
+    "crates/m80-cli/tests/release/install_transaction_contract.rs",
+    "scripts/test-release-tracker-policy.py",
+    "scripts/verify-release-tracker-policy.py"
+  ]
+}

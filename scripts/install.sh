@@ -129,6 +129,10 @@ preflight_install_args() {
 
 preflight_install_args "$@"
 
+asset_url() {
+    printf '%s/%s\n' "$M80_RELEASE_BASE_URL" "$1"
+}
+
 install_requires_root() {
     [ "$install_dry_run" = no ] || return 1
     case "$selected_install_root" in
@@ -157,10 +161,6 @@ host_arch() {
         aarch64|arm64) printf '%s\n' aarch64 ;;
         *) fail "unsupported architecture for release install: $(uname -m); report a release metadata bug or use an explicit local m80 install fixture" ;;
     esac
-}
-
-asset_url() {
-    printf '%s/%s\n' "$M80_RELEASE_BASE_URL" "$1"
 }
 
 integrity_retry_command() {
