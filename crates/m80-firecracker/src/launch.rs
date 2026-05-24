@@ -818,6 +818,7 @@ impl Sandbox {
                             .expected_firecracker_version
                             .clone(),
                         vsock_uds: vsock_uds.clone(),
+                        enable_diff_snapshots: false,
                         resume: true,
                     };
                     match verification {

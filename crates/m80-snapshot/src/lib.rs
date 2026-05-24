@@ -153,6 +153,8 @@ pub struct CaptureRequest {
     pub expected_firecracker_version: String,
     /// Full or Diff snapshot.
     pub kind: SnapshotKind,
+    /// Dirty-page tracking must be enabled before requesting a diff snapshot.
+    pub enable_diff_snapshots: bool,
 }
 
 /// Parameters for [`restore`].
@@ -170,6 +172,9 @@ pub struct RestoreRequest {
     /// removed before Firecracker can rebind it. Removal is skipped only
     /// if the file is absent (`ENOENT`). Any other error is surfaced.
     pub vsock_uds: PathBuf,
+    /// Enable Firecracker dirty-page tracking after loading this snapshot so
+    /// future diff snapshots can be created.
+    pub enable_diff_snapshots: bool,
     /// If `true`, issue `PATCH /vm {"state":"Resumed"}` after the load
     /// completes. If `false`, the VM is left in the `Paused` state.
     pub resume: bool,
@@ -195,6 +200,10 @@ pub struct RestoreRequest {
 /// Returns a typed manifest or artifact error if the snapshot pair cannot be
 /// hashed or the manifest cannot be written after Firecracker reports success.
 pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
+    if req.kind == SnapshotKind::Diff && !req.enable_diff_snapshots {
+        return Err(SnapshotError::DiffSnapshotsDisabled);
+    }
+
     let client = FirecrackerClient::new(&req.api_socket).map_err(SnapshotError::Client)?;
 
     client
@@ -297,7 +306,7 @@ fn restore_inner(
                 backend_path: req.paths.mem,
             }),
             mem_file_path: None,
-            enable_diff_snapshots: None,
+            enable_diff_snapshots: req.enable_diff_snapshots.then_some(true),
             resume_vm: None,
             vsock_override: None,
         })
@@ -545,6 +554,9 @@ pub enum SnapshotError {
         /// Live Firecracker version reported by GET `/version`.
         actual: String,
     },
+    /// Diff snapshots require dirty-page tracking to be enabled.
+    #[error("diff snapshots require enable_diff_snapshots=true")]
+    DiffSnapshotsDisabled,
     /// Snapshot paths were not a usable two-file pair.
     #[error("invalid snapshot paths: {detail}")]
     InvalidSnapshotPaths {

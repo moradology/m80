@@ -217,6 +217,7 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         mem_size_mib: config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB),
         smt: false,
         cpu_template: config.cpu_template,
+        track_dirty_pages: None,
     }
 }
 

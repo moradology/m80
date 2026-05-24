@@ -121,6 +121,7 @@ impl RunningSandbox {
             host_paths: stage_paths.clone(),
             expected_firecracker_version: expected_firecracker_version.clone(),
             kind: SnapshotKind::Full,
+            enable_diff_snapshots: false,
         })
         .map_err(FcError::Snapshot)?;
         move_captured_snapshot_from_stage(&stage_paths, &paths)?;

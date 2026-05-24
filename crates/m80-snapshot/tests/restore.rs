@@ -48,6 +48,7 @@ fn request(
         host_paths: paths,
         expected_firecracker_version: FC_VERSION.to_owned(),
         vsock_uds,
+        enable_diff_snapshots: false,
         resume,
     }
 }

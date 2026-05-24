@@ -33,6 +33,7 @@ fn request(api_socket: PathBuf, paths: SnapshotPaths, kind: SnapshotKind) -> Cap
         host_paths: paths,
         expected_firecracker_version: FC_VERSION.to_owned(),
         kind,
+        enable_diff_snapshots: matches!(kind, SnapshotKind::Diff),
     }
 }
 
@@ -115,6 +116,23 @@ fn capture_diff_kind_serializes_snapshot_type_diff() {
         requests[1].contains("\"snapshot_type\":\"Diff\""),
         "create body must contain snapshot_type=Diff: {}",
         requests[1]
+    );
+}
+
+#[test]
+fn capture_diff_without_dirty_tracking_fails_before_rest_calls() {
+    let server = FixtureServer::spawn(Vec::new()).unwrap();
+    let (_dir, paths) = prepared_paths();
+
+    let mut req = request(server.socket_path.clone(), paths, SnapshotKind::Diff);
+    req.enable_diff_snapshots = false;
+    let err = capture(req).expect_err("diff capture without dirty tracking must fail");
+
+    let requests = server.join();
+    assert!(requests.is_empty(), "no REST calls expected: {requests:?}");
+    assert!(
+        matches!(err, SnapshotError::DiffSnapshotsDisabled),
+        "unexpected error: {err:?}"
     );
 }
 

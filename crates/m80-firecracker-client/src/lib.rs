@@ -349,7 +349,8 @@ pub enum CpuTemplate {
     C3,
 }
 
-/// `MachineConfig` — vCPU count, memory size, SMT flag, CPU template.
+/// `MachineConfig` — vCPU count, memory size, SMT flag, CPU template, and
+/// optional dirty-page tracking.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineConfig {
@@ -363,6 +364,9 @@ pub struct MachineConfig {
     /// CPU template. m80 sets this for a stable, narrowed guest CPU surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_template: Option<CpuTemplate>,
+    /// Enable Firecracker dirty-page tracking for future diff snapshots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track_dirty_pages: Option<bool>,
 }
 
 /// Firecracker block-device I/O engine.

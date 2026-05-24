@@ -262,6 +262,26 @@ fn put_snapshot_load_resume_vm_true_serializes_correctly() {
 }
 
 #[test]
+fn put_snapshot_load_enable_diff_snapshots_true_serializes_correctly() {
+    let (server, client) = setup_with_204();
+    client
+        .put_snapshot_load(&LoadSnapshotConfig {
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_backend: Some(MemBackendConfig {
+                backend_type: MemBackendType::File,
+                backend_path: PathBuf::from(MEM_PATH),
+            }),
+            mem_file_path: None,
+            enable_diff_snapshots: Some(true),
+            resume_vm: None,
+            vsock_override: None,
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(result.request.contains("\"enable_diff_snapshots\":true"));
+}
+
+#[test]
 fn put_snapshot_load_vsock_override_serializes_correctly() {
     let (server, client) = setup_with_204();
     client

@@ -45,6 +45,7 @@ fn put_machine_config_sends_correct_json() {
             mem_size_mib: 512,
             smt: false,
             cpu_template: Some(CpuTemplate::T2),
+            track_dirty_pages: Some(true),
         })
         .unwrap();
     let result = server.join();
@@ -54,6 +55,7 @@ fn put_machine_config_sends_correct_json() {
     assert!(result.request.contains("\"vcpu_count\":2"));
     assert!(result.request.contains("\"mem_size_mib\":512"));
     assert!(result.request.contains("\"cpu_template\":\"T2\""));
+    assert!(result.request.contains("\"track_dirty_pages\":true"));
 }
 
 #[test]

@@ -69,25 +69,28 @@ fn machine_config_put_before_boot() {
     assert_eq!(machine.mem_size_mib, 2048);
     assert!(!machine.smt);
     assert_eq!(machine.cpu_template, None);
+    assert_eq!(machine.track_dirty_pages, None);
 }
 
 #[test]
-fn layer_1_machine_config_omits_cpu_template_by_default() {
+fn layer_1_machine_config_omits_optional_fields_by_default() {
     let puts = plan_without_workspace();
 
     let PrebootPut::MachineConfig(machine) = &puts[0] else {
         panic!("first preboot PUT must be machine config");
     };
     assert_eq!(machine.cpu_template, None);
+    assert_eq!(machine.track_dirty_pages, None);
     assert!(!machine.smt);
 }
 
 #[test]
-fn default_machine_config_serialization_omits_cpu_template() {
+fn default_machine_config_serialization_omits_optional_fields() {
     let machine = machine_config_for(&SandboxConfig::default());
     let json = serde_json::to_value(&machine).expect("machine config serializes");
 
     assert_eq!(json.get("cpu_template"), None);
+    assert_eq!(json.get("track_dirty_pages"), None);
 }
 
 #[test]
@@ -596,6 +599,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
     assert_eq!(machine.mem_size_mib, FIRST_LINE_MEM_SIZE_MIB);
     assert!(!machine.smt);
     assert_eq!(machine.cpu_template, None);
+    assert_eq!(machine.track_dirty_pages, None);
 }
 
 #[test]
@@ -614,4 +618,5 @@ fn machine_config_honors_caller_sizing() {
     assert_eq!(machine.mem_size_mib, 2048);
     assert!(!machine.smt);
     assert_eq!(machine.cpu_template, None);
+    assert_eq!(machine.track_dirty_pages, None);
 }

@@ -529,6 +529,7 @@ fn missing_snapshot_error_is_classified_without_kvm() {
         },
         expected_firecracker_version: "v1.15.1".to_owned(),
         vsock_uds: PathBuf::from("/tmp/m80-no-such-vsock.sock"),
+        enable_diff_snapshots: false,
         resume: false,
     });
 

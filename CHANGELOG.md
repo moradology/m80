@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — feat(snapshot): track dirty pages plumbing
+
+- Threaded `MachineConfig::track_dirty_pages` and snapshot
+  `enable_diff_snapshots` request fields through the Firecracker client and
+  snapshot restore path for future diff-snapshot work, while keeping current
+  orchestrator defaults disabled.
+
 ### Changed — jailer cgroup v2 launch alignment
 
 - `m80-jailer` now exposes `CgroupVersion` on `JailerConfig`, emits

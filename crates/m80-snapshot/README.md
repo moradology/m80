@@ -60,6 +60,9 @@ The crate serves two purposes:
 
 The VM is left in the `Paused` state. The caller decides whether to resume or
 kill the Firecracker process.
+`SnapshotKind::Diff` requires `enable_diff_snapshots = true`; otherwise capture
+fails before issuing REST calls. The field records that dirty-page tracking was
+intentionally enabled before the diff snapshot request.
 
 `paths` must be visible from the Firecracker process namespace. `host_paths`
 must be the same artifact pair as seen by the m80 host process for hashing and
@@ -78,7 +81,10 @@ as `paths` while keeping the caller's host paths in `host_paths`.
    it to match `expected_firecracker_version`.
 3. `unlink(vsock_uds)` if present. `ENOENT` is ignored; any other error
    surfaces as `SnapshotError::VsockUdsUnlink`.
-4. PUT `/snapshot/load` with `mem_backend = File`.
+4. PUT `/snapshot/load` with `mem_backend = File`; when
+   `enable_diff_snapshots = true`, include Firecracker's
+   `enable_diff_snapshots` field so the restored VM tracks dirty pages for the
+   next diff snapshot.
 5. If `resume: true`, PATCH `/vm` -> `Resumed`.
 
 `restore_preverified(RestoreRequest)` skips step 1 for callers that already
@@ -96,8 +102,8 @@ before restore. Direct caller-supplied snapshots must keep using `restore`.
 - `SnapshotPaths { vm_state: PathBuf, mem: PathBuf }`.
 - `SnapshotKind` — `Full | Diff`.
 - `SnapshotManifest`, `Artifact`, `ArtifactKind`, and `SchemaError`.
-- `CaptureRequest { api_socket, paths, host_paths, expected_firecracker_version, kind }`.
-- `RestoreRequest { api_socket, paths, host_paths, expected_firecracker_version, vsock_uds, resume }`.
+- `CaptureRequest { api_socket, paths, host_paths, expected_firecracker_version, kind, enable_diff_snapshots }`.
+- `RestoreRequest { api_socket, paths, host_paths, expected_firecracker_version, vsock_uds, enable_diff_snapshots, resume }`.
 
 ### Functions
 
@@ -122,6 +128,8 @@ before restore. Direct caller-supplied snapshots must keep using `restore`.
 - `VersionMismatch { expected, actual }` — live Firecracker `/version`,
   converted to m80's `v`-prefixed pin form, does not match the snapshot's
   expected version.
+- `DiffSnapshotsDisabled` — a diff capture was requested without dirty-page
+  tracking enabled.
 - `VsockUdsUnlink { path, source }` — vsock UDS removal failed for a reason
   other than `NotFound`.
 - `InvalidId { field, value }` — persistence helper rejected a caller-supplied
