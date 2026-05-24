@@ -22,6 +22,14 @@ pub enum HostPrerequisiteCheckId {
     KvmCpuExtensions,
     /// Required host kernel module check.
     KernelModules,
+    /// Kernel samepage merging is disabled.
+    KsmDisabled,
+    /// Simultaneous multithreading posture check.
+    SmtDisabled,
+    /// Host swap devices are disabled.
+    SwapDisabled,
+    /// Nested virtualization is disabled.
+    NestedVirtDisabled,
     /// Transparent hugepage advisory check.
     TransparentHugepages,
     /// KVM halt-polling advisory check.
@@ -70,6 +78,10 @@ impl HostPrerequisiteCheckId {
         Self::HostSubstrateProof,
         Self::KvmCpuExtensions,
         Self::KernelModules,
+        Self::KsmDisabled,
+        Self::SmtDisabled,
+        Self::SwapDisabled,
+        Self::NestedVirtDisabled,
         Self::TransparentHugepages,
         Self::KvmHaltPolling,
         Self::CpuGovernor,
@@ -102,6 +114,10 @@ impl HostPrerequisiteCheckId {
             Self::HostSubstrateProof => "Host substrate proof",
             Self::KvmCpuExtensions => "KVM CPU extensions",
             Self::KernelModules => "Kernel modules",
+            Self::KsmDisabled => "KSM disabled",
+            Self::SmtDisabled => "SMT disabled",
+            Self::SwapDisabled => "Swap disabled",
+            Self::NestedVirtDisabled => "Nested virtualization disabled",
             Self::TransparentHugepages => "Transparent hugepages",
             Self::KvmHaltPolling => "KVM halt polling",
             Self::CpuGovernor => "CPU governor",
@@ -135,6 +151,10 @@ impl HostPrerequisiteCheckId {
             Self::HostSubstrateProof => "host_substrate_proof",
             Self::KvmCpuExtensions => "kvm_cpu_extensions",
             Self::KernelModules => "kernel_modules",
+            Self::KsmDisabled => "ksm_disabled",
+            Self::SmtDisabled => "smt_disabled",
+            Self::SwapDisabled => "swap_disabled",
+            Self::NestedVirtDisabled => "nested_virt_disabled",
             Self::TransparentHugepages => "transparent_hugepages",
             Self::KvmHaltPolling => "kvm_halt_polling",
             Self::CpuGovernor => "cpu_governor",

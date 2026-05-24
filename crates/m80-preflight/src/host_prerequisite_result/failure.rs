@@ -44,6 +44,14 @@ pub enum HostPrerequisiteFailureKind {
     InvalidExpectedConcurrentVms,
     /// Required kernel modules are missing.
     KernelModulesMissing,
+    /// Kernel samepage merging is enabled.
+    KsmEnabled,
+    /// Simultaneous multithreading is enabled and configured as hard-fail.
+    SmtEnabled,
+    /// Host swap has active entries.
+    SwapActive,
+    /// Nested virtualization is enabled for a KVM vendor module.
+    NestedVirtEnabled,
     /// Required privilege is unavailable.
     PrivilegeUnavailable,
     /// Capability read failed.
@@ -139,6 +147,10 @@ impl HostPrerequisiteFailureKind {
                 Self::InvalidExpectedConcurrentVms
             }
             PreflightError::KernelModulesMissing { .. } => Self::KernelModulesMissing,
+            PreflightError::KsmEnabled { .. } => Self::KsmEnabled,
+            PreflightError::SmtEnabled { .. } => Self::SmtEnabled,
+            PreflightError::SwapActive { .. } => Self::SwapActive,
+            PreflightError::NestedVirtEnabled { .. } => Self::NestedVirtEnabled,
             PreflightError::PrivilegeUnavailable { .. } => Self::PrivilegeUnavailable,
             PreflightError::CapabilityRead(_) => Self::CapabilityRead,
             PreflightError::FirecrackerBinaryNotFound { .. } => Self::FirecrackerBinaryNotFound,

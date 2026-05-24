@@ -35,53 +35,13 @@ which is the right place for a security review to start.
   2. **Host kernel floor** — `uname -r` must parse as Linux kernel 6.1 or
      newer. Older or unparseable releases fail before any KVM or artifact work.
   3. **KVM** — `/dev/kvm` exists and is writable by this process.
-  4. **KVM CPU extensions** — `/proc/cpuinfo` advertises at least one of
-     `vmx` or `svm`, so launch failures from disabled hardware
-     virtualization surface before Firecracker startup.
-  5. **Kernel modules / devices** — `bridge` and `tap` loaded (read from
-     `/proc/modules`), TUN available through either the `tun` module or
-     `/dev/net/tun`, vhost-vsock available through either the `vhost_vsock`
-     module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
-     NAT. `br_netfilter` must also be available and
-     `/proc/sys/net/bridge/bridge-nf-call-iptables` must be `1`, so bridged
-     TAP traffic traverses the TAP-scoped iptables rules. v0.1 does not
-     attempt to load missing modules or change sysctls; the operator must do
-     that before running preflight.
-  5b. **Conntrack capacity** — reads
-     `/proc/sys/net/netfilter/nf_conntrack_max` and fails if the host-global
-     conntrack table is below `2 * M80_MAX_CONCURRENT_VMS * 1000` entries.
-     `M80_MAX_CONCURRENT_VMS` defaults to `8`.
-  6. **Transparent hugepages** — reads
-     `/sys/kernel/mm/transparent_hugepage/enabled` and emits a non-blocking
-     informational row. `[always]` is a clean row. `[madvise]`, `[never]`,
-     unreadable, or unrecognized policy text still pass preflight but carry an
-     advisory detail pointing operators at host tuning docs.
-  7. **KVM halt polling** — reads `/sys/module/kvm/parameters/halt_poll_ns`
-     and related KVM timer knobs, then emits a non-blocking informational row
-     pointing operators at latency-priority versus density-priority guidance.
-  8. **CPU governor** — reads
-     `/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver` and
-     `scaling_governor`, then emits a non-blocking row. `acpi-cpufreq` with a
-     non-`performance` governor carries an advisory; `intel_pstate` and
-     `amd_pstate` stay clean because their hardware-managed ramp behavior is
-     different.
-  9. **CPU microcode** — reads CPU0 microcode `version` and `processor_flags`
-     sysfs rows when present and emits a non-blocking report row. Missing
-     microcode sysfs data is preserved as `unavailable` detail rather than
-     guessed.
-  10. **CPU vulnerabilities** — reads selected files under
-     `/sys/devices/system/cpu/vulnerabilities`. `mds` and `l1tf` reporting
-     `Vulnerable` fail preflight unless
-     `M80_SKIP_CHECK_VULNERABILITIES=1` is set. Other vulnerability files emit
-     advisory report detail when the kernel reports `Vulnerable` or an
-     unclassified status.
-  11. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
+  4. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
      `m80-cgroup::Subtree::probe()` must confirm a unified cgroup v2 hierarchy
      before launch work begins. `cgroup_mode = "disabled"` skips this check.
-  12. **Jailer identity** — effective `jail_uid` and `jail_gid` must resolve
+  5. **Jailer identity** — effective `jail_uid` and `jail_gid` must resolve
       through the host passwd and group databases before launch. Preflight does
       not create identities or silently fall back to another UID/GID.
-  13. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
+  6. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
      `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
@@ -90,22 +50,82 @@ which is the right place for a security review to start.
      from the backend thread after `m80-net-helper` starts. Probed via the
      `caps` crate against the process's effective set. Returns
      `PrivilegeStatus::Root` or `PrivilegeStatus::CapabilityBearing`.
-  13b. **Host substrate proof** — records whether the substrate rows came
+  7. **Host substrate proof** — records whether the substrate rows came
       from live preflight or a hostless fixture. Neither value is a real-KVM
       `m80 run -- echo hello` smoke by itself.
-  14. **Firecracker binary** — discovered via env override or default. The
+  8. **KVM CPU extensions** — `/proc/cpuinfo` advertises at least one of
+     `vmx` or `svm`, so launch failures from disabled hardware
+     virtualization surface before Firecracker startup.
+  9. **Kernel modules / devices** — `bridge` and `tap` loaded (read from
+     `/proc/modules`), TUN available through either the `tun` module or
+     `/dev/net/tun`, vhost-vsock available through either the `vhost_vsock`
+     module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
+     NAT. `br_netfilter` must also be available and
+     `/proc/sys/net/bridge/bridge-nf-call-iptables` must be `1`, so bridged
+     TAP traffic traverses the TAP-scoped iptables rules. v0.1 does not
+     attempt to load missing modules or change sysctls; the operator must do
+     that before running preflight.
+  10. **KSM disabled** — `/sys/kernel/mm/ksm/run` must be `0` when present.
+      Any other value fails with `PreflightError::KsmEnabled`. Operators can
+      set `M80_SKIP_CHECK_KSM=1` to record an explicit skip row after accepting
+      the page-deduplication side-channel risk.
+  11. **SMT disabled** — `/sys/devices/system/cpu/smt/control` should be
+      `off`. Other values or an absent sysfs row produce an advisory row by
+      default; `M80_SMT_CHECK=fail` makes the same condition fail with
+      `PreflightError::SmtEnabled`. `M80_SKIP_CHECK_SMT=1` records an explicit
+      skip row.
+  12. **Swap disabled** — `/proc/swaps` must contain only its header line.
+      Active swap entries fail with `PreflightError::SwapActive { devices }`.
+      `M80_SKIP_CHECK_SWAP=1` records an explicit skip row after accepting the
+      data-remanence risk.
+  13. **Nested virtualization disabled** —
+      `/sys/module/kvm_intel/parameters/nested` and
+      `/sys/module/kvm_amd/parameters/nested` must not be `Y`, `y`, or `1`.
+      Enabled vendor modules fail with
+      `PreflightError::NestedVirtEnabled { vendor }`. Both paths absent pass
+      because the earlier KVM checks own KVM availability.
+      `M80_SKIP_CHECK_NESTED_VIRT=1` records an explicit skip row.
+  14. **Transparent hugepages** — reads
+     `/sys/kernel/mm/transparent_hugepage/enabled` and emits a non-blocking
+     informational row. `[always]` is a clean row. `[madvise]`, `[never]`,
+     unreadable, or unrecognized policy text still pass preflight but carry an
+     advisory detail pointing operators at host tuning docs.
+  15. **KVM halt polling** — reads `/sys/module/kvm/parameters/halt_poll_ns`
+     and related KVM timer knobs, then emits a non-blocking informational row
+     pointing operators at latency-priority versus density-priority guidance.
+  16. **CPU governor** — reads
+     `/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver` and
+     `scaling_governor`, then emits a non-blocking row. `acpi-cpufreq` with a
+     non-`performance` governor carries an advisory; `intel_pstate` and
+     `amd_pstate` stay clean because their hardware-managed ramp behavior is
+     different.
+  17. **CPU microcode** — reads CPU0 microcode `version` and `processor_flags`
+     sysfs rows when present and emits a non-blocking report row. Missing
+     microcode sysfs data is preserved as `unavailable` detail rather than
+     guessed.
+  18. **CPU vulnerabilities** — reads selected files under
+     `/sys/devices/system/cpu/vulnerabilities`. `mds` and `l1tf` reporting
+     `Vulnerable` fail preflight unless
+     `M80_SKIP_CHECK_VULNERABILITIES=1` is set. Other vulnerability files emit
+     advisory report detail when the kernel reports `Vulnerable` or an
+     unclassified status.
+  19. **Conntrack capacity** — reads
+     `/proc/sys/net/netfilter/nf_conntrack_max` and fails if the host-global
+     conntrack table is below `2 * M80_MAX_CONCURRENT_VMS * 1000` entries.
+     `M80_MAX_CONCURRENT_VMS` defaults to `8`.
+  20. **Firecracker binary** — discovered via env override or default. The
      path must be absolute, and `--version` must clear the documented CVE floor
      before any configured exact version pin is accepted. After artifact
      verification, the probed version must also match the guest manifest
      `expected_firecracker_version`.
-  15. **Jailer binary** — absolute path, discovered via env override or
+  21. **Jailer binary** — absolute path, discovered via env override or
       default. `jailer --version` must parse as an official release and match
       the accepted Firecracker version exactly.
-  16. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+  22. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  16b. **Network helper** — `m80-net-helper`, discovered via
+  23. **Network helper** — `m80-net-helper`, discovered via
      `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
-  16c. **Host binary manifest** — reads
+  24. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
       `firecracker`, `jailer`, `m80`, `m80_jailer_harden`, and
       `m80_net_helper`, plus a `launch_material` entry for
@@ -116,11 +136,11 @@ which is the right place for a security review to start.
       rejects empty launch-material files. It also compares recorded versions
       against live Firecracker/jailer discovery, m80 helper `--version`
       output, and the seccomp filter's owning Firecracker train.
-  17. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  25. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  18. **Rootfs + manifest + build receipt** — manifest schema validates,
+  26. **Rootfs + manifest + build receipt** — manifest schema validates,
      including `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256.
      `<rootfs>.build-receipt.json` must point at the same manifest, its
      manifest sha256 must match the manifest bytes, and its artifact path/hash
@@ -130,14 +150,14 @@ which is the right place for a security review to start.
      procfs. This is the boot-artifact trust boundary for `m80-firecracker`;
      launch phase 3 does not re-open the original rootfs path.
      Group/world-writable rootfs files and artifact directories fail closed.
-  19. **Run-root** — absolute, must already exist, >= 100 MiB free
+  27. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  20. **Run-root filesystem** — creates a short-lived probe file under the
+  28. **Run-root filesystem** — creates a short-lived probe file under the
      run-root and runs `cp --reflink=always` to report whether the filesystem
      supports metadata-only CoW clones. This advisory is non-blocking:
      unsupported reflinks mean callers should choose explicit byte-copy mode
      for that run-root, or let explicit auto mode select byte-copy.
-  21. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  29. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
   immutable-artifact outputs: `firecracker --version`, `jailer --version`, and
@@ -154,9 +174,12 @@ which is the right place for a security review to start.
   `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, `M80_RUN_ROOT`, `M80_JAIL_UID`,
   `M80_JAIL_GID`, `M80_CGROUP_MODE`, `M80_MAX_CONCURRENT_VMS`, and
   `M80_FORCE_PREFLIGHT`.
-  `M80_SKIP_CHECK_VULNERABILITIES=1` is a documented
-  escape hatch for the CPU vulnerability hard gate. The full schema is captured
-  in `docs/behaviors/configuration/env-schema.md`.
+  `M80_SKIP_CHECK_KSM=1`, `M80_SKIP_CHECK_SMT=1`,
+  `M80_SMT_CHECK=fail`, `M80_SKIP_CHECK_SWAP=1`,
+  `M80_SKIP_CHECK_NESTED_VIRT=1`, and
+  `M80_SKIP_CHECK_VULNERABILITIES=1` are documented escape hatches for host
+  posture checks. The full schema is captured in
+  `docs/behaviors/configuration/env-schema.md`.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
   `Discovery::render_table()`.

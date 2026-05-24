@@ -165,6 +165,42 @@ fn kernel_modules_missing_has_hint() {
 }
 
 #[test]
+fn ksm_enabled_has_hint() {
+    let err = PreflightError::KsmEnabled {
+        actual: "1".to_owned(),
+    };
+    assert_hint(&err);
+    assert!(err.hint().contains("M80_SKIP_CHECK_KSM=1"));
+}
+
+#[test]
+fn smt_enabled_has_hint() {
+    let err = PreflightError::SmtEnabled {
+        actual: "on".to_owned(),
+    };
+    assert_hint(&err);
+    assert!(err.hint().contains("M80_SMT_CHECK"));
+}
+
+#[test]
+fn swap_active_has_hint() {
+    let err = PreflightError::SwapActive {
+        devices: vec!["/swapfile".to_owned()],
+    };
+    assert_hint(&err);
+    assert!(err.hint().contains("swapoff"));
+}
+
+#[test]
+fn nested_virt_enabled_has_hint() {
+    let err = PreflightError::NestedVirtEnabled {
+        vendor: "intel".to_owned(),
+    };
+    assert_hint(&err);
+    assert!(err.hint().contains("M80_SKIP_CHECK_NESTED_VIRT=1"));
+}
+
+#[test]
 fn privilege_unavailable_has_hint() {
     assert_hint(&PreflightError::PrivilegeUnavailable {
         missing_caps: vec![Capability::CAP_NET_ADMIN],

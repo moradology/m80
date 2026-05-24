@@ -430,6 +430,10 @@ fn check_id_for_preflight_error(error: &PreflightError) -> HostPrerequisiteCheck
         | PreflightError::BridgeNetfilterUnavailable
         | PreflightError::BridgeNfCallIptablesDisabled { .. }
         | PreflightError::KernelModulesMissing { .. } => HostPrerequisiteCheckId::KernelModules,
+        PreflightError::KsmEnabled { .. } => HostPrerequisiteCheckId::KsmDisabled,
+        PreflightError::SmtEnabled { .. } => HostPrerequisiteCheckId::SmtDisabled,
+        PreflightError::SwapActive { .. } => HostPrerequisiteCheckId::SwapDisabled,
+        PreflightError::NestedVirtEnabled { .. } => HostPrerequisiteCheckId::NestedVirtDisabled,
         PreflightError::NfConntrackCapacityTooLow { .. }
         | PreflightError::InvalidNfConntrackMax { .. }
         | PreflightError::InvalidExpectedConcurrentVms { .. } => {
@@ -514,6 +518,13 @@ fn check_id_for_path(path: &std::path::Path) -> HostPrerequisiteCheckId {
     match path.to_str() {
         Some("/dev/kvm") => HostPrerequisiteCheckId::Kvm,
         Some("/proc/cpuinfo") => HostPrerequisiteCheckId::KvmCpuExtensions,
+        Some("/sys/kernel/mm/ksm/run") => HostPrerequisiteCheckId::KsmDisabled,
+        Some("/sys/devices/system/cpu/smt/control") => HostPrerequisiteCheckId::SmtDisabled,
+        Some("/proc/swaps") => HostPrerequisiteCheckId::SwapDisabled,
+        Some("/sys/module/kvm_intel/parameters/nested")
+        | Some("/sys/module/kvm_amd/parameters/nested") => {
+            HostPrerequisiteCheckId::NestedVirtDisabled
+        }
         Some("/proc/modules") | Some("/proc/sys/net/bridge/bridge-nf-call-iptables") => {
             HostPrerequisiteCheckId::KernelModules
         }
@@ -688,6 +699,25 @@ fn apply_preflight_error_fields(check: &mut HostPrerequisiteCheck, error: &Prefl
         PreflightError::KernelModulesMissing { missing } => {
             check.expected_value = Some("required kernel modules loaded".to_string());
             check.actual_value = Some(format!("missing {}", missing.join(",")));
+        }
+        PreflightError::KsmEnabled { actual } => {
+            check.final_path = Some("/sys/kernel/mm/ksm/run".into());
+            check.expected_value = Some("0".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::SmtEnabled { actual } => {
+            check.final_path = Some("/sys/devices/system/cpu/smt/control".into());
+            check.expected_value = Some("off".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::SwapActive { devices } => {
+            check.final_path = Some("/proc/swaps".into());
+            check.expected_value = Some("header only".to_string());
+            check.actual_value = Some(devices.join(","));
+        }
+        PreflightError::NestedVirtEnabled { vendor } => {
+            check.expected_value = Some("N or 0".to_string());
+            check.actual_value = Some(format!("{vendor} nested enabled"));
         }
         PreflightError::PrivilegeUnavailable { missing_caps } => {
             check.expected_value = Some("root or required capabilities".to_string());

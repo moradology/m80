@@ -258,6 +258,121 @@ fn br_netfilter_sys_module_satisfies_bridge_preflight() {
 }
 
 #[test]
+fn ksm_disabled_accepts_zero() {
+    let row = classify_ksm_disabled(Some("0")).unwrap();
+
+    assert_eq!(row.check_id, HostPrerequisiteCheckId::KsmDisabled);
+    assert!(row.passed);
+    assert_eq!(row.detail, "run=0");
+}
+
+#[test]
+fn ksm_enabled_fails_closed() {
+    let err = classify_ksm_disabled(Some("1")).unwrap_err();
+
+    match err {
+        PreflightError::KsmEnabled { actual } => assert_eq!(actual, "1"),
+        other => panic!("expected KsmEnabled, got {other:?}"),
+    }
+}
+
+#[test]
+fn ksm_absent_is_not_enabled() {
+    let row = classify_ksm_disabled(None).unwrap();
+
+    assert!(row.passed);
+    assert!(row.detail.contains("absent"));
+}
+
+#[test]
+fn smt_off_passes() {
+    let row = classify_smt_disabled(Some("off"), false).unwrap();
+
+    assert_eq!(row.check_id, HostPrerequisiteCheckId::SmtDisabled);
+    assert!(row.passed);
+    assert_eq!(row.detail, "off");
+}
+
+#[test]
+fn smt_on_is_advisory_by_default() {
+    let row = classify_smt_disabled(Some("on"), false).unwrap();
+
+    assert!(row.passed);
+    assert!(row.detail.contains("warning"));
+    assert!(row.detail.contains("M80_SMT_CHECK=fail"));
+}
+
+#[test]
+fn smt_on_fails_when_configured() {
+    let err = classify_smt_disabled(Some("on"), true).unwrap_err();
+
+    match err {
+        PreflightError::SmtEnabled { actual } => assert_eq!(actual, "on"),
+        other => panic!("expected SmtEnabled, got {other:?}"),
+    }
+}
+
+#[test]
+fn smt_absent_warns_unless_configured_to_fail() {
+    let row = classify_smt_disabled(None, false).unwrap();
+    assert!(row.passed);
+    assert!(row.detail.contains("unknown"));
+
+    assert!(matches!(
+        classify_smt_disabled(None, true).unwrap_err(),
+        PreflightError::SmtEnabled { .. }
+    ));
+}
+
+#[test]
+fn swap_header_only_passes() {
+    let row = classify_swap_disabled("Filename\tType\tSize\tUsed\tPriority\n").unwrap();
+
+    assert_eq!(row.check_id, HostPrerequisiteCheckId::SwapDisabled);
+    assert!(row.passed);
+}
+
+#[test]
+fn swap_active_names_devices() {
+    let err = classify_swap_disabled(
+        "Filename\tType\tSize\tUsed\tPriority\n/swapfile file 1024 0 -2\n/dev/zram0 partition 1024 0 100\n",
+    )
+    .unwrap_err();
+
+    match err {
+        PreflightError::SwapActive { devices } => {
+            assert_eq!(devices, ["/swapfile", "/dev/zram0"]);
+        }
+        other => panic!("expected SwapActive, got {other:?}"),
+    }
+}
+
+#[test]
+fn nested_virt_absent_or_disabled_passes() {
+    assert!(classify_nested_virt_disabled(None, None).unwrap().passed);
+    assert!(
+        classify_nested_virt_disabled(Some("N"), Some("0"))
+            .unwrap()
+            .passed
+    );
+}
+
+#[test]
+fn nested_virt_enabled_names_vendor() {
+    let intel = classify_nested_virt_disabled(Some("Y"), None).unwrap_err();
+    match intel {
+        PreflightError::NestedVirtEnabled { vendor } => assert_eq!(vendor, "intel"),
+        other => panic!("expected NestedVirtEnabled, got {other:?}"),
+    }
+
+    let amd = classify_nested_virt_disabled(None, Some("1")).unwrap_err();
+    match amd {
+        PreflightError::NestedVirtEnabled { vendor } => assert_eq!(vendor, "amd"),
+        other => panic!("expected NestedVirtEnabled, got {other:?}"),
+    }
+}
+
+#[test]
 fn bridge_nf_call_iptables_requires_enabled_sysctl() {
     let err = classify_bridge_nf_call_iptables("0\n").unwrap_err();
 

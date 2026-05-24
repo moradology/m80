@@ -38,12 +38,22 @@ const CPU_MICROCODE_FLAGS_PATH: &str = "/sys/devices/system/cpu/cpu0/microcode/p
 const CPU_VULNERABILITY_DIR: &str = "/sys/devices/system/cpu/vulnerabilities";
 const BR_NETFILTER_MODULE_PATH: &str = "/sys/module/br_netfilter";
 const BRIDGE_NF_CALL_IPTABLES_PATH: &str = "/proc/sys/net/bridge/bridge-nf-call-iptables";
+const KSM_RUN_PATH: &str = "/sys/kernel/mm/ksm/run";
+const SMT_CONTROL_PATH: &str = "/sys/devices/system/cpu/smt/control";
+const PROC_SWAPS_PATH: &str = "/proc/swaps";
+const KVM_INTEL_NESTED_PATH: &str = "/sys/module/kvm_intel/parameters/nested";
+const KVM_AMD_NESTED_PATH: &str = "/sys/module/kvm_amd/parameters/nested";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const NF_CONNTRACK_MAX_PATH: &str = "/proc/sys/net/netfilter/nf_conntrack_max";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 const ENV_SKIP_CPU_VULNERABILITIES: &str = "M80_SKIP_CHECK_VULNERABILITIES";
+const ENV_SKIP_KSM: &str = "M80_SKIP_CHECK_KSM";
+const ENV_SKIP_SMT: &str = "M80_SKIP_CHECK_SMT";
+const ENV_SMT_CHECK: &str = "M80_SMT_CHECK";
+const ENV_SKIP_SWAP: &str = "M80_SKIP_CHECK_SWAP";
+const ENV_SKIP_NESTED_VIRT: &str = "M80_SKIP_CHECK_NESTED_VIRT";
 const NF_CONNTRACK_ENTRIES_PER_VM: u64 = 1_000;
 const NF_CONNTRACK_HEADROOM_MULTIPLIER: u64 = 2;
 
@@ -124,6 +134,12 @@ pub fn run_with_configs(
 
     // Kernel modules
     check_kernel_modules(&mut report)?;
+
+    // Host isolation posture
+    check_ksm_disabled(&mut report)?;
+    check_smt_disabled(&mut report)?;
+    check_swap_disabled(&mut report)?;
+    check_nested_virt_disabled(&mut report)?;
 
     // Host tuning advisories
     check_thp_policy(&mut report);
@@ -376,6 +392,151 @@ fn minimum_nf_conntrack_entries(expected_concurrent_vms: u32) -> u64 {
         * NF_CONNTRACK_HEADROOM_MULTIPLIER
 }
 
+fn check_ksm_disabled(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    if env_is_one(ENV_SKIP_KSM) {
+        report.push(CheckRow::pass(
+            HostPrerequisiteCheckId::KsmDisabled,
+            "skipped by operator",
+        ));
+        return Ok(());
+    }
+
+    report.push(classify_ksm_disabled(
+        read_optional_trimmed_path(KSM_RUN_PATH)?.as_deref(),
+    )?);
+    Ok(())
+}
+
+fn classify_ksm_disabled(value: Option<&str>) -> Result<CheckRow, PreflightError> {
+    match value {
+        Some("0") => Ok(CheckRow::pass(
+            HostPrerequisiteCheckId::KsmDisabled,
+            "run=0",
+        )),
+        Some(actual) => Err(PreflightError::KsmEnabled {
+            actual: actual.to_owned(),
+        }),
+        None => Ok(CheckRow::pass(
+            HostPrerequisiteCheckId::KsmDisabled,
+            "unavailable; KSM sysfs absent",
+        )),
+    }
+}
+
+fn check_smt_disabled(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    if env_is_one(ENV_SKIP_SMT) {
+        report.push(CheckRow::pass(
+            HostPrerequisiteCheckId::SmtDisabled,
+            "skipped by operator",
+        ));
+        return Ok(());
+    }
+
+    report.push(classify_smt_disabled(
+        read_optional_trimmed_path(SMT_CONTROL_PATH)?.as_deref(),
+        std::env::var(ENV_SMT_CHECK).as_deref() == Ok("fail"),
+    )?);
+    Ok(())
+}
+
+fn classify_smt_disabled(value: Option<&str>, hard_fail: bool) -> Result<CheckRow, PreflightError> {
+    match value {
+        Some("off") => Ok(CheckRow::pass(HostPrerequisiteCheckId::SmtDisabled, "off")),
+        Some(actual) if hard_fail => Err(PreflightError::SmtEnabled {
+            actual: actual.to_owned(),
+        }),
+        Some(actual) => Ok(CheckRow::pass(
+            HostPrerequisiteCheckId::SmtDisabled,
+            format!("warning: smt={actual}; set {ENV_SMT_CHECK}=fail to hard-fail"),
+        )),
+        None if hard_fail => Err(PreflightError::SmtEnabled {
+            actual: "unavailable".to_string(),
+        }),
+        None => Ok(CheckRow::pass(
+            HostPrerequisiteCheckId::SmtDisabled,
+            "warning: SMT control unavailable; status unknown",
+        )),
+    }
+}
+
+fn check_swap_disabled(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    if env_is_one(ENV_SKIP_SWAP) {
+        report.push(CheckRow::pass(
+            HostPrerequisiteCheckId::SwapDisabled,
+            "skipped by operator",
+        ));
+        return Ok(());
+    }
+
+    let raw = fs::read_to_string(PROC_SWAPS_PATH).map_err(|source| PreflightError::PathIo {
+        path: PathBuf::from(PROC_SWAPS_PATH),
+        source,
+    })?;
+    report.push(classify_swap_disabled(&raw)?);
+    Ok(())
+}
+
+fn classify_swap_disabled(raw: &str) -> Result<CheckRow, PreflightError> {
+    let devices = raw
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().next())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if !devices.is_empty() {
+        return Err(PreflightError::SwapActive { devices });
+    }
+    Ok(CheckRow::pass(
+        HostPrerequisiteCheckId::SwapDisabled,
+        "no active swap entries",
+    ))
+}
+
+fn check_nested_virt_disabled(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    if env_is_one(ENV_SKIP_NESTED_VIRT) {
+        report.push(CheckRow::pass(
+            HostPrerequisiteCheckId::NestedVirtDisabled,
+            "skipped by operator",
+        ));
+        return Ok(());
+    }
+
+    report.push(classify_nested_virt_disabled(
+        read_optional_trimmed_path(KVM_INTEL_NESTED_PATH)?.as_deref(),
+        read_optional_trimmed_path(KVM_AMD_NESTED_PATH)?.as_deref(),
+    )?);
+    Ok(())
+}
+
+fn classify_nested_virt_disabled(
+    intel: Option<&str>,
+    amd: Option<&str>,
+) -> Result<CheckRow, PreflightError> {
+    if nested_virt_enabled(intel) {
+        return Err(PreflightError::NestedVirtEnabled {
+            vendor: "intel".to_string(),
+        });
+    }
+    if nested_virt_enabled(amd) {
+        return Err(PreflightError::NestedVirtEnabled {
+            vendor: "amd".to_string(),
+        });
+    }
+
+    Ok(CheckRow::pass(
+        HostPrerequisiteCheckId::NestedVirtDisabled,
+        format!(
+            "kvm_intel={}, kvm_amd={}",
+            intel.unwrap_or("absent"),
+            amd.unwrap_or("absent")
+        ),
+    ))
+}
+
+fn nested_virt_enabled(value: Option<&str>) -> bool {
+    matches!(value, Some("Y" | "y" | "1"))
+}
+
 fn classify_thp_policy(read_result: Result<String, io::Error>) -> CheckRow {
     let detail = match read_result {
         Ok(raw) => match selected_thp_mode(&raw) {
@@ -591,6 +752,21 @@ fn read_trimmed_sysfs(path: &str) -> Option<String> {
         .ok()
         .map(|raw| raw.trim().to_string())
         .filter(|raw| !raw.is_empty())
+}
+
+fn read_optional_trimmed_path(path: &str) -> Result<Option<String>, PreflightError> {
+    match fs::read_to_string(path) {
+        Ok(raw) => Ok(Some(raw.trim().to_string()).filter(|raw| !raw.is_empty())),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(PreflightError::PathIo {
+            path: PathBuf::from(path),
+            source,
+        }),
+    }
+}
+
+fn env_is_one(name: &str) -> bool {
+    std::env::var(name).as_deref() == Ok("1")
 }
 
 fn classify_vsock_availability(

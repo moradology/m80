@@ -293,6 +293,34 @@ pub enum PreflightError {
         missing: Vec<String>,
     },
 
+    /// Kernel samepage merging is enabled.
+    #[error("ksm enabled: /sys/kernel/mm/ksm/run is {actual:?}")]
+    KsmEnabled {
+        /// Observed `/sys/kernel/mm/ksm/run` value.
+        actual: String,
+    },
+
+    /// SMT is enabled and configured as a hard preflight failure.
+    #[error("smt enabled: /sys/devices/system/cpu/smt/control is {actual:?}")]
+    SmtEnabled {
+        /// Observed SMT control value.
+        actual: String,
+    },
+
+    /// Host swap is active.
+    #[error("swap active: {devices:?}")]
+    SwapActive {
+        /// Active swap devices from `/proc/swaps`.
+        devices: Vec<String>,
+    },
+
+    /// Nested virtualization is enabled for a host KVM module.
+    #[error("nested virtualization enabled for {vendor}")]
+    NestedVirtEnabled {
+        /// KVM vendor module, e.g. `intel` or `amd`.
+        vendor: String,
+    },
+
     /// `geteuid() != 0` AND one or more capabilities in
     /// [`REQUIRED_CAPABILITIES`] are absent from the effective set.
     /// Operator must run as root, `setcap` the binary, or grant the caps via
@@ -856,6 +884,18 @@ impl PreflightError {
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"
+            }
+            Self::KsmEnabled { .. } => {
+                "disable KSM with `echo 0 | sudo tee /sys/kernel/mm/ksm/run`; set M80_SKIP_CHECK_KSM=1 only after accepting the page-deduplication side-channel risk"
+            }
+            Self::SmtEnabled { .. } => {
+                "disable SMT in firmware or with the host kernel control path, or leave M80_SMT_CHECK unset for advisory-only mode"
+            }
+            Self::SwapActive { .. } => {
+                "disable swap with `sudo swapoff -a` and remove persistent swap entries from /etc/fstab; set M80_SKIP_CHECK_SWAP=1 only after accepting the data-remanence risk"
+            }
+            Self::NestedVirtEnabled { .. } => {
+                "disable nested virtualization for the host KVM module; set M80_SKIP_CHECK_NESTED_VIRT=1 only after accepting the nested-hypervisor risk"
             }
             Self::PrivilegeUnavailable { .. } => {
                 "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,cap_setuid,cap_setgid,cap_setpcap+ep <binary>`, or set securityContext.capabilities.add in your pod spec"

@@ -96,7 +96,7 @@ fn full_report_rows_name_first_missing_check_id() {
             expected_index,
         } => {
             assert_eq!(check_id, "rootfs_manifest");
-            assert_eq!(expected_index, 22);
+            assert_eq!(expected_index, 26);
         }
         other => panic!("expected missing check_id, got {other:?}"),
     }
@@ -129,7 +129,7 @@ fn full_report_rows_name_first_duplicate_check_id() {
 #[test]
 fn full_report_rows_name_first_out_of_order_check_id() {
     let mut rows = full_report_rows();
-    rows.swap(21, 22);
+    rows.swap(25, 26);
 
     let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
 
@@ -141,7 +141,7 @@ fn full_report_rows_name_first_out_of_order_check_id() {
         } => {
             assert_eq!(expected_check_id, "kernel_image");
             assert_eq!(actual_check_id, "rootfs_manifest");
-            assert_eq!(index, 21);
+            assert_eq!(index, 25);
         }
         other => panic!("expected out-of-order check_id, got {other:?}"),
     }
@@ -161,6 +161,10 @@ fn stable_check_registry_keeps_expected_order() {
             HostPrerequisiteCheckId::HostSubstrateProof,
             HostPrerequisiteCheckId::KvmCpuExtensions,
             HostPrerequisiteCheckId::KernelModules,
+            HostPrerequisiteCheckId::KsmDisabled,
+            HostPrerequisiteCheckId::SmtDisabled,
+            HostPrerequisiteCheckId::SwapDisabled,
+            HostPrerequisiteCheckId::NestedVirtDisabled,
             HostPrerequisiteCheckId::TransparentHugepages,
             HostPrerequisiteCheckId::KvmHaltPolling,
             HostPrerequisiteCheckId::CpuGovernor,
@@ -456,6 +460,30 @@ fn failure_kind_maps_host_feature_preflight_errors() {
             },
             HostPrerequisiteFailureKind::KernelModulesMissing,
         ),
+        (
+            PreflightError::KsmEnabled {
+                actual: "1".to_owned(),
+            },
+            HostPrerequisiteFailureKind::KsmEnabled,
+        ),
+        (
+            PreflightError::SmtEnabled {
+                actual: "on".to_owned(),
+            },
+            HostPrerequisiteFailureKind::SmtEnabled,
+        ),
+        (
+            PreflightError::SwapActive {
+                devices: vec!["/swapfile".to_owned()],
+            },
+            HostPrerequisiteFailureKind::SwapActive,
+        ),
+        (
+            PreflightError::NestedVirtEnabled {
+                vendor: "intel".to_owned(),
+            },
+            HostPrerequisiteFailureKind::NestedVirtEnabled,
+        ),
     ];
 
     for (error, expected) in cases {
@@ -509,6 +537,22 @@ fn diagnostic_maps_host_verifier_failures_to_expected_actual_values() {
             HostPrerequisiteCheckId::ConntrackCapacity,
             Some(">= 1024 for 8 concurrent VMs"),
             Some("128"),
+        ),
+        (
+            PreflightError::KsmEnabled {
+                actual: "1".to_owned(),
+            },
+            HostPrerequisiteCheckId::KsmDisabled,
+            Some("0"),
+            Some("1"),
+        ),
+        (
+            PreflightError::SwapActive {
+                devices: vec!["/swapfile".to_owned()],
+            },
+            HostPrerequisiteCheckId::SwapDisabled,
+            Some("header only"),
+            Some("/swapfile"),
         ),
     ];
 
@@ -624,6 +668,19 @@ fn diagnostic_path_fallback_keeps_jailer_identity_under_firecracker_dir() {
 fn diagnostic_path_io_preserves_verifier_origin_check_ids() {
     let cases = [
         ("/proc/cpuinfo", HostPrerequisiteCheckId::KvmCpuExtensions),
+        (
+            "/sys/kernel/mm/ksm/run",
+            HostPrerequisiteCheckId::KsmDisabled,
+        ),
+        (
+            "/sys/devices/system/cpu/smt/control",
+            HostPrerequisiteCheckId::SmtDisabled,
+        ),
+        ("/proc/swaps", HostPrerequisiteCheckId::SwapDisabled),
+        (
+            "/sys/module/kvm_intel/parameters/nested",
+            HostPrerequisiteCheckId::NestedVirtDisabled,
+        ),
         ("/proc/modules", HostPrerequisiteCheckId::KernelModules),
         (
             "/proc/sys/net/bridge/bridge-nf-call-iptables",
