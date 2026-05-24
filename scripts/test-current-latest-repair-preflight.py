@@ -21,13 +21,15 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
     def test_accepts_clean_new_stable_tag_that_supersedes_current_latest(self) -> None:
         artifact = accepted_fixture()
 
+        self.assertEqual(artifact["schema_version"], 2)
         self.assertTrue(artifact["decision"]["ok"])
         self.assertEqual(artifact["target_tag"], "v0.2.20")
         self.assertEqual(artifact["expected_release_tag"], "v0.2.20")
         self.assertFalse(artifact["dirty_tree"]["dirty"])
         self.assertEqual(artifact["existing_latest"]["tag"], "v0.2.11")
-        self.assertFalse(artifact["supersedes_missing_installer_latest_state"])
         self.assertTrue(artifact["release_order"]["candidate_is_newer_than_existing_latest"])
+        self.assertNotIn("missing_installer_latest_tag", artifact)
+        self.assertNotIn("supersedes_missing_installer_latest_state", artifact)
 
     def test_rejects_dirty_tree_with_safe_repair_action(self) -> None:
         artifact = accepted_fixture(dirty_entries=[" M README.md"])
@@ -66,7 +68,6 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
         self.assertEqual(diagnostic["field"], "release_order")
         self.assertEqual(diagnostic["expected"], ">v0.2.11")
         self.assertIn("do not backfill old release assets", diagnostic["safe_repair_action"])
-        self.assertFalse(artifact["supersedes_missing_installer_latest_state"])
 
     def test_rejects_missing_existing_latest_metadata(self) -> None:
         artifact = accepted_fixture(existing_latest_tag=None, existing_latest_url=None)
@@ -167,7 +168,6 @@ def accepted_fixture(**overrides: object) -> dict:
         "tag_commit": SOURCE_COMMIT,
         "existing_latest_tag": "v0.2.11",
         "existing_latest_url": "https://github.com/moradology/m80/releases/tag/v0.2.11",
-        "missing_installer_latest_tag": "v0.2.7",
         "dirty_entries": [],
         "generated_at": "2026-05-21T00:00:00Z",
     }

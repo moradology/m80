@@ -18,13 +18,16 @@ empty, or names a non-stable tag, the repair preflight fails closed before
 packaging. A release that cannot prove what it is superseding must stop rather
 than publish installer assets from an unknown release state.
 
-The artifact schema is `1` and records `target_tag`, `source_commit`,
+The artifact schema is `2` and records `target_tag`, `source_commit`,
 `workspace_package_version`, `expected_release_tag`, `dirty_tree`,
-`existing_latest`, `tag`, `release_order`, and
-`supersedes_missing_installer_latest_state`. Rejected candidates include
-diagnostics with the mismatched field, expected value, observed value, and the
-safe repair action: cut a matching stable tag, rerun the release workflow, or
-stop for manual release-state repair.
+`existing_latest`, `tag`, `release_order`, and `decision`. Rejected candidates
+include diagnostics with the mismatched field, expected value, observed value,
+and the safe repair action: cut a matching stable tag, rerun the release
+workflow, or stop for manual release-state repair. Schema `2` deliberately
+removes the `missing_installer_latest_tag` and
+`supersedes_missing_installer_latest_state` fields from schema `1`; the generic
+`existing_latest`, `release_order`, and `decision.diagnostics` fields now carry
+that operator signal without baking in one historical broken latest tag.
 
 Fixture coverage pins the clean new stable-tag path, dirty-tree rejection,
 stale existing tag rejection, tag/version mismatch rejection, and attempted

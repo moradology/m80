@@ -14,11 +14,9 @@ import sys
 import tomllib
 
 
-SCHEMA_VERSION = 1
-MISSING_INSTALLER_LATEST_TAG = "v0.2.6"
+SCHEMA_VERSION = 2
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 STABLE_TAG_RE = re.compile(r"^v(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\.(?P<patch>0|[1-9][0-9]*)$")
-WORKSPACE_VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
 
 @dataclass(frozen=True)
@@ -47,7 +45,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--latest-metadata", type=Path, help="GitHub latest release metadata JSON")
     parser.add_argument("--existing-latest-tag", help="test override for current public latest tag")
     parser.add_argument("--existing-latest-url", help="test override for current public latest URL")
-    parser.add_argument("--missing-installer-latest-tag", default=MISSING_INSTALLER_LATEST_TAG)
     parser.add_argument(
         "--dirty-status",
         choices=("auto", "clean", "dirty"),
@@ -86,7 +83,6 @@ def main() -> int:
         tag_commit=tag_commit,
         existing_latest_tag=existing_latest_tag,
         existing_latest_url=existing_latest_url,
-        missing_installer_latest_tag=args.missing_installer_latest_tag,
         dirty_entries=dirty_entries,
         generated_at=generated_at,
     )
@@ -113,7 +109,6 @@ def evaluate_preflight(
     tag_commit: str | None,
     existing_latest_tag: str | None,
     existing_latest_url: str | None,
-    missing_installer_latest_tag: str,
     dirty_entries: list[str],
     generated_at: str,
 ) -> dict:
@@ -198,11 +193,6 @@ def evaluate_preflight(
         )
 
     ok = not diagnostics
-    supersedes_missing_installer = (
-        ok
-        and existing_latest_tag == missing_installer_latest_tag
-        and release_order["candidate_is_newer_than_existing_latest"] is True
-    )
     tag_state = "absent"
     if tag_commit is not None:
         tag_state = "matches_source" if tag_commit == source_commit else "mismatch"
@@ -227,8 +217,6 @@ def evaluate_preflight(
             "tag": existing_latest_tag,
             "url": existing_latest_url,
         },
-        "missing_installer_latest_tag": missing_installer_latest_tag,
-        "supersedes_missing_installer_latest_state": supersedes_missing_installer,
         "release_order": release_order,
         "decision": {
             "ok": ok,
@@ -269,8 +257,6 @@ def parse_stable_tag(tag: str | None) -> tuple[int, int, int] | None:
 
 
 def expected_tag(workspace_version: str) -> str:
-    if WORKSPACE_VERSION_RE.fullmatch(workspace_version) is None:
-        return f"v{workspace_version}"
     return f"v{workspace_version}"
 
 
