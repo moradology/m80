@@ -3,7 +3,7 @@
 Smallest m80 invocation: no workspace, default egress/profile, one process.
 
 ```sh
-m80 run -- echo hello
+sudo m80 run -- echo hello
 ```
 
 Expected stdout:

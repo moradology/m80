@@ -40,7 +40,7 @@ QUICKSTART_VALUE_MARKER_RE = re.compile(
     r"^<!--\s*m80:quickstart-value\s+(start|end)\s*-->$"
 )
 QUICKSTART_VALUE_STATEMENT = (
-    "`m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code."
+    "`sudo m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code."
 )
 QUICKSTART_VALUE_DOCS = [
     "README.md",
@@ -288,7 +288,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
 
         gate = read_repo_file("docs/behaviors/release/docs-quickstart-gate.md")
         self.assertIn(
-            "The release proof observable for the public smoke is: `m80 run -- echo hello`",
+            "The release proof observable for the public smoke is: `sudo m80 run -- echo hello`",
             gate,
         )
         self.assertIn("exits 0 and stdout is exactly `hello`", gate)
@@ -401,7 +401,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
             text = read_repo_file(relative)
             normalized = " ".join(text.split())
             self.assertIn(latest_install_command(), text)
-            self.assertIn("m80 run -- echo hello", text)
+            self.assertIn("sudo m80 run -- echo hello", text)
             self.assertIn(heading, text)
             self.assertIn(
                 "Manual binary and artifact placement is an advanced/operator path",
@@ -428,7 +428,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "unclassified public command snippet",
             ),
             (
-                "```sh\nM80_KERNEL_IMAGE=/tmp/vmlinux M80_ROOTFS_IMAGE=/tmp/rootfs.ext4 m80 run -- echo hello\n```\n",
+                "```sh\nM80_KERNEL_IMAGE=/tmp/vmlinux M80_ROOTFS_IMAGE=/tmp/rootfs.ext4 sudo m80 run -- echo hello\n```\n",
                 "examples must use the installed default profile",
             ),
             (

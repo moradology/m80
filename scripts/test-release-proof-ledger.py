@@ -70,7 +70,7 @@ class ReleaseProofLedgerTest(unittest.TestCase):
             self.assertEqual(
                 record["command"],
                 {
-                    "display": "m80 run -- echo hello",
+                    "display": "sudo m80 run -- echo hello",
                     "expected_exit_status": 0,
                     "observed_exit_status": 0,
                 },
@@ -333,8 +333,8 @@ def write_proof(root: Path, name: str, *, proof_kind: str = "hostless") -> Path:
             "install_url": "https://github.com/moradology/m80/releases/download/v0.0.0/install.sh",
         },
         "command": {
-            "display": "m80 run -- echo hello",
-            "argv": ["m80", "run", "--", "echo", "hello"],
+            "display": "sudo m80 run -- echo hello",
+            "argv": ["sudo", "m80", "run", "--", "echo", "hello"],
             "expected_exit_status": 0,
             "observed_exit_status": 0,
             "expected_nonzero": False,

@@ -99,7 +99,7 @@ class PublicLink:
 
 
 def quickstart_smoke_command() -> str:
-    return "m80 run -- echo hello"
+    return "sudo m80 run -- echo hello"
 
 
 def install_status_command() -> str:
@@ -107,11 +107,11 @@ def install_status_command() -> str:
 
 
 def bug_report_command() -> str:
-    return "m80 bug-report > m80-bug-report.json"
+    return "sudo m80 bug-report > m80-bug-report.json"
 
 
 def update_check_command() -> str:
-    return "m80 update --check"
+    return "sudo m80 update --check"
 
 
 def rollback_cleanup_block() -> str:
@@ -503,13 +503,13 @@ def is_public_command_line(line: str, *, include_run_variants: bool) -> bool:
         return True
     if line.startswith("m80 install") or line.startswith("m80 quickstart"):
         return True
-    if line.startswith("m80 bug-report"):
+    if line.startswith("m80 bug-report") or line.startswith("sudo m80 bug-report"):
         return True
     if line == update_check_command():
         return True
     if line == quickstart_smoke_command():
         return True
-    if include_run_variants and line.startswith("m80 run"):
+    if include_run_variants and (line.startswith("m80 run") or line.startswith("sudo m80 run")):
         return True
     return False
 

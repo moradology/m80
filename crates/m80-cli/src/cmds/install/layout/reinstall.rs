@@ -168,7 +168,8 @@ fn verify_installed_bundle_metadata(final_dir: &Path, repair_command: &str) -> R
 }
 
 fn verify_default_config(install_root: &Path, repair_command: &str) -> Result<(), FcError> {
-    let path = install_root.join("config.toml");
+    let selector_paths = super::install_selector_paths(install_root);
+    let path = selector_paths.config_path;
     let table = read_toml_table(&path, "installed config", repair_command)?;
     reject_unknown_keys(
         &table,
@@ -199,7 +200,8 @@ fn verify_default_profile(
     release_tag: &str,
     repair_command: &str,
 ) -> Result<InstalledProfilePaths, FcError> {
-    let path = install_root.join("profiles/default.toml");
+    let selector_paths = super::install_selector_paths(install_root);
+    let path = selector_paths.default_profile_path();
     let table = read_toml_table(&path, "installed default profile", repair_command)?;
     reject_unknown_keys(
         &table,

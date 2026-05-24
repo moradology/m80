@@ -1300,7 +1300,7 @@ def read_issues(root: Path) -> list[dict]:
 def valid_quickstart_proof() -> dict:
     return {
         "release": {"resolved_tag": "v0.0.0"},
-        "command": {"display": "m80 run -- echo hello", "observed_exit_status": 0},
+        "command": {"display": "sudo m80 run -- echo hello", "observed_exit_status": 0},
         "stdout": {"excerpt": "hello\n"},
         "stderr": {"excerpt": ""},
         "substrate": {"kind": "real-kvm", "summary": "test runner"},

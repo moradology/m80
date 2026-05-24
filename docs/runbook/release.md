@@ -379,7 +379,7 @@ evidence:
 - `diagnostics` and `mismatches`: must be empty for a default installed release
   evidence capture. Non-empty values are repair inputs, not green evidence.
 - `next_action.kind`: must be `ready`; `next_action.command` should be
-  `m80 run -- echo hello`.
+  `sudo m80 run -- echo hello`.
 
 This status capture proves the local installed selector/profile/metadata shape.
 It does not replace the real-KVM smoke, public release proof, host-prerequisite
@@ -389,7 +389,7 @@ For local install repair triage, start with:
 
 <!-- m80:quickstart-snippet repair-status start -->
 ```sh
-m80 bug-report > m80-bug-report.json
+sudo m80 bug-report > m80-bug-report.json
 ```
 <!-- m80:quickstart-snippet repair-status end -->
 
@@ -397,7 +397,7 @@ For operator update status, use the read-only check:
 
 <!-- m80:quickstart-snippet freshness-check start -->
 ```sh
-m80 update --check
+sudo m80 update --check
 ```
 <!-- m80:quickstart-snippet freshness-check end -->
 
@@ -1010,7 +1010,7 @@ the README:
 
 <!-- m80:quickstart-snippet post-install-smoke start -->
 ```sh
-m80 run -- echo hello
+sudo m80 run -- echo hello
 ```
 <!-- m80:quickstart-snippet post-install-smoke end -->
 

@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-m80 run -- echo hello
+sudo m80 run -- echo hello

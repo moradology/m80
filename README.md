@@ -20,38 +20,44 @@ curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh
 Check the host:
 
 ```sh
-m80 preflight
+sudo m80 preflight
 ```
 
 Run something:
 
 <!-- m80:quickstart-snippet post-install-smoke start -->
 ```sh
-m80 run -- echo hello
+sudo m80 run -- echo hello
 ```
 <!-- m80:quickstart-snippet post-install-smoke end -->
 
 <!-- m80:quickstart-value start -->
-`m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code.
+`sudo m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code.
 <!-- m80:quickstart-value end -->
 
 Try a few useful shapes:
 
 ```sh
-m80 run -- uname -a
-m80 run --egress none -- sh -c 'id && pwd'
-m80 run --workspace . --cwd /workspace -- ls -la
-m80 run --workspace . --cwd /workspace --writeback on-success -- sh -c 'date > m80.out'
-m80 run --egress outbound -- curl -I https://example.com
-m80 run --env FOO=bar -- sh -c 'echo "$FOO"'
-m80 run -it --workspace . --cwd /workspace -- sh
+sudo m80 run -- sh -c 'uname -a'
+sudo m80 run --egress none -- sh -c 'id && pwd'
+sudo m80 run --egress outbound -- sh -c 'wget -S -O /dev/null http://example.com 2>&1 | head -5'
+sudo m80 run --env FOO=bar -- sh -c 'echo "$FOO"'
+sudo m80 run -it -- sh -c 'echo tty-ready'
+
+tmp="$(mktemp -d)"
+chmod 777 "$tmp"
+printf 'hello\n' > "$tmp/input.txt"
+sudo m80 run --workspace "$tmp" --cwd /workspace -- ls -la
+sudo m80 run --workspace "$tmp" --cwd /workspace --writeback on-success -- sh -c 'date > m80.out'
+sudo cat "$tmp/m80.out"
+sudo rm -rf "$tmp"
 ```
 
 Keep it current:
 
 <!-- m80:quickstart-snippet freshness-check start -->
 ```sh
-m80 update --check
+sudo m80 update --check
 ```
 <!-- m80:quickstart-snippet freshness-check end -->
 
@@ -66,7 +72,7 @@ curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install
 ```
 <!-- m80:quickstart-snippet pinned-install end -->
 
-Use a stable tag such as `v0.2.11`.
+Use the tag printed by `sudo m80 update --check`.
 Automation that must verify `install.sh` before `sudo` should use the
 [verified handoff block](docs/runbook/release.md#public-install-urls).
 
@@ -74,15 +80,13 @@ If something fails, start with:
 
 <!-- m80:quickstart-snippet repair-status start -->
 ```sh
-m80 bug-report > m80-bug-report.json
+sudo m80 bug-report > m80-bug-report.json
 ```
 <!-- m80:quickstart-snippet repair-status end -->
 
 For a specific VM failure, include the VM id:
 
-```sh
-m80 bug-report --vm-id <vm-id> > m80-bug-report.json
-```
+`sudo m80 bug-report --vm-id <vm-id> > m80-bug-report.json`
 
 If you are coming from the old artifact-only quickstart or a raw `main`
 installer command, use the
@@ -91,7 +95,7 @@ installer command, use the
 Then check the host:
 
 ```sh
-m80 preflight
+sudo m80 preflight
 ```
 
 Known failure IDs live in the quickstart troubleshooting matrix:
@@ -129,8 +133,8 @@ diagnostics are captured out-of-band under the run directory and read
 separately:
 
 ```sh
-m80 logs <vm-id>
-m80 --json logs <vm-id> --request-id req_...
+sudo m80 logs <vm-id>
+sudo m80 --json logs <vm-id> --request-id req_...
 ```
 
 `console.log` includes guest-influenced serial-console output and is capped at
@@ -140,7 +144,7 @@ shipping run-directory logs outside the host.
 For bug reports, attach one redacted bundle:
 
 ```sh
-m80 bug-report > m80-bug-report.json
+sudo m80 bug-report > m80-bug-report.json
 ```
 
 That bundle includes install status, selected release/tag, verifier diagnostics,
@@ -152,10 +156,18 @@ provided.
 Common policies are direct command-line flags:
 
 ```sh
-m80 run --egress none -- echo isolated
-m80 run --workspace . --cwd /workspace -- ls
-m80 run --workspace . --writeback on-success -- sh -c 'echo done > result.txt'
-m80 run -it --workspace . --egress outbound --secret-env ANTHROPIC_API_KEY -- claude
+sudo m80 run --egress none -- echo isolated
+sudo m80 run --env FOO=bar -- sh -c 'echo "$FOO"'
+API_TOKEN=demo sudo --preserve-env=API_TOKEN m80 run --secret-env API_TOKEN -- sh -c 'test "$API_TOKEN" = demo && echo secret-present'
+sudo m80 run -it -- sh -c 'echo tty-ready'
+
+tmp="$(mktemp -d)"
+chmod 777 "$tmp"
+printf 'hello\n' > "$tmp/input.txt"
+sudo m80 run --workspace "$tmp" --cwd /workspace -- ls
+sudo m80 run --workspace "$tmp" --cwd /workspace --writeback on-success -- sh -c 'echo done > result.txt'
+sudo cat "$tmp/result.txt"
+sudo rm -rf "$tmp"
 ```
 
 - `--workspace <path>` makes one host directory visible at `/workspace`.
@@ -218,6 +230,7 @@ For local development, build a minimal image:
 
 ```sh
 cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
+cargo build -p m80-image-build --release
 cat > /tmp/m80-image-build.toml <<'EOF'
 [kernel]
 version = "v1.15.1"
@@ -232,7 +245,7 @@ size = "256MiB"
 binary = "target/x86_64-unknown-linux-musl/release/m80-guestd"
 
 [output]
-dir = "/opt/m80/artifacts"
+dir = "/tmp/m80-artifacts"
 EOF
 sudo target/release/m80-image-build run --config /tmp/m80-image-build.toml
 ```

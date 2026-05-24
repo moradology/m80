@@ -11,7 +11,7 @@ The normal Linux entrypoint is the release installer:
 
 `curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`
 
-Then verify the installed runtime with `m80 run -- echo hello`.
+Then verify the installed runtime with `sudo m80 run -- echo hello`.
 
 The installer owns the matched m80 binary, host helpers, guest artifacts,
 manifests, receipts, default profile, and active pointer. Manual binary and

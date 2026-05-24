@@ -12,7 +12,7 @@ Use the release installer for normal Linux hosts:
 
 The installer stages the matched m80 binary, host helpers, guest artifacts,
 manifest material, default profile, and active version pointer. After it
-finishes, `m80 run -- echo hello` is the public smoke command.
+finishes, `sudo m80 run -- echo hello` is the public smoke command.
 
 Manual binary and artifact placement is an advanced/operator path. Use it only
 for release engineering, forensics, or hosts where the release installer cannot
