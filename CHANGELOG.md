@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — feat(kernel): audit and align stripped kernel CONFIG
+
+- Audited the stripped kernel keep/drop config against Firecracker `v1.15.1`
+  `docs/kernel-policy.md`, documented m80's deliberate x86_64 legacy-MMIO boot
+  shape, and added a regression test that keeps the required Firecracker
+  symbols built in.
+
 ### Fixed — snapshot restore version validation
 
 - Snapshot restore now reads the restore-target Firecracker `GET /version`
