@@ -11,7 +11,7 @@ use nix::sys::prctl;
 use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{SigSet, SigmaskHow, Signal};
 use nix::sys::stat::{umask, Mode};
-use nix::unistd::setgroups;
+use nix::unistd::{geteuid, setgroups};
 
 const OFFICIAL_JAILER_CAPABILITIES: &[Capability] = &[
     Capability::CAP_CHOWN,
@@ -106,6 +106,13 @@ pub enum HardenError {
     /// No jailer arguments were supplied after `--`.
     #[error("missing jailer args after --")]
     MissingJailerArgs,
+    /// The wrapper must run as root so the official jailer starts with the
+    /// privileges it requires.
+    #[error("m80-jailer-harden must run as root before execing jailer: actual euid {actual}")]
+    NotRoot {
+        /// Effective UID observed before any hardening syscall.
+        actual: u32,
+    },
     /// Supplementary groups could not be cleared.
     #[error("setgroups([]): {0}")]
     SetGroups(#[source] nix::Error),
@@ -271,6 +278,7 @@ pub fn apply_process_hardening(
     new_cgroup_ns: bool,
     new_net_ns: bool,
 ) -> Result<(), HardenError> {
+    check_not_root(geteuid().as_raw())?;
     if new_cgroup_ns {
         unshare(CloneFlags::CLONE_NEWCGROUP).map_err(HardenError::CgroupNamespace)?;
     }
@@ -298,6 +306,16 @@ pub fn apply_process_hardening(
         .map_err(HardenError::SignalMask)?;
     close_inherited_fds()?;
     Ok(())
+}
+
+fn check_not_root(actual_euid: u32) -> Result<(), HardenError> {
+    if actual_euid == 0 {
+        Ok(())
+    } else {
+        Err(HardenError::NotRoot {
+            actual: actual_euid,
+        })
+    }
 }
 
 fn official_jailer_capability_set() -> CapsHashSet {
@@ -588,5 +606,17 @@ mod tests {
         ] {
             assert!(!allowed.contains(&cap), "{cap} must be pruned");
         }
+    }
+
+    #[test]
+    fn check_not_root_rejects_non_root_euid() {
+        let err = check_not_root(1000).unwrap_err();
+
+        assert!(matches!(err, HardenError::NotRoot { actual: 1000 }));
+    }
+
+    #[test]
+    fn check_not_root_accepts_root_euid() {
+        check_not_root(0).expect("root euid must be accepted");
     }
 }

@@ -236,6 +236,19 @@ M80_ENV=(
     M80_JAIL_UID="$JAIL_UID"
     M80_JAIL_GID="$JAIL_GID"
 )
+for optional_env in \
+    M80_SKIP_CHECK_KSM \
+    M80_SKIP_CHECK_SMT \
+    M80_SMT_CHECK \
+    M80_SKIP_CHECK_SWAP \
+    M80_SKIP_CHECK_NESTED_VIRT \
+    M80_SKIP_CHECK_KVM_TIMER \
+    M80_SKIP_CHECK_CGROUP_FAVORDYNMODS
+do
+    if [[ -n "${!optional_env:-}" ]]; then
+        M80_ENV+=("$optional_env=${!optional_env}")
+    fi
+done
 
 # --- cleanup any prior run state ---
 echo "=== cleanup prior state ==="

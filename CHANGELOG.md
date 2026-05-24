@@ -11,6 +11,15 @@ All notable changes to m80 are documented here. Format roughly follows
   response, converts Firecracker's raw API version to m80's `v`-prefixed pin
   form, and rejects mismatches before stale vsock unlink or `PUT /snapshot/load`.
 
+### Fixed — jailer hardening root guard
+
+- `m80-jailer-harden` now rejects non-root effective UID before namespace,
+  resource-limit, group, capability, prctl, signal-mask, fd, or exec side
+  effects.
+- `scripts/smoke.sh` now forwards documented preflight override variables
+  through its `sudo env` launch block, so operator-approved host-posture skips
+  actually reach smoke preflight.
+
 ### Added — Firecracker host posture preflight checks
 
 - Added `m80-preflight` checks for KSM, SMT, active swap, nested

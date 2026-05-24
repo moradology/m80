@@ -16,26 +16,29 @@ real process boundary to test without putting raw FFI into `m80-jailer`.
 `m80-jailer-harden --jailer-bin <path> --uid <uid> --gid <gid> [--rlimit <name=value> ...] [--new-cgroup-ns] [--new-net-ns] -- <jailer-args...>`
 does this, in order:
 
-1. Optionally enter a private cgroup namespace with `unshare(CLONE_NEWCGROUP)`.
-2. Optionally enter a private network namespace with `unshare(CLONE_NEWNET)`.
-3. Apply requested inherited resource limits (`no-file`, `fsize`, `nproc`,
+1. Check that the wrapper is running as effective UID 0. If not, abort before
+   namespace, resource-limit, group, capability, prctl, signal-mask, fd, or
+   exec side effects.
+2. Optionally enter a private cgroup namespace with `unshare(CLONE_NEWCGROUP)`.
+3. Optionally enter a private network namespace with `unshare(CLONE_NEWNET)`.
+4. Apply requested inherited resource limits (`no-file`, `fsize`, `nproc`,
    `memlock`, `as`, `core`, `stack`) with equal soft/hard values.
-4. Drop supplementary groups with `setgroups([])`.
-5. Clear inheritable and ambient Linux capabilities.
-6. Prune the bounding capability set to the official jailer minimum:
+5. Drop supplementary groups with `setgroups([])`.
+6. Clear inheritable and ambient Linux capabilities.
+7. Prune the bounding capability set to the official jailer minimum:
    `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
    `CAP_SETUID`, `CAP_SETGID`, and `CAP_SYS_ADMIN`.
-7. Prune the effective and permitted capability sets so only currently-held
+8. Prune the effective and permitted capability sets so only currently-held
    members of that same official jailer minimum remain. Pre-jailer host caps
    such as `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`, `CAP_SYS_PTRACE`,
    `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and `CAP_SETPCAP` do not survive into
    the official jailer exec.
-8. Set `PR_SET_NO_NEW_PRIVS`.
-9. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
-10. Set umask to `0077`.
-11. Reset the thread signal mask to empty.
-12. Close inherited file descriptors above stdio with `close_range(3, UINT_MAX, 0)`.
-13. Clear its environment and `exec` the official jailer with the remaining args.
+9. Set `PR_SET_NO_NEW_PRIVS`.
+10. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
+11. Set umask to `0077`.
+12. Reset the thread signal mask to empty.
+13. Close inherited file descriptors above stdio with `close_range(3, UINT_MAX, 0)`.
+14. Clear its environment and `exec` the official jailer with the remaining args.
 
 The wrapper does not perform chroot, pivot_root, mknod, cgroup placement, setuid,
 or setgid. Those stay owned by Firecracker's official jailer and `m80-cgroup`.
@@ -60,7 +63,7 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 | `HardenArgs::new_net_ns()` | Parsed `--new-net-ns` flag for `apply_process_hardening`. |
 | `ResourceLimit { kind, value }` | Public parsed resource-limit row used by tests and callers that inspect parse output. |
 | `ResourceLimitKind` | Supported resource limit names: `NoFile`, `FSize`, `NProc`, `MemLock`, `AddressSpace`, `Core`, and `Stack`. |
-| `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `SetGroups`, `ClearCaps` for capability pruning failures, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `NetworkNamespace`, `SetResourceLimit`, `SignalMask`, `CloseRange`, and `Exec`. |
+| `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `NotRoot`, `SetGroups`, `ClearCaps` for capability pruning failures, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `NetworkNamespace`, `SetResourceLimit`, `SignalMask`, `CloseRange`, and `Exec`. |
 | `parse_args(args)` | Parses wrapper args from an iterator that starts after argv[0]; validates required `--jailer-bin`, `--uid`, `--gid`, separator, and forwarded jailer args. |
 | `apply_process_hardening(resource_limits, new_cgroup_ns, new_net_ns)` | Applies the inheritable hardening sequence without execing. |
 | `exec_jailer(args)` | Clears the environment and replaces the current process with the official jailer. Returns only if `exec` fails. |
@@ -77,8 +80,9 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 
 ## Tests
 
-- Unit tests cover CLI parsing, missing argument errors, and the official
-  jailer capability allowlist so future audits see any drift.
+- Unit tests cover CLI parsing, missing argument errors, the fail-fast root
+  guard, and the official jailer capability allowlist so future audits see any
+  drift.
 - `tests/version.rs` proves `--version` returns the package version without
   entering the hardening path.
 - Ignored root integration tests verify the wrapper's inherited process state
