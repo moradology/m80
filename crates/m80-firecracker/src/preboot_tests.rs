@@ -45,6 +45,7 @@ fn machine_config_put_before_boot() {
         mem_size_mib: Some(2048),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         ..SandboxConfig::default()
     };
 
@@ -590,6 +591,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
         mem_size_mib: None,
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         ..SandboxConfig::default()
     };
 
@@ -609,6 +611,7 @@ fn machine_config_honors_caller_sizing() {
         mem_size_mib: Some(2048),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         ..SandboxConfig::default()
     };
 

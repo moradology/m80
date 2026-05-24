@@ -172,6 +172,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         drive_cache_type: None,
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,

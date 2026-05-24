@@ -30,6 +30,7 @@ fn launch_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
             mem_size_mib: Some(512),
             cpuset_cpus: None,
             cpu_template: None,
+            fc_log_level: None,
             drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 256 * 1024 * 1024,

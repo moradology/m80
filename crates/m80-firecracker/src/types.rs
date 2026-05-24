@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker_client::{CacheType, Client, CpuTemplate};
+use m80_firecracker_client::{CacheType, Client, CpuTemplate, LogLevel as FcLogLevel};
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_net_mode::NetworkPolicy;
 use m80_storage::{OverlayTemplateCloneMode, Rootfs, Scratch};
@@ -350,6 +350,12 @@ pub struct SandboxConfig {
     /// optimizes same-host launch/restore latency. Callers that need AWS
     /// template masking for cross-host snapshot portability must opt in.
     pub cpu_template: Option<CpuTemplate>,
+    /// Optional Firecracker native logger verbosity.
+    ///
+    /// `None` uses m80's default `Warning` threshold while still enabling the
+    /// logger. Set a concrete level to capture more or less Firecracker-native
+    /// device/VMM detail in the jail-root `firecracker.log`.
+    pub fc_log_level: Option<FcLogLevel>,
     /// Optional host-cache policy override for writable preboot drives.
     ///
     /// `None` uses m80's ephemeral default: `CacheType::Unsafe` for the
@@ -427,6 +433,7 @@ impl Default for SandboxConfig {
             mem_size_mib: None,
             cpuset_cpus: None,
             cpu_template: None,
+            fc_log_level: None,
             drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,

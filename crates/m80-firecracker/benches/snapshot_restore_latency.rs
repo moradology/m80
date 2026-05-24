@@ -228,6 +228,7 @@ fn sandbox_config(vm_id: String, vcpu_count: u32, mem_size_mib: u32) -> SandboxC
         mem_size_mib: Some(mem_size_mib),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         drive_cache_type: None,
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,

@@ -59,6 +59,18 @@ impl Client {
         })
     }
 
+    /// PUT `/logger`.
+    pub fn put_logger(&self, config: &LoggerConfig) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(config)?;
+        let resp = self.put("/logger", &body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::LoggerWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PUT `/drives/{drive_id}`. The `drive_id` is taken from the config.
     pub fn put_drive(&self, config: &DriveConfig) -> Result<(), ClientError> {
         let path = format!("/drives/{}", config.drive_id);
@@ -369,6 +381,37 @@ pub struct MachineConfig {
     pub track_dirty_pages: Option<bool>,
 }
 
+/// Firecracker logger verbosity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum LogLevel {
+    /// Error events only.
+    Error,
+    /// Warnings and errors.
+    Warning,
+    /// Informational events, warnings, and errors.
+    Info,
+    /// Debug, informational, warning, and error events.
+    Debug,
+}
+
+/// Firecracker structured logger config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LoggerConfig {
+    /// Absolute path visible to the Firecracker process for its log output.
+    pub log_path: PathBuf,
+    /// Optional logger verbosity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<LogLevel>,
+    /// Include the level name in each record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_level: Option<bool>,
+    /// Include the Firecracker source module in each record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_log_origin: Option<bool>,
+}
+
 /// Firecracker block-device I/O engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -598,6 +641,12 @@ pub enum ClientError {
     /// `PUT /machine-config` failed.
     #[error("machine-config write failed: {fault}")]
     MachineConfigWriteFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /logger` failed.
+    #[error("logger write failed: {fault}")]
+    LoggerWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

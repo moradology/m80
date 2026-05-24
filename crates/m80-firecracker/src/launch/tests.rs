@@ -496,6 +496,80 @@ fn phase_10_open_uds_retries_after_socket_create_wait() {
     );
 }
 
+#[test]
+fn phase_10b_fc_logger_creates_jail_file_and_puts_logger_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-logger");
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let host_log_path = fc_log_path(&run_dir, &firecracker_bin);
+    std::fs::create_dir_all(host_log_path.parent().unwrap()).unwrap();
+    let server = m80_test_helpers::fixture_server::SingleFixtureServer::spawn(
+        m80_test_helpers::fixture_server::resp_204(),
+    )
+    .unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+
+    phase_10b_fc_logger(
+        &client,
+        &run_dir,
+        &firecracker_bin,
+        nix::unistd::Uid::effective().as_raw(),
+        nix::unistd::Gid::effective().as_raw(),
+        Some(crate::FcLogLevel::Info),
+    )
+    .unwrap();
+
+    let metadata = std::fs::metadata(&host_log_path).unwrap();
+    assert!(metadata.is_file());
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    let request = server.join().request;
+    assert!(request.starts_with("PUT /logger HTTP/1.1\r\n"));
+    assert!(request.contains("\"log_path\":\"/firecracker.log\""));
+    assert!(request.contains("\"level\":\"Info\""));
+    assert!(request.contains("\"show_level\":true"));
+    assert!(request.contains("\"show_log_origin\":true"));
+}
+
+#[test]
+fn phase_10b_fc_logger_truncates_existing_jail_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-logger-stale");
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let host_log_path = fc_log_path(&run_dir, &firecracker_bin);
+    std::fs::create_dir_all(host_log_path.parent().unwrap()).unwrap();
+    std::fs::write(&host_log_path, b"stale-firecracker-log").unwrap();
+    std::fs::set_permissions(&host_log_path, std::fs::Permissions::from_mode(0o666)).unwrap();
+    let server = m80_test_helpers::fixture_server::SingleFixtureServer::spawn(
+        m80_test_helpers::fixture_server::resp_204(),
+    )
+    .unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+
+    phase_10b_fc_logger(
+        &client,
+        &run_dir,
+        &firecracker_bin,
+        nix::unistd::Uid::effective().as_raw(),
+        nix::unistd::Gid::effective().as_raw(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(std::fs::read(&host_log_path).unwrap(), b"");
+    assert_eq!(
+        std::fs::metadata(&host_log_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert!(
+        server.join().request.contains("\"level\":\"Warning\""),
+        "missing default Warning logger level"
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn wait_for_api_socket_create_returns_after_socket_appears() {

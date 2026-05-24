@@ -97,6 +97,7 @@ fn sandbox_config(vm_id: String, cache_type: CacheMode) -> SandboxConfig {
         mem_size_mib: Some(512),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         drive_cache_type: cache_type.to_cache_type(),
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,

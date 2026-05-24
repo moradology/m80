@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Firecracker native logger
+
+- Added `Client::put_logger` for `PUT /logger` and wired cold/restore launches
+  to create `<jail>/firecracker.log` and configure Firecracker's native
+  structured logger before preboot resources or snapshot load.
+
 ### Documented — jailer cgroup placement deferral
 
 - Documented why m80 does not forward Firecracker jailer `--cgroup` or

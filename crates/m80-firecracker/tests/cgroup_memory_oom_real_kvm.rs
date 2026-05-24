@@ -51,6 +51,7 @@ fn cgroup_memory_limit_oom_kills_workload() {
             mem_size_mib: Some(2048),
             cpuset_cpus: None,
             cpu_template: None,
+            fc_log_level: None,
             drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,

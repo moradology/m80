@@ -129,6 +129,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         mem_size_mib: Some(m80_firecracker::FIRST_LINE_MEM_SIZE_MIB),
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         ..common::sandbox_config_with_id(vm_id)
     }
 }

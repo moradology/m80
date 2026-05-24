@@ -16,6 +16,7 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         mem_size_mib: None,
         cpuset_cpus: None,
         cpu_template: None,
+        fc_log_level: None,
         drive_cache_type: None,
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,

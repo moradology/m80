@@ -38,6 +38,7 @@ fn malicious_guestd_noop_reaches_ready_signal() {
             mem_size_mib: Some(512),
             cpuset_cpus: None,
             cpu_template: None,
+            fc_log_level: None,
             drive_cache_type: None,
             boot_args: Some("m80.malicious_attack=noop".into()),
             overlay_size_bytes: 512 * 1024 * 1024,

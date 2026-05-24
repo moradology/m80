@@ -33,6 +33,10 @@ internally (via `Sandbox::launch`). Phases are sub-steps, not states —
 failures at any phase return a typed `FcError` and drop the admission permit.
 When `SandboxConfig::request_id` is set, launch, request, stop, and delete
 events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
+After the Firecracker API socket opens, cold and restored launches configure
+Firecracker's native logger at `/firecracker.log` inside the jail root. The
+host-visible path is `fc_log_path(run_dir, firecracker_bin)`, and
+`SandboxConfig::fc_log_level` overrides the default `Warning` threshold.
 
 `Sandbox::launch_from_snapshot` is an alternative Created → Running
 transition for the warm-pool restore path. It skips the full cold-boot
@@ -215,6 +219,9 @@ before exposing snapshot files to jailed Firecracker through `/snapshot`.
 `StoppedSandbox::extract_changes` returns it directly.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
+`SandboxConfig::fc_log_level` is optional; `None` still enables the native
+Firecracker logger at `Warning` level. The log is preserved with the run
+directory for triage and deleted with normal run-dir cleanup.
 `WireProtocolError` is re-exported for callers that need to distinguish broken
 peer bytes from transport failures.
 
@@ -379,8 +386,8 @@ so host-local users outside the m80 owner cannot read guest console output,
 artifact paths, or lifecycle diagnostics by default.
 The public pure helpers `run_dir_path`, `firecracker_api_socket_path`,
 `vsock_socket_path`, `rootfs_overlay_path`, `scratch_image_path`,
-`console_log_path`, and `boot_identity_path` expose this layout for callers
-and regression tests.
+`console_log_path`, `fc_log_path`, and `boot_identity_path` expose this layout
+for callers and regression tests.
 The Firecracker API socket and vsock muxer socket are inside the jailer
 chroot, not directly in `<run_root>/<vm_id>/`.
 The Firecracker advanced seccomp filter discovered by `m80-preflight` is bound
@@ -391,6 +398,9 @@ Firecracker/jailer stdout and stderr are appended to
 guest serial console, including m80-guestd's structured stderr lines. The file
 is guest-influenced output, capped at 2 MiB per VM by `m80-jailer`; operators
 should read `docs/ops/logging.md` before shipping it outside the host.
+Firecracker's native structured logger writes to `firecracker.log` inside the
+jailer chroot. Use `fc_log_path(run_dir, firecracker_bin)` to locate it from
+the host.
 Host lifecycle diagnostics are appended to `<run_root>/<vm_id>/diagnostics.jsonl`
 with schema version 2. The diagnostics writer is optional: if opening or
 writing it fails, boot and teardown continue and the failure is logged through
@@ -933,8 +943,15 @@ Usage rules (identical in both crates):
 - `src/preboot.rs` tests — preboot PUT order, boot-source cmdline behavior,
   drive order, default CPU-template omission, explicit CPU-template opt-in,
   and network-interface placement.
+- `src/launch/tests.rs::phase_10b_fc_logger_creates_jail_file_and_puts_logger_config`
+  — host file creation plus `PUT /logger` wiring before boot.
 - `tests/config_loading.rs` — precedence chain, drop-in ordering, unknown-key rejection, and env-override isolation using `load_config_from_paths` and in-memory fixtures.
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.
 - `tests/warm_pool.rs` — `WarmPool::new` rejects `target_ready == 0` and workspace-backed configs; `BlankVmResetEvidence` fields are exhaustively named.
-- KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`, `tests/warm_pool.rs`, and related lifecycle files; they require a real Firecracker binary and KVM device. The Bestiary stand-in proof is `tests/bestiary_stand_in_real_kvm.rs`; cgroup memory enforcement is pinned by `tests/cgroup_memory_oom_real_kvm.rs`.
+- KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`,
+  `tests/warm_pool.rs`, and related lifecycle files; they require a real
+  Firecracker binary and KVM device. The native logger file is pinned by
+  `tests/fc_native_logger_real_kvm.rs`, the Bestiary stand-in proof is
+  `tests/bestiary_stand_in_real_kvm.rs`, and cgroup memory enforcement is
+  pinned by `tests/cgroup_memory_oom_real_kvm.rs`.

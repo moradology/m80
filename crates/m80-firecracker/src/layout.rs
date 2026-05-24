@@ -26,6 +26,9 @@ pub(crate) const PMEM_JAIL_PREFIX: &str = "pmem.";
 /// Per-VM console and process stderr log filename in the run directory.
 pub const CONSOLE_LOG: &str = "console.log";
 
+/// Firecracker native structured logger filename inside the jail root.
+pub const FIRECRACKER_LOG: &str = "firecracker.log";
+
 /// Boot artifact identity filename in the run directory.
 pub const BOOT_IDENTITY_FILE: &str = "boot-identity.json";
 
@@ -121,6 +124,18 @@ pub(crate) fn pmem_layer_jail_path(slot: usize) -> PathBuf {
 #[must_use]
 pub fn console_log_path(run_dir: &Path) -> PathBuf {
     run_dir.join(CONSOLE_LOG)
+}
+
+/// Compute the host-side path for Firecracker's native structured log.
+#[must_use]
+pub fn fc_log_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+    m80_jailer::jail_root_path(run_dir, firecracker_bin).join(FIRECRACKER_LOG)
+}
+
+/// Compute the jail-visible path for Firecracker's native structured log.
+#[must_use]
+pub(crate) fn fc_log_jail_path() -> PathBuf {
+    PathBuf::from(format!("/{FIRECRACKER_LOG}"))
 }
 
 /// Compute the boot identity record path for the VM.

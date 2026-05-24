@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::prelude::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_cgroup::{Limits, Subtree};
-use m80_firecracker_client::{Client, InstanceAction};
+use m80_firecracker_client::{Client, InstanceAction, LoggerConfig};
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
@@ -37,12 +37,14 @@ use m80_snapshot_template::PinnedTemplate;
 use m80_vsock::{Channel, VsockError};
 use nix::errno::Errno;
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+use nix::unistd::{chown, Gid, Uid};
 
 use crate::diagnostics::phase;
 use crate::error::{ConfigError, FcError, WireProtocolError};
 use crate::layout::{
-    console_log_path, firecracker_api_socket_path, pmem_layer_jail_bind_dest, pmem_layer_jail_path,
-    preallocated_drive_slot_filename, run_dir_path, vsock_socket_path,
+    console_log_path, fc_log_jail_path, fc_log_path, firecracker_api_socket_path,
+    pmem_layer_jail_bind_dest, pmem_layer_jail_path, preallocated_drive_slot_filename,
+    run_dir_path, vsock_socket_path,
 };
 use crate::lifecycle::{
     monotonic_ns, phase_13_pmem_guest_mount, phase_restore_post_restore_hooks,
@@ -340,6 +342,28 @@ impl Sandbox {
                 Phase::Boot,
                 "phase_10_open_uds",
                 { phase_10_open_uds(&api_socket) }
+            )?;
+
+            // Phase 10b: configure Firecracker's native logger before other
+            // preboot REST resources so device/VMM setup failures have a
+            // structured destination independent of the serial console.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_10b_fc_logger",
+                {
+                    phase_10b_fc_logger(
+                        &client,
+                        &run_dir,
+                        &backend_config.discovery.firecracker_bin,
+                        backend_config.jail_uid,
+                        backend_config.jail_gid,
+                        self.config.fc_log_level,
+                    )
+                }
             )?;
 
             // Phase 11: REST PUTs in documented order.
@@ -773,6 +797,27 @@ impl Sandbox {
                 Phase::Boot,
                 "phase_10_open_uds",
                 { phase_10_open_uds(&api_socket) }
+            )?;
+
+            // Phase 10b: configure Firecracker's native logger before
+            // snapshot load so restore-side device/VMM failures are captured.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_10b_fc_logger",
+                {
+                    phase_10b_fc_logger(
+                        &client,
+                        &run_dir,
+                        &backend_config.discovery.firecracker_bin,
+                        backend_config.jail_uid,
+                        backend_config.jail_gid,
+                        self.config.fc_log_level,
+                    )
+                }
             )?;
 
             // Phase restore-prime: queue host readahead on the real snapshot
@@ -1614,6 +1659,43 @@ fn path_io(path: &Path, source: std::io::Error) -> FcError {
         path: path.to_path_buf(),
         source,
     }
+}
+
+fn phase_10b_fc_logger(
+    client: &Client,
+    run_dir: &Path,
+    firecracker_bin: &Path,
+    jail_uid: u32,
+    jail_gid: u32,
+    configured_level: Option<crate::FcLogLevel>,
+) -> Result<(), FcError> {
+    let host_path = fc_log_path(run_dir, firecracker_bin);
+    let _file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+        .open(&host_path)
+        .map_err(|source| path_io(&host_path, source))?;
+    fs::set_permissions(&host_path, fs::Permissions::from_mode(0o600))
+        .map_err(|source| path_io(&host_path, source))?;
+    if Uid::effective().as_raw() != jail_uid || Gid::effective().as_raw() != jail_gid {
+        chown(
+            &host_path,
+            Some(Uid::from_raw(jail_uid)),
+            Some(Gid::from_raw(jail_gid)),
+        )
+        .map_err(|errno| errno_path_io(&host_path, errno))?;
+    }
+
+    client.put_logger(&LoggerConfig {
+        log_path: fc_log_jail_path(),
+        level: Some(configured_level.unwrap_or(crate::FcLogLevel::Warning)),
+        show_level: Some(true),
+        show_log_origin: Some(true),
+    })?;
+    Ok(())
 }
 
 /// Phase 11: PUT all Firecracker resources in the documented order.
