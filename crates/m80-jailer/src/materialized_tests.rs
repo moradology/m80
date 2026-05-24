@@ -220,10 +220,31 @@ fn launch_with_no_cgroup_version_omits_official_jailer_flag() {
 }
 
 #[test]
+fn launch_with_minimal_config_omits_official_jailer_cgroup_placement_flags() {
+    let args = launch_and_record_args(None);
+    let argv: Vec<&str> = args.split_whitespace().collect();
+
+    assert_no_cgroup_placement_flags(&argv, &args);
+}
+
+#[test]
 fn launch_with_cgroup_version_v1_omits_official_jailer_flag() {
     let args = launch_and_record_args(Some(CgroupVersion::V1));
 
     assert!(!args.contains("--cgroup-version"), "{args}");
+}
+
+fn assert_no_cgroup_placement_flags(argv: &[&str], args: &str) {
+    assert!(
+        argv.iter()
+            .all(|arg| *arg != "--cgroup" && !arg.starts_with("--cgroup=")),
+        "{args}"
+    );
+    assert!(
+        argv.iter()
+            .all(|arg| *arg != "--parent-cgroup" && !arg.starts_with("--parent-cgroup=")),
+        "{args}"
+    );
 }
 
 #[test]

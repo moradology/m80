@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Documented — jailer cgroup placement deferral
+
+- Documented why m80 does not forward Firecracker jailer `--cgroup` or
+  `--parent-cgroup` placement flags, how NUMA/cpuset placement flows through
+  `m80-cgroup`, and pinned the minimal jailer launch argv against accidental
+  placement flag emission.
+
 ### Fixed — snapshot restore reseed gate
 
 - Snapshot restore now always sends a post-restore request after the restored

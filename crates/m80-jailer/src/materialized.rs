@@ -39,6 +39,24 @@ pub struct MaterializedJail {
     pub(crate) placeholder_files: Vec<PathBuf>,
 }
 
+/// Build a launchable jail handle from a pure plan without running privileged
+/// materialization. This exists only for integration tests that need to inspect
+/// `MaterializedJail::launch` argv construction without `CAP_SYS_ADMIN`.
+#[cfg(feature = "_test_internal")]
+#[doc(hidden)]
+#[must_use]
+pub fn materialized_jail_for_test(plan: Plan) -> MaterializedJail {
+    let jail_path =
+        crate::types::jail_root_path(&plan.config.run_dir, &plan.config.firecracker_bin);
+    MaterializedJail {
+        plan,
+        jail_path,
+        bind_mounts: Vec::new(),
+        created_dirs: Vec::new(),
+        placeholder_files: Vec::new(),
+    }
+}
+
 impl MaterializedJail {
     /// Path to the actual chroot root created for this jail.
     #[must_use]

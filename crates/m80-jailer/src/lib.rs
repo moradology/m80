@@ -12,6 +12,9 @@ mod recover;
 mod types;
 
 pub use error::JailerError;
+#[cfg(feature = "_test_internal")]
+#[doc(hidden)]
+pub use materialized::materialized_jail_for_test;
 pub use materialized::{JailedFirecracker, MaterializedJail};
 pub use recover::{inspect_run_dir, InspectionDecision, ReapPlan};
 pub use types::{

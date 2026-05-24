@@ -122,9 +122,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Non-goals
 
-- **No cgroup configuration.** `m80-cgroup` owns that.
-- **No cgroup placement.** `new_cgroup_ns` hides the host hierarchy from the
-  jailed process, but `m80-cgroup` still owns cgroup creation, controller
+- **No cgroup placement through Firecracker jailer flags.** `m80-cgroup` owns
+  post-launch cgroup creation, limits, PID enrolment, and cpuset placement; see
+  `docs/behaviors/jailer/cgroup-deferral.md`.
+- **No cgroup namespace as placement.** `new_cgroup_ns` hides the host
+  hierarchy from the jailed process, but `m80-cgroup` still owns controller
   limits, OOM scoring, and PID enrolment.
 - **No caller-provisioned network namespace lifecycle.** `new_net_ns` creates a
   private empty namespace for the jailer process when the orchestrator asks for
@@ -154,8 +156,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   and `LiveJail` when the state JSON records a running pid, including the
   `new_pid_ns` `jailer_pid = 0` sentinel.
 - `tests/jailer/cgroup_version.rs` — cgroup version selection persists in the
-  replayable plan JSON; unit tests in `src/materialized.rs` pin official
+  replayable plan JSON; unit tests in `src/materialized_tests.rs` pin official
   jailer arg emission for `None`, `V1`, and `V2`.
+- `tests/jailer/no_cgroup_flag.rs` — with `_test_internal`, minimal launch argv
+  does not forward Firecracker jailer `--cgroup` or `--parent-cgroup`
+  placement flags.
 - `tests/jailer/jail_root_layout.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
 - `tests/jailer/pid_file_backoff.rs` — launch observes a delayed

@@ -10,6 +10,12 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Re-exports launch-construction helpers so integration tests can inspect
+# `MaterializedJail::launch` argv without privileged materialization. Not for
+# production use. Must be passed explicitly: `cargo test --features _test_internal`.
+_test_internal = []
+
 [dependencies]
 m80-image-store.workspace = true
 serde.workspace = true
