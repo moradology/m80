@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Fixed — snapshot restore version validation
+
+- Snapshot restore now reads the restore-target Firecracker `GET /version`
+  response, converts Firecracker's raw API version to m80's `v`-prefixed pin
+  form, and rejects mismatches before stale vsock unlink or `PUT /snapshot/load`.
+
 ### Added — Firecracker host posture preflight checks
 
 - Added `m80-preflight` checks for KSM, SMT, active swap, nested

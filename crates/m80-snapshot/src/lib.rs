@@ -224,10 +224,12 @@ pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
 /// Steps:
 /// 1. Read `snapshot-manifest.json`, verify snapshot pair sha256s, and reject
 ///    Firecracker version mismatch.
-/// 2. Remove `req.vsock_uds` if present (`ENOENT` is silently ignored;
+/// 2. Read live Firecracker `GET /version`, convert it to m80's `v`-prefixed
+///    pin form, and reject mismatch before load.
+/// 3. Remove `req.vsock_uds` if present (`ENOENT` is silently ignored;
 ///    any other error is returned as [`SnapshotError::VsockUdsUnlink`]).
-/// 3. PUT `/snapshot/load` with File-backed memory.
-/// 4. If `req.resume`: PATCH `/vm` to `Resumed`.
+/// 4. PUT `/snapshot/load` with File-backed memory.
+/// 5. If `req.resume`: PATCH `/vm` to `Resumed`.
 ///
 /// # Errors
 ///
@@ -263,6 +265,19 @@ fn restore_inner(
         verify_snapshot_manifest(&req.host_paths, &req.expected_firecracker_version)?;
     }
 
+    let client = FirecrackerClient::new(&req.api_socket).map_err(SnapshotError::Client)?;
+    let live_api_version = client
+        .get_version()
+        .map_err(SnapshotError::Client)?
+        .firecracker_version;
+    let live_version_pin = live_firecracker_version_pin(&live_api_version);
+    if live_version_pin != req.expected_firecracker_version {
+        return Err(SnapshotError::VersionMismatch {
+            expected: req.expected_firecracker_version,
+            actual: live_version_pin,
+        });
+    }
+
     match std::fs::remove_file(&req.vsock_uds) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -273,8 +288,6 @@ fn restore_inner(
             });
         }
     }
-
-    let client = FirecrackerClient::new(&req.api_socket).map_err(SnapshotError::Client)?;
 
     client
         .put_snapshot_load(&LoadSnapshotConfig {
@@ -297,6 +310,10 @@ fn restore_inner(
     }
 
     Ok(())
+}
+
+fn live_firecracker_version_pin(api_version: &str) -> String {
+    format!("v{api_version}")
 }
 
 /// Hash the host-readable snapshot pair and write `snapshot-manifest.json`
@@ -519,6 +536,14 @@ pub enum SnapshotError {
         expected: String,
         /// Manifest-recorded capture version.
         recorded: String,
+    },
+    /// The live Firecracker restore target is not the version this snapshot expects.
+    #[error("live Firecracker version mismatch: expected {expected}, got {actual}")]
+    VersionMismatch {
+        /// Snapshot-required Firecracker version.
+        expected: String,
+        /// Live Firecracker version reported by GET `/version`.
+        actual: String,
     },
     /// Snapshot paths were not a usable two-file pair.
     #[error("invalid snapshot paths: {detail}")]

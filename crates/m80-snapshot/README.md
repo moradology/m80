@@ -73,13 +73,18 @@ as `paths` while keeping the caller's host paths in `host_paths`.
 
 1. Read `snapshot-manifest.json`, recompute the snapshot pair sha256s, and
    verify `expected_firecracker_version`.
-2. `unlink(vsock_uds)` if present. `ENOENT` is ignored; any other error
+2. GET `/version` from the restore-target Firecracker process, convert the raw
+   API value (`1.15.1`) to m80's `v`-prefixed pin form (`v1.15.1`), and require
+   it to match `expected_firecracker_version`.
+3. `unlink(vsock_uds)` if present. `ENOENT` is ignored; any other error
    surfaces as `SnapshotError::VsockUdsUnlink`.
-3. PUT `/snapshot/load` with `mem_backend = File`.
-4. If `resume: true`, PATCH `/vm` -> `Resumed`.
+4. PUT `/snapshot/load` with `mem_backend = File`.
+5. If `resume: true`, PATCH `/vm` -> `Resumed`.
 
 `restore_preverified(RestoreRequest)` skips step 1 for callers that already
-verified an immutable snapshot body. The v0.1 consumer is
+verified an immutable snapshot body. It still performs the live Firecracker
+version check before unlinking stale vsock state or loading the snapshot.
+The v0.1 consumer is
 `m80-snapshot-template`: template commit hashes the snapshot pair, records the
 manifest in the content-addressed body, and pinning validates template identity
 before restore. Direct caller-supplied snapshots must keep using `restore`.
@@ -114,6 +119,9 @@ before restore. Direct caller-supplied snapshots must keep using `restore`.
   integrity failures.
 - `FirecrackerVersionMismatch { expected, recorded }` — restore environment
   does not match the capture-time pin.
+- `VersionMismatch { expected, actual }` — live Firecracker `/version`,
+  converted to m80's `v`-prefixed pin form, does not match the snapshot's
+  expected version.
 - `VsockUdsUnlink { path, source }` — vsock UDS removal failed for a reason
   other than `NotFound`.
 - `InvalidId { field, value }` — persistence helper rejected a caller-supplied

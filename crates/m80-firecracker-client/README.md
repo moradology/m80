@@ -26,7 +26,7 @@ without inheriting m80's lifecycle assumptions.
   `put_boot_source`, `put_machine_config`, `put_drive`, `put_pmem`,
   `put_network_interface`, `put_vsock`, `put_entropy_device`, `patch_drive`,
   `instance_action`, `patch_vm_state`, `put_snapshot_create`,
-  `put_snapshot_load`. The method signature mirrors the Firecracker schema
+  `put_snapshot_load`, `get_version`. The method signature mirrors the Firecracker schema
   exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
@@ -38,6 +38,8 @@ without inheriting m80's lifecycle assumptions.
   `DriveWriteFailed`, `PmemWriteFailed`, `NetworkInterfaceWriteFailed`,
   `VsockWriteFailed`, `EntropyDeviceWriteFailed`, `InstanceActionFailed`,
   `VmStateWriteFailed`, `SnapshotCreateFailed`, `SnapshotLoadFailed`.
+  `VersionReadFailed` covers `GET /version` errors or invalid version
+  response bodies.
   Each carries the Firecracker fault JSON verbatim.
 - Request serialization errors surface as `ClientError::Serialize`; they are
   not collapsed into an I/O error because no socket operation occurred.
@@ -60,7 +62,8 @@ without inheriting m80's lifecycle assumptions.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
   `DriveConfig`, `PartialDriveConfig`, `PmemConfig`, `NetworkInterfaceConfig`,
   `VsockConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
-  `MemBackendConfig`, `VsockOverride`.
+  `MemBackendConfig`, `VsockOverride`, `FirecrackerVersion` (raw
+  Firecracker API response).
 - `ClientError` — typed per-resource failure plus `Connect`, `Serialize`,
   and socket-path-carrying `Io`.
 
@@ -117,9 +120,9 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 - `tests/network_interface_config_round_trip.rs` — URL, optional-field
   omission, and typed 400 error mapping for `PUT /network-interfaces/{id}`.
 - `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
-  `put_snapshot_create`, and `put_snapshot_load`: URL, required fields,
-  optional-field omission, `resume_vm`, `vsock_override`, and 400 error
-  mapping for each method.
+  `put_snapshot_create`, `put_snapshot_load`, and `get_version`: URL,
+  required fields, optional-field omission, `resume_vm`, `vsock_override`,
+  response decoding, and 400 error mapping for each method.
 
 Real-firecracker conformance + concurrency-probe tests are deferred
 until we have a CI-managed firecracker binary in fixtures.

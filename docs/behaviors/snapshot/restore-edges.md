@@ -27,6 +27,19 @@ does not rely on Firecracker's own compatibility warning/error behavior.
 
 Test: `crates/m80-snapshot/tests/restore.rs::restore_rejects_firecracker_version_mismatch_before_load`.
 
+## Live Firecracker Version Validation
+
+After manifest validation, restore asks the target Firecracker process for
+`GET /version` and compares that live value with the snapshot's expected
+Firecracker version. Firecracker's API reports the raw Cargo version
+(`1.15.1`), so m80 converts it to the existing `v`-prefixed pin form before
+comparison. A mismatch fails as `SnapshotError::VersionMismatch` before stale
+vsock unlink and before `PUT /snapshot/load`.
+
+Tests:
+`crates/m80-snapshot/tests/version_validation.rs::version_mismatch_is_rejected_before_load`;
+`crates/m80-snapshot/tests/version_validation.rs::version_match_proceeds_to_load`.
+
 ## Post-Capture Mutation
 
 Snapshot files are source artifacts for later restores. Mutating a VM restored

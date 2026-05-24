@@ -184,6 +184,19 @@ impl Client {
         })
     }
 
+    /// GET `/version` — read the Firecracker binary version.
+    pub fn get_version(&self) -> Result<FirecrackerVersion, ClientError> {
+        let resp = self.get("/version")?;
+        if !ok(resp.status) {
+            return Err(ClientError::VersionReadFailed {
+                fault: body_to_string(&resp.body),
+            });
+        }
+        serde_json::from_slice(&resp.body).map_err(|source| ClientError::VersionReadFailed {
+            fault: source.to_string(),
+        })
+    }
+
     /// PUT `/actions` with the requested action.
     pub fn instance_action(&self, action: InstanceAction) -> Result<(), ClientError> {
         let body = serde_json::to_vec(&InstanceActionPayload {
@@ -202,6 +215,11 @@ impl Client {
     /// Send a PATCH request over the stored `UnixStream`.
     fn patch(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
         self.send("PATCH", path, body)
+    }
+
+    /// Send a GET request over the stored `UnixStream`.
+    fn get(&self, path: &str) -> Result<http::Response, ClientError> {
+        self.send("GET", path, b"")
     }
 
     /// Send a PUT request over the stored `UnixStream`.
@@ -534,6 +552,14 @@ pub struct LoadSnapshotConfig {
     pub vsock_override: Option<VsockOverride>,
 }
 
+/// Firecracker version response returned by GET `/version`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FirecrackerVersion {
+    /// Firecracker build version string.
+    pub firecracker_version: String,
+}
+
 /// Lifecycle action requested via PUT `/actions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -627,6 +653,12 @@ pub enum ClientError {
     #[error("snapshot load failed: {fault}")]
     SnapshotLoadFailed {
         /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `GET /version` failed or returned an invalid response body.
+    #[error("version read failed: {fault}")]
+    VersionReadFailed {
+        /// Firecracker fault JSON or parse error.
         fault: String,
     },
     /// Request-body serialization failed before any HTTP request was sent.

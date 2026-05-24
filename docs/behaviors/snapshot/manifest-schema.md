@@ -44,15 +44,17 @@ Verification:
 
 Capture writes the manifest after Firecracker reports successful snapshot
 creation. Restore reads the manifest, recomputes both artifact sha256s and the
-artifact-set digest, and compares the manifest Firecracker version against the
-restore environment before unlinking the stale vsock socket or calling
-Firecracker.
+artifact-set digest, compares the manifest Firecracker version against the
+restore environment, then checks the live restore-target Firecracker `/version`
+converted into m80's `v`-prefixed pin form before unlinking the stale vsock
+socket or calling `PUT /snapshot/load`.
 
 Verification:
 
 - `crates/m80-snapshot/tests/capture.rs::capture_writes_manifest_after_snapshot_create`
 - `crates/m80-snapshot/tests/restore.rs::restore_rejects_tampered_memory_before_load`
 - `crates/m80-snapshot/tests/restore.rs::restore_rejects_firecracker_version_mismatch_before_load`
+- `crates/m80-snapshot/tests/version_validation.rs::version_mismatch_is_rejected_before_load`
 
 ## Restore Metadata
 

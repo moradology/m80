@@ -9,8 +9,8 @@ mod fixture_server;
 use fixture_server::{resp_400, setup_with_204, FixtureServer};
 
 use m80_firecracker_client::{
-    Client, ClientError, CreateSnapshotConfig, LoadSnapshotConfig, MemBackendConfig,
-    MemBackendType, SnapshotType, VmState, VsockOverride,
+    Client, ClientError, CreateSnapshotConfig, FirecrackerVersion, LoadSnapshotConfig,
+    MemBackendConfig, MemBackendType, SnapshotType, VmState, VsockOverride,
 };
 use std::path::PathBuf;
 
@@ -30,6 +30,16 @@ fn default_load_config() -> LoadSnapshotConfig {
         resume_vm: None,
         vsock_override: None,
     }
+}
+
+fn resp_version(version: &str) -> Vec<u8> {
+    let body = format!(r#"{{"firecracker_version":"{version}"}}"#);
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    )
+    .into_bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +320,50 @@ fn put_snapshot_load_400_returns_snapshot_load_failed() {
             &err,
             ClientError::SnapshotLoadFailed { fault }
             if fault.contains("vsock uds path already in use")
+        ),
+        "unexpected error: {err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_version
+// ---------------------------------------------------------------------------
+
+#[test]
+fn get_version_sends_correct_url_and_decodes_response() {
+    let server = FixtureServer::spawn(resp_version("1.10.0")).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+
+    let version = client.get_version().unwrap();
+
+    let result = server.join();
+    assert!(
+        result.request.starts_with("GET /version HTTP/1.1\r\n"),
+        "unexpected request line: {:?}",
+        result.request.lines().next()
+    );
+    assert_eq!(
+        version,
+        FirecrackerVersion {
+            firecracker_version: "1.10.0".to_owned()
+        }
+    );
+}
+
+#[test]
+fn get_version_400_returns_version_read_failed() {
+    let fault = r#"{"fault_message":"version unavailable"}"#;
+    let server = FixtureServer::spawn(resp_400(fault)).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+
+    let err = client.get_version().unwrap_err();
+
+    server.join();
+    assert!(
+        matches!(
+            &err,
+            ClientError::VersionReadFailed { fault }
+            if fault.contains("version unavailable")
         ),
         "unexpected error: {err:?}"
     );

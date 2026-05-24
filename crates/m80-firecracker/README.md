@@ -61,8 +61,10 @@ or resume the VM. Snapshot paths are host paths. Cold launches pre-bind a
 per-run staging directory read-write at `/snapshot`; capture asks Firecracker to
 write there, then moves the pair to the validated caller path and rewrites the
 manifest beside that caller-visible pair. Restore verifies that manifest against
-the host-readable snapshot pair and the current preflight Firecracker version
-before Firecracker receives `PUT /snapshot/load`.
+the host-readable snapshot pair and the current preflight Firecracker version,
+then asks the restore-target process for `GET /version` before Firecracker
+receives `PUT /snapshot/load`. Firecracker's API reports the raw Cargo version;
+the restore path compares it in m80's existing `v`-prefixed pin form.
 
 `RunningSandbox::exec(&mut self, ...)` supports sequential multi-exec on the
 same VM. Each call opens a fresh vsock connection to guestd, performs exactly
