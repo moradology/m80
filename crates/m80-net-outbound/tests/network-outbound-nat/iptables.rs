@@ -286,6 +286,54 @@ fn permanent_deny_list_includes_bridge_cidr() {
 }
 
 #[test]
+fn imds_cidr_rejected_in_filter_chain() {
+    let state = ready_state();
+    let chain = outbound_nat_filter_chain(&state);
+    let comment = outbound_nat_rule_comment(&state);
+    let mut ops = RecordingPolicyOps::default();
+
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    assert!(
+        ops.chain_rules("filter", &chain).contains(&vec![
+            "-d",
+            "169.254.0.0/16",
+            "-m",
+            "comment",
+            "--comment",
+            &comment,
+            "-j",
+            "REJECT"
+        ]),
+        "169.254.0.0/16 REJECT rule missing from per-VM filter chain"
+    );
+}
+
+#[test]
+fn imds_reject_precedes_terminal_accept_in_filter_chain() {
+    let state = ready_state();
+    let chain = outbound_nat_filter_chain(&state);
+    let mut ops = RecordingPolicyOps::default();
+
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    let rules = ops.chain_rules("filter", &chain);
+    let imds_pos = rules
+        .iter()
+        .position(|rule| rule.contains(&"169.254.0.0/16"))
+        .expect("169.254.0.0/16 REJECT rule not found");
+    let accept_pos = rules
+        .iter()
+        .rposition(|rule| rule.last() == Some(&"ACCEPT"))
+        .expect("terminal ACCEPT rule not found");
+
+    assert!(
+        imds_pos < accept_pos,
+        "IMDS REJECT at {imds_pos} must precede terminal ACCEPT at {accept_pos}"
+    );
+}
+
+#[test]
 fn icmp_rejected_before_default_accept() {
     let state = ready_state();
     let chain = outbound_nat_filter_chain(&state);

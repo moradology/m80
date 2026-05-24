@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Security — IMDS link-local block
+
+- Added regression coverage and behavior docs pinning the outbound-NAT
+  per-VM filter chain's `169.254.0.0/16` IMDS reject rule and its ordering
+  before the terminal outbound accept.
+
 ### Added — host prerequisite diagnostics bridge
 
 - Failed `m80 preflight` output now carries a structured
