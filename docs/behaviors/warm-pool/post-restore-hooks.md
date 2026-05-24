@@ -6,12 +6,13 @@ the stripped guest kernel does not expose guest-visible VMGenID, so v0.1 uses a
 host-generated restore nonce plus guestd's `RNDRESEEDCRNG` call as the
 restore-sequenced reseed path.
 
-Post-restore hooks are the host-driven lease-handoff gate for snapshot-template
-warm slots. After Firecracker loads and resumes a snapshot, `m80-firecracker`
-first proves the restored guestd can execute an internal readiness probe. If a
-hook set is configured, it then sends one `PostRestoreHookRequest` over the
+Post-restore hooks are the host-driven lease-handoff gate for snapshot restore
+and snapshot-template warm slots. After Firecracker loads and resumes a
+snapshot, `m80-firecracker` first proves the restored guestd can execute an
+internal readiness probe. It then sends one `PostRestoreHookRequest` over the
 restored vsock channel and waits for `PostRestoreHookResponse` before returning
-the `RunningSandbox` or making a warm slot ready.
+the `RunningSandbox` or making a warm slot ready. A plain restore sends an
+empty hook list; the nonce mix and kernel reseed are still mandatory.
 
 The request carries a fresh 32-byte host restore nonce. On the current stripped
 kernel profile, guest userspace cannot observe Firecracker VMGenID, so guestd
@@ -55,8 +56,8 @@ normal restore-failure cleanup path, and does not expose the lease.
   wire shape.
 - `crates/m80-guestd/src/post_restore/` owns the guest-side nonce mix, reseed,
   and hook executor, including the empty-hook-list reseed case.
-- `crates/m80-firecracker/src/lifecycle/post_restore.rs` covers hook ordering,
-  response validation, request-id matching, typed hook failure mapping, and the
-  host-side aggregate response timeout.
+- `crates/m80-firecracker/src/lifecycle/post_restore.rs` covers unconditional
+  empty-hook requests, hook ordering, response validation, request-id matching,
+  typed hook failure mapping, and the host-side aggregate response timeout.
 - Real-KVM scenario tests for reseed, machine-id, hostname, and hook-failure
   behavior are tracked in `m80-q420k.4.13`.

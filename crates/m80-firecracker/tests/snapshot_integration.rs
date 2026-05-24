@@ -223,7 +223,55 @@ fn restore_executes_after_idle() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: post-restore hooks run before the restored sandbox is handed back.
+// Test 3: plain snapshot restore reseeds before the restored sandbox is handed
+//         back, even without optional identity hooks.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+fn plain_restore_reseeds_urandom_before_handoff() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-plain-reseed");
+
+    let backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
+    );
+    let golden = backend
+        .admit(sandbox_config("snap-reseed-golden"))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture");
+    let stopped = running.stop().expect("stop golden");
+    stopped.delete().expect("delete golden run-dir");
+
+    let mut first = restore_snapshot(&discovery, "snap-reseed-first", paths.clone());
+    let _dump_first = RunDirDumpGuard::new(first.run_dir().to_path_buf());
+    let first_sample = urandom_sample(&mut first, "first restored urandom sample");
+    let stopped_first = first.stop().expect("stop first restored");
+    stopped_first.delete().expect("delete first restored");
+
+    let mut second = restore_snapshot(&discovery, "snap-reseed-second", paths);
+    let _dump_second = RunDirDumpGuard::new(second.run_dir().to_path_buf());
+    let second_sample = urandom_sample(&mut second, "second restored urandom sample");
+    let stopped_second = second.stop().expect("stop second restored");
+    stopped_second.delete().expect("delete second restored");
+
+    assert_eq!(first_sample.len(), 32);
+    assert_eq!(second_sample.len(), 32);
+    assert_ne!(
+        first_sample, second_sample,
+        "plain restores from the same snapshot must receive fresh post-restore entropy"
+    );
+
+    let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: post-restore hooks run before the restored sandbox is handed back.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -304,7 +352,7 @@ fn post_restore_hooks_run_before_restored_sandbox_is_returned() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: corrupted snapshot files fail restore clearly.
+// Test 5: corrupted snapshot files fail restore clearly.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -354,7 +402,7 @@ fn corrupted_snapshot_file_fails_clearly() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: post-capture mutations do not rewrite the source snapshot.
+// Test 6: post-capture mutations do not rewrite the source snapshot.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -412,7 +460,7 @@ fn post_capture_mutation_does_not_change_snapshot_restore_state() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: startup recovery removes interrupted snapshot-restore residue.
+// Test 7: startup recovery removes interrupted snapshot-restore residue.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -448,7 +496,7 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: missing snapshot files produce a clearly-classified error (not a
+// Test 8: missing snapshot files produce a clearly-classified error (not a
 //         generic IO error swallow).
 //
 // This test does NOT require KVM — it calls launch_from_snapshot with a
@@ -585,4 +633,17 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str, label: &
 
 fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str, label: &str) {
     let _ = exec_sh(running, script, label);
+}
+
+fn urandom_sample(running: &mut m80_firecracker::RunningSandbox, label: &str) -> Vec<u8> {
+    assert_exec_ok(
+        running,
+        "dd if=/dev/urandom of=/tmp/m80-urandom-sample bs=32 count=1 2>/dev/null",
+        label,
+    );
+    let (bytes, truncated) = running
+        .read_file("/tmp/m80-urandom-sample", Some(32))
+        .unwrap_or_else(|e| panic!("{label}: read sample: {e}"));
+    assert!(!truncated, "{label}: sample must not be truncated");
+    bytes
 }

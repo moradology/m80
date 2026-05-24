@@ -25,9 +25,10 @@ the lease, and starts normal refill.
    rejecting symlinked body paths.
 5. Load and resume the Firecracker snapshot.
 6. Probe the restored guestd exec channel.
-7. If hooks are configured, send one `PostRestoreHookRequest`, wait up to the
-   fixed 5 second aggregate response deadline for all hook results, and fail
-   closed on timeout or the first typed hook error.
+7. Send one `PostRestoreHookRequest`, wait up to the fixed 5 second aggregate
+   response deadline for all hook results, and fail closed on timeout or the
+   first typed hook error. Empty hook sets still run the nonce mix and
+   `RNDRESEEDCRNG` reseed gate.
 8. Run the configured ready probe.
 9. Push the slot into the ready queue only after the preceding steps succeed.
 
@@ -66,8 +67,8 @@ path inside `try_lease`.
 - `crates/m80-firecracker/src/warm_pool/template_build/tests/real_kvm.rs`
   contains `snapshot_restore_warm_strategy_fills_ready_slot`.
 - `crates/m80-firecracker/src/lifecycle/post_restore.rs` contains unit tests
-  for ordered hook conversion, response validation, and typed hook failure
-  mapping.
+  for unconditional empty-hook requests, ordered hook conversion, response
+  validation, and typed hook failure mapping.
 - `crates/m80-firecracker/benches/snapshot_template_restore_latency.rs`
   measures restore-to-handback latency for `m80-q420k.4.15`; the verified
   artifact is documented in

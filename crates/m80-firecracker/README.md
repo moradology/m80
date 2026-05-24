@@ -45,13 +45,14 @@ request over the restored vsock UDS and waiting for guestd's terminal response
 (retry loop, 50 ms sleep, 5 s cap). A bare `CONNECT 9001` is not sufficient on
 restore because the guest kernel can accept the socket while guestd itself is
 stopped.
-`Sandbox::launch_from_snapshot_with_hooks` adds the Phase D lease-handoff gate:
-after the restore exec probe, m80 sends `PostRestoreHookRequest` with a fresh
-host nonce, waits for guestd to mix it into `/dev/urandom`, issue
-`RNDRESEEDCRNG`, and run the ordered `HookSpecSet`, then returns `RunningSandbox`
-only after the success ack. Guest hook failure maps to
-`FcError::PostRestoreHook`; a missing hook response is bounded by a 5 second
-aggregate host-side read deadline and fails closed as a protocol timeout.
+After the restore exec probe, every snapshot restore sends
+`PostRestoreHookRequest` with a fresh host nonce. guestd mixes it into
+`/dev/urandom`, issues `RNDRESEEDCRNG`, and then runs the ordered
+`HookSpecSet`; plain `launch_from_snapshot` sends an empty hook set, so the
+baseline nonce mix and kernel reseed still run before `RunningSandbox` is
+returned. Guest hook failure maps to `FcError::PostRestoreHook`; a missing hook
+response is bounded by a 5 second aggregate host-side read deadline and fails
+closed as a protocol timeout.
 
 `RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
 to caller-supplied paths, then writes `snapshot-manifest.json` beside the pair
@@ -197,8 +198,8 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `RunningSandbox::detach_drive` | `(self, HotplugDriveDetach) -> Result<RunningSandbox, FcError>` | Ask guestd to unmount a preallocated slot, then retarget the slot to its placeholder backing file. |
 | `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
 | `RunningSandbox::ping_guest` | `(&mut self) -> Result<PongResponse, FcError>` | Round-trip a guest health probe and return the guest handling timestamp. |
-| `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
-| `Sandbox::launch_from_snapshot_with_hooks` | `(self, snapshot: SnapshotPaths, discovery: &Discovery, hooks: HookSpecSet) -> Result<RunningSandbox, FcError>` | Restore a snapshot, run post-restore hooks under the fixed aggregate response deadline, then return the Running sandbox. |
+| `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox after the baseline post-restore reseed gate. |
+| `Sandbox::launch_from_snapshot_with_hooks` | `(self, snapshot: SnapshotPaths, discovery: &Discovery, hooks: HookSpecSet) -> Result<RunningSandbox, FcError>` | Restore a snapshot, run the baseline reseed gate plus supplied post-restore hooks under the fixed aggregate response deadline, then return the Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 | `StoppedSandbox::run_dir` | `(&self) -> &Path` | Return the stopped VM run directory. |
 | `StoppedSandbox::extract_changes` | `(&self, into: &Path) -> Result<ChangeSet, FcError>` | Extract caller-requested workspace changes from the scratch image, capped at the scratch image byte length. |

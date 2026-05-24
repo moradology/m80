@@ -547,11 +547,8 @@ const RESTORE_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const RESTORE_PROBE_SLEEP: Duration = Duration::from_millis(50);
 
 impl Sandbox {
-    /// Restore a previously-captured snapshot without post-restore hooks.
-    ///
-    /// This preserves the existing direct snapshot restore contract. Warm-pool
-    /// template restores that need entropy reseed or lease-specific identity
-    /// work use [`Sandbox::launch_from_snapshot_with_hooks`].
+    /// Restore a previously-captured snapshot with the baseline post-restore
+    /// reseed hook and no lease-specific identity hooks.
     pub fn launch_from_snapshot(
         self,
         snapshot: SnapshotPaths,
@@ -582,9 +579,10 @@ impl Sandbox {
     /// 6. Send a lightweight exec readiness probe over the restored vsock UDS
     ///    to confirm guestd itself can read, execute, and reply (retry loop,
     ///    50 ms sleep, 5 s cap).
-    /// 7. If hooks were supplied, send `PostRestoreHookRequest`; guestd mixes
-    ///    the host restore nonce, reseeds the guest CRNG, runs the hooks in
-    ///    order, and returns a success/failure ack before this method returns.
+    /// 7. Send `PostRestoreHookRequest`; guestd mixes the host restore nonce,
+    ///    reseeds the guest CRNG, runs the supplied hooks in order, and returns
+    ///    a success/failure ack before this method returns. An empty hook set
+    ///    still performs the nonce mix and CRNG reseed.
     ///
     /// The cold-boot inverted-readiness handshake (phases 11b / 12b) is
     /// **not used** on the restore path — guestd does not re-dial after

@@ -166,6 +166,17 @@ fn empty_hook_list_still_mixes_nonce_and_reseeds() {
 }
 
 #[test]
+fn rndreseedcrng_ioctl_is_issued_on_restore() {
+    let ops = FakeKernelOps::default();
+    let fixture = Fixture::new();
+
+    let response = run_post_restore_hooks_with_ops(&request(Vec::new()), &fixture.paths, &ops);
+
+    assert!(response.results.is_empty());
+    assert_eq!(ops.reseed_calls.get(), 1);
+}
+
+#[test]
 fn reseed_systemd_random_seed_rewrites_existing_seed() {
     let ops = FakeKernelOps::default();
     let fixture = Fixture::new();

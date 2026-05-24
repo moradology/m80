@@ -26,10 +26,6 @@ pub(crate) fn phase_restore_post_restore_hooks(
     firecracker_pid: u32,
     hooks: &HookSpecSet,
 ) -> Result<(), FcError> {
-    if hooks.hooks().is_empty() {
-        return Ok(());
-    }
-
     send_post_restore_hooks(
         vsock_uds,
         vm_id,
@@ -147,6 +143,9 @@ fn validate_post_restore_response(
             response.request_id.clone(),
         ));
     }
+    if baseline_reseed_failure(&response.payload.results) {
+        return Err(FcError::PostRestoreHook(HookError::ReseedFailed));
+    }
     if response.payload.results.len() != expected_hooks.len() {
         return Err(super::protocol::unexpected_frame(
             "post-restore hooks",
@@ -165,6 +164,17 @@ fn validate_post_restore_response(
         validate_hook_result(index, result, expected)?;
     }
     Ok(())
+}
+
+fn baseline_reseed_failure(results: &[HookResultWire]) -> bool {
+    matches!(
+        results,
+        [HookResultWire {
+            kind: HookKindWire::ReseedSystemdRandomSeed,
+            status: HookStatus::Failed,
+            error: Some(HookError::ReseedFailed) | None,
+        }]
+    )
 }
 
 fn validate_hook_result(
@@ -195,7 +205,7 @@ fn validate_hook_result(
 mod tests {
     use super::*;
     use crate::{HostnameSpec, WireProtocolError};
-    use std::io::Write;
+    use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixListener;
     use std::thread;
     use std::time::Duration;
@@ -312,6 +322,41 @@ mod tests {
     }
 
     #[test]
+    fn empty_hook_response_with_reseed_failure_returns_typed_error() {
+        let result = HookResultWire {
+            kind: HookKindWire::ReseedSystemdRandomSeed,
+            status: HookStatus::Failed,
+            error: Some(HookError::ReseedFailed),
+        };
+        let response = response(Some("req"), vec![result]);
+
+        let err = validate_post_restore_response(&response, "req", &[]).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::PostRestoreHook(HookError::ReseedFailed)
+        ));
+    }
+
+    #[test]
+    fn baseline_reseed_failure_before_requested_hook_returns_typed_error() {
+        let expected = vec![HookKindWire::RegenMachineId];
+        let result = HookResultWire {
+            kind: HookKindWire::ReseedSystemdRandomSeed,
+            status: HookStatus::Failed,
+            error: Some(HookError::ReseedFailed),
+        };
+        let response = response(Some("req"), vec![result]);
+
+        let err = validate_post_restore_response(&response, "req", &expected).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::PostRestoreHook(HookError::ReseedFailed)
+        ));
+    }
+
+    #[test]
     fn response_rejects_success_with_error_detail() {
         let expected = wire_hooks(&hooks()).unwrap();
         let mut results: Vec<_> = expected.iter().cloned().map(success).collect();
@@ -352,5 +397,52 @@ mod tests {
             })
         ));
         server.join().expect("server thread");
+    }
+
+    #[test]
+    fn empty_hook_set_still_sends_post_restore_reseed_request() {
+        let dir = tempfile::tempdir().expect("uds tempdir");
+        let sock = dir.path().join("fc.sock");
+        let listener = UnixListener::bind(&sock).expect("bind fake firecracker uds");
+        let expected_nonce = [7_u8; RESTORE_NONCE_BYTES];
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept channel");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+            let mut connect = String::new();
+            reader.read_line(&mut connect).expect("read CONNECT");
+            assert!(connect.starts_with("CONNECT "));
+            stream.write_all(b"OK 3\n").expect("write handshake");
+            stream.flush().expect("flush handshake");
+            let raw = m80_proto::read_raw_frame(&mut reader).expect("read post-restore request");
+            let request_id = raw
+                .request_id
+                .clone()
+                .expect("post-restore request id present");
+            let request: Envelope<PostRestoreHookRequest> =
+                raw.decode().expect("decode post-restore request");
+            let response = Envelope::with_request_id(
+                PostRestoreHookResponse {
+                    results: Vec::new(),
+                },
+                request_id,
+            );
+            m80_proto::write_frame(&mut stream, &response).expect("write post-restore response");
+            stream.flush().expect("flush response");
+            request.payload
+        });
+
+        send_post_restore_hooks(
+            &sock,
+            "vm-empty-hooks",
+            Some("req-base"),
+            std::process::id(),
+            &HookSpecSet::empty(),
+            expected_nonce,
+        )
+        .expect("empty hook set must still complete post-restore reseed request");
+
+        let request = server.join().expect("server thread");
+        assert_eq!(request.restore_nonce, expected_nonce);
+        assert!(request.hooks.is_empty());
     }
 }

@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Fixed — snapshot restore reseed gate
+
+- Snapshot restore now always sends a post-restore request after the restored
+  exec-channel probe, even with an empty hook set, so guestd mixes a fresh host
+  nonce and calls `RNDRESEEDCRNG` before any restored VM is handed back.
+
 ### Added — feat(snapshot): track dirty pages plumbing
 
 - Threaded `MachineConfig::track_dirty_pages` and snapshot
