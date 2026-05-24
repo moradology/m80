@@ -43,6 +43,7 @@ const SMT_CONTROL_PATH: &str = "/sys/devices/system/cpu/smt/control";
 const PROC_SWAPS_PATH: &str = "/proc/swaps";
 const KVM_INTEL_NESTED_PATH: &str = "/sys/module/kvm_intel/parameters/nested";
 const KVM_AMD_NESTED_PATH: &str = "/sys/module/kvm_amd/parameters/nested";
+const KVM_MIN_TIMER_PERIOD_US_PATH: &str = "/sys/module/kvm/parameters/min_timer_period_us";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const NF_CONNTRACK_MAX_PATH: &str = "/proc/sys/net/netfilter/nf_conntrack_max";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
@@ -54,6 +55,8 @@ const ENV_SKIP_SMT: &str = "M80_SKIP_CHECK_SMT";
 const ENV_SMT_CHECK: &str = "M80_SMT_CHECK";
 const ENV_SKIP_SWAP: &str = "M80_SKIP_CHECK_SWAP";
 const ENV_SKIP_NESTED_VIRT: &str = "M80_SKIP_CHECK_NESTED_VIRT";
+const ENV_SKIP_KVM_TIMER: &str = "M80_SKIP_CHECK_KVM_TIMER";
+const ENV_SKIP_CGROUP_FAVORDYNMODS: &str = "M80_SKIP_CHECK_CGROUP_FAVORDYNMODS";
 const NF_CONNTRACK_ENTRIES_PER_VM: u64 = 1_000;
 const NF_CONNTRACK_HEADROOM_MULTIPLIER: u64 = 2;
 
@@ -140,6 +143,8 @@ pub fn run_with_configs(
     check_smt_disabled(&mut report)?;
     check_swap_disabled(&mut report)?;
     check_nested_virt_disabled(&mut report)?;
+    check_kvm_timer_floor(&mut report)?;
+    check_cgroup_favordynmods(&mut report);
 
     // Host tuning advisories
     check_thp_policy(&mut report);
@@ -535,6 +540,78 @@ fn classify_nested_virt_disabled(
 
 fn nested_virt_enabled(value: Option<&str>) -> bool {
     matches!(value, Some("Y" | "y" | "1"))
+}
+
+fn check_kvm_timer_floor(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    report.push(classify_kvm_timer_floor(
+        read_optional_trimmed_path(KVM_MIN_TIMER_PERIOD_US_PATH)?.as_deref(),
+        env_is_one(ENV_SKIP_KVM_TIMER),
+    ));
+    Ok(())
+}
+
+fn classify_kvm_timer_floor(value: Option<&str>, skip: bool) -> CheckRow {
+    if skip {
+        return CheckRow::pass(
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            "skipped by operator",
+        );
+    }
+
+    match value {
+        Some("0") => CheckRow::pass(
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            "warning: min_timer_period_us=0; Firecracker recommends evaluating 500",
+        ),
+        Some(value) => CheckRow::pass(
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            format!("min_timer_period_us={value}"),
+        ),
+        None => CheckRow::pass(
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            "warning: min_timer_period_us unavailable; timer floor not evaluated",
+        ),
+    }
+}
+
+fn check_cgroup_favordynmods(report: &mut Vec<CheckRow>) {
+    let release = host_kernel_release_from_report(report);
+    if let Some(row) =
+        classify_cgroup_favordynmods(release.as_deref(), env_is_one(ENV_SKIP_CGROUP_FAVORDYNMODS))
+    {
+        report.push(row);
+    }
+}
+
+fn classify_cgroup_favordynmods(release: Option<&str>, skip: bool) -> Option<CheckRow> {
+    let release = release?;
+    if kernel_major_minor(release)? < (6, 1) {
+        return None;
+    }
+    Some(CheckRow::pass(
+        HostPrerequisiteCheckId::CgroupFavordynmods,
+        if skip {
+            "skipped by operator".to_string()
+        } else {
+            format!(
+                "warning: Linux {release}; verify cgroup2 favordynmods remount or kvm.nx_huge_pages=never mitigation"
+            )
+        },
+    ))
+}
+
+fn host_kernel_release_from_report(report: &[CheckRow]) -> Option<String> {
+    report
+        .iter()
+        .find(|row| row.check_id == HostPrerequisiteCheckId::HostKernelFloor)
+        .and_then(|row| row.detail.strip_prefix("Linux "))
+        .and_then(|rest| rest.split_once(" >= "))
+        .map(|(release, _)| release.to_string())
+}
+
+fn kernel_major_minor(release: &str) -> Option<(u64, u64)> {
+    let mut parts = release.split(['.', '-']);
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }
 
 fn classify_thp_policy(read_result: Result<String, io::Error>) -> CheckRow {

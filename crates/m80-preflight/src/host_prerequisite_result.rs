@@ -434,6 +434,7 @@ fn check_id_for_preflight_error(error: &PreflightError) -> HostPrerequisiteCheck
         PreflightError::SmtEnabled { .. } => HostPrerequisiteCheckId::SmtDisabled,
         PreflightError::SwapActive { .. } => HostPrerequisiteCheckId::SwapDisabled,
         PreflightError::NestedVirtEnabled { .. } => HostPrerequisiteCheckId::NestedVirtDisabled,
+        PreflightError::KvmTimerFloorUnset { .. } => HostPrerequisiteCheckId::KvmTimerFloor,
         PreflightError::NfConntrackCapacityTooLow { .. }
         | PreflightError::InvalidNfConntrackMax { .. }
         | PreflightError::InvalidExpectedConcurrentVms { .. } => {
@@ -524,6 +525,9 @@ fn check_id_for_path(path: &std::path::Path) -> HostPrerequisiteCheckId {
         Some("/sys/module/kvm_intel/parameters/nested")
         | Some("/sys/module/kvm_amd/parameters/nested") => {
             HostPrerequisiteCheckId::NestedVirtDisabled
+        }
+        Some("/sys/module/kvm/parameters/min_timer_period_us") => {
+            HostPrerequisiteCheckId::KvmTimerFloor
         }
         Some("/proc/modules") | Some("/proc/sys/net/bridge/bridge-nf-call-iptables") => {
             HostPrerequisiteCheckId::KernelModules
@@ -718,6 +722,11 @@ fn apply_preflight_error_fields(check: &mut HostPrerequisiteCheck, error: &Prefl
         PreflightError::NestedVirtEnabled { vendor } => {
             check.expected_value = Some("N or 0".to_string());
             check.actual_value = Some(format!("{vendor} nested enabled"));
+        }
+        PreflightError::KvmTimerFloorUnset { actual } => {
+            check.final_path = Some("/sys/module/kvm/parameters/min_timer_period_us".into());
+            check.expected_value = Some(">= 500".to_string());
+            check.actual_value = Some(actual.clone());
         }
         PreflightError::PrivilegeUnavailable { missing_caps } => {
             check.expected_value = Some("root or required capabilities".to_string());

@@ -373,6 +373,76 @@ fn nested_virt_enabled_names_vendor() {
 }
 
 #[test]
+fn kvm_timer_floor_reports_zero_as_warning() {
+    let row = classify_kvm_timer_floor(Some("0"), false);
+
+    assert_eq!(row.check_id, HostPrerequisiteCheckId::KvmTimerFloor);
+    assert!(row.passed);
+    assert!(row.detail.contains("warning"));
+    assert!(row.detail.contains("500"));
+}
+
+#[test]
+fn kvm_timer_floor_reports_nonzero_value() {
+    let row = classify_kvm_timer_floor(Some("500"), false);
+
+    assert!(row.passed);
+    assert_eq!(row.detail, "min_timer_period_us=500");
+}
+
+#[test]
+fn kvm_timer_floor_absent_warns() {
+    let row = classify_kvm_timer_floor(None, false);
+
+    assert!(row.passed);
+    assert!(row.detail.contains("unavailable"));
+}
+
+#[test]
+fn kvm_timer_floor_skip_records_operator_skip() {
+    let row = classify_kvm_timer_floor(Some("0"), true);
+
+    assert!(row.passed);
+    assert_eq!(row.detail, "skipped by operator");
+}
+
+#[test]
+fn cgroup_favordynmods_warns_on_kernel_6_1_or_newer() {
+    let row = classify_cgroup_favordynmods(Some("6.1.0"), false).unwrap();
+
+    assert_eq!(row.check_id, HostPrerequisiteCheckId::CgroupFavordynmods);
+    assert!(row.passed);
+    assert!(row.detail.contains("favordynmods"));
+    assert!(row.detail.contains("kvm.nx_huge_pages=never"));
+}
+
+#[test]
+fn cgroup_favordynmods_absent_on_older_kernel() {
+    assert!(classify_cgroup_favordynmods(Some("5.15.0"), false).is_none());
+}
+
+#[test]
+fn cgroup_favordynmods_skip_records_operator_skip() {
+    let row = classify_cgroup_favordynmods(Some("6.17.0-22-generic"), true).unwrap();
+
+    assert!(row.passed);
+    assert_eq!(row.detail, "skipped by operator");
+}
+
+#[test]
+fn cgroup_favordynmods_reuses_host_kernel_report_row() {
+    let report = vec![CheckRow::pass(
+        HostPrerequisiteCheckId::HostKernelFloor,
+        "Linux 6.17.0-22-generic >= 6.1",
+    )];
+
+    assert_eq!(
+        host_kernel_release_from_report(&report).as_deref(),
+        Some("6.17.0-22-generic")
+    );
+}
+
+#[test]
 fn bridge_nf_call_iptables_requires_enabled_sysctl() {
     let err = classify_bridge_nf_call_iptables("0\n").unwrap_err();
 

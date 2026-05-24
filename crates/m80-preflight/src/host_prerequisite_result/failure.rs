@@ -52,6 +52,8 @@ pub enum HostPrerequisiteFailureKind {
     SwapActive,
     /// Nested virtualization is enabled for a KVM vendor module.
     NestedVirtEnabled,
+    /// KVM timer floor is unset.
+    KvmTimerFloorUnset,
     /// Required privilege is unavailable.
     PrivilegeUnavailable,
     /// Capability read failed.
@@ -151,6 +153,7 @@ impl HostPrerequisiteFailureKind {
             PreflightError::SmtEnabled { .. } => Self::SmtEnabled,
             PreflightError::SwapActive { .. } => Self::SwapActive,
             PreflightError::NestedVirtEnabled { .. } => Self::NestedVirtEnabled,
+            PreflightError::KvmTimerFloorUnset { .. } => Self::KvmTimerFloorUnset,
             PreflightError::PrivilegeUnavailable { .. } => Self::PrivilegeUnavailable,
             PreflightError::CapabilityRead(_) => Self::CapabilityRead,
             PreflightError::FirecrackerBinaryNotFound { .. } => Self::FirecrackerBinaryNotFound,

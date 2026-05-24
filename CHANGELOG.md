@@ -7,9 +7,10 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ### Added — Firecracker host posture preflight checks
 
-- Added `m80-preflight` checks for KSM, SMT, active swap, and nested
-  virtualization host posture, with typed failure variants, stable
-  host-prerequisite check ids, behavior docs, and operator escape hatches.
+- Added `m80-preflight` checks for KSM, SMT, active swap, nested
+  virtualization, KVM timer floor, and cgroup-favordynmods host posture, with
+  typed failure variants where applicable, stable host-prerequisite check ids,
+  behavior docs, and operator escape hatches.
 
 ### Security — IMDS link-local block
 

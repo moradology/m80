@@ -30,6 +30,10 @@ pub enum HostPrerequisiteCheckId {
     SwapDisabled,
     /// Nested virtualization is disabled.
     NestedVirtDisabled,
+    /// KVM PIT timer floor posture check.
+    KvmTimerFloor,
+    /// cgroup favordynmods regression awareness.
+    CgroupFavordynmods,
     /// Transparent hugepage advisory check.
     TransparentHugepages,
     /// KVM halt-polling advisory check.
@@ -82,6 +86,8 @@ impl HostPrerequisiteCheckId {
         Self::SmtDisabled,
         Self::SwapDisabled,
         Self::NestedVirtDisabled,
+        Self::KvmTimerFloor,
+        Self::CgroupFavordynmods,
         Self::TransparentHugepages,
         Self::KvmHaltPolling,
         Self::CpuGovernor,
@@ -118,6 +124,8 @@ impl HostPrerequisiteCheckId {
             Self::SmtDisabled => "SMT disabled",
             Self::SwapDisabled => "Swap disabled",
             Self::NestedVirtDisabled => "Nested virtualization disabled",
+            Self::KvmTimerFloor => "KVM timer floor",
+            Self::CgroupFavordynmods => "cgroup favordynmods",
             Self::TransparentHugepages => "Transparent hugepages",
             Self::KvmHaltPolling => "KVM halt polling",
             Self::CpuGovernor => "CPU governor",
@@ -155,6 +163,8 @@ impl HostPrerequisiteCheckId {
             Self::SmtDisabled => "smt_disabled",
             Self::SwapDisabled => "swap_disabled",
             Self::NestedVirtDisabled => "nested_virt_disabled",
+            Self::KvmTimerFloor => "kvm_timer_floor",
+            Self::CgroupFavordynmods => "cgroup_favordynmods",
             Self::TransparentHugepages => "transparent_hugepages",
             Self::KvmHaltPolling => "kvm_halt_polling",
             Self::CpuGovernor => "cpu_governor",

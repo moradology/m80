@@ -96,7 +96,7 @@ fn full_report_rows_name_first_missing_check_id() {
             expected_index,
         } => {
             assert_eq!(check_id, "rootfs_manifest");
-            assert_eq!(expected_index, 26);
+            assert_eq!(expected_index, 28);
         }
         other => panic!("expected missing check_id, got {other:?}"),
     }
@@ -129,7 +129,7 @@ fn full_report_rows_name_first_duplicate_check_id() {
 #[test]
 fn full_report_rows_name_first_out_of_order_check_id() {
     let mut rows = full_report_rows();
-    rows.swap(25, 26);
+    rows.swap(27, 28);
 
     let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
 
@@ -141,7 +141,7 @@ fn full_report_rows_name_first_out_of_order_check_id() {
         } => {
             assert_eq!(expected_check_id, "kernel_image");
             assert_eq!(actual_check_id, "rootfs_manifest");
-            assert_eq!(index, 25);
+            assert_eq!(index, 27);
         }
         other => panic!("expected out-of-order check_id, got {other:?}"),
     }
@@ -165,6 +165,8 @@ fn stable_check_registry_keeps_expected_order() {
             HostPrerequisiteCheckId::SmtDisabled,
             HostPrerequisiteCheckId::SwapDisabled,
             HostPrerequisiteCheckId::NestedVirtDisabled,
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            HostPrerequisiteCheckId::CgroupFavordynmods,
             HostPrerequisiteCheckId::TransparentHugepages,
             HostPrerequisiteCheckId::KvmHaltPolling,
             HostPrerequisiteCheckId::CpuGovernor,
@@ -484,6 +486,12 @@ fn failure_kind_maps_host_feature_preflight_errors() {
             },
             HostPrerequisiteFailureKind::NestedVirtEnabled,
         ),
+        (
+            PreflightError::KvmTimerFloorUnset {
+                actual: "0".to_owned(),
+            },
+            HostPrerequisiteFailureKind::KvmTimerFloorUnset,
+        ),
     ];
 
     for (error, expected) in cases {
@@ -553,6 +561,14 @@ fn diagnostic_maps_host_verifier_failures_to_expected_actual_values() {
             HostPrerequisiteCheckId::SwapDisabled,
             Some("header only"),
             Some("/swapfile"),
+        ),
+        (
+            PreflightError::KvmTimerFloorUnset {
+                actual: "0".to_owned(),
+            },
+            HostPrerequisiteCheckId::KvmTimerFloor,
+            Some(">= 500"),
+            Some("0"),
         ),
     ];
 
@@ -680,6 +696,10 @@ fn diagnostic_path_io_preserves_verifier_origin_check_ids() {
         (
             "/sys/module/kvm_intel/parameters/nested",
             HostPrerequisiteCheckId::NestedVirtDisabled,
+        ),
+        (
+            "/sys/module/kvm/parameters/min_timer_period_us",
+            HostPrerequisiteCheckId::KvmTimerFloor,
         ),
         ("/proc/modules", HostPrerequisiteCheckId::KernelModules),
         (

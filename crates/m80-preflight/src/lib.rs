@@ -321,6 +321,13 @@ pub enum PreflightError {
         vendor: String,
     },
 
+    /// KVM PIT timer floor is unset.
+    #[error("kvm timer floor unset: /sys/module/kvm/parameters/min_timer_period_us is {actual:?}")]
+    KvmTimerFloorUnset {
+        /// Observed `min_timer_period_us` value.
+        actual: String,
+    },
+
     /// `geteuid() != 0` AND one or more capabilities in
     /// [`REQUIRED_CAPABILITIES`] are absent from the effective set.
     /// Operator must run as root, `setcap` the binary, or grant the caps via
@@ -896,6 +903,9 @@ impl PreflightError {
             }
             Self::NestedVirtEnabled { .. } => {
                 "disable nested virtualization for the host KVM module; set M80_SKIP_CHECK_NESTED_VIRT=1 only after accepting the nested-hypervisor risk"
+            }
+            Self::KvmTimerFloorUnset { .. } => {
+                "evaluate setting /sys/module/kvm/parameters/min_timer_period_us to 500; set M80_SKIP_CHECK_KVM_TIMER=1 to suppress this advisory"
             }
             Self::PrivilegeUnavailable { .. } => {
                 "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,cap_setuid,cap_setgid,cap_setpcap+ep <binary>`, or set securityContext.capabilities.add in your pod spec"

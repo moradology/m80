@@ -201,6 +201,15 @@ fn nested_virt_enabled_has_hint() {
 }
 
 #[test]
+fn kvm_timer_floor_unset_has_hint() {
+    let err = PreflightError::KvmTimerFloorUnset {
+        actual: "0".to_owned(),
+    };
+    assert_hint(&err);
+    assert!(err.hint().contains("M80_SKIP_CHECK_KVM_TIMER=1"));
+}
+
+#[test]
 fn privilege_unavailable_has_hint() {
     assert_hint(&PreflightError::PrivilegeUnavailable {
         missing_caps: vec![Capability::CAP_NET_ADMIN],
