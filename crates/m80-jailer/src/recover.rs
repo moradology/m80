@@ -145,6 +145,7 @@ mod tests {
                 new_net_ns: false,
                 daemonize: false,
                 new_cgroup_ns: false,
+                cgroup_version: None,
                 netns_path: None,
                 seccomp_filter_path: None,
                 stdio_log: None,

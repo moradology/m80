@@ -14,7 +14,7 @@ use tracing::warn;
 
 use crate::error::JailerError;
 use crate::plan::write_file_no_follow;
-use crate::types::{JailerState, Plan, JAILER_STATE_FILE};
+use crate::types::{CgroupVersion, JailerState, Plan, JAILER_STATE_FILE};
 
 const FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
 const FIRECRACKER_PID_INITIAL_POLL: Duration = Duration::from_millis(1);
@@ -131,6 +131,10 @@ impl MaterializedJail {
                 "no-file={}",
                 self.plan.config.resource_limits.no_file
             ));
+
+        if self.plan.config.cgroup_version == Some(CgroupVersion::V2) {
+            command.arg("--cgroup-version").arg("2");
+        }
 
         if let Some(fsize) = self.plan.config.resource_limits.fsize {
             command

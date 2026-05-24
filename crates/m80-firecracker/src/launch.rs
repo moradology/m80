@@ -1275,6 +1275,7 @@ fn build_jailer_launch_config(
         new_net_ns: input.private_netns,
         daemonize: input.daemonize,
         new_cgroup_ns: false,
+        cgroup_version: Some(m80_jailer::CgroupVersion::V2),
         netns_path: input.netns_path.map(Path::to_path_buf),
         seccomp_filter_path: Some(PathBuf::from(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH)),
         stdio_log: Some(console_log_path(input.run_dir)),

@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Changed — jailer cgroup v2 launch alignment
+
+- `m80-jailer` now exposes `CgroupVersion` on `JailerConfig`, emits
+  `--cgroup-version 2` for `V2`, and `m80-firecracker` selects v2 for its
+  actual launch path so cgroup setup and the official jailer agree on the
+  unified hierarchy.
+
 ### Added — feat(kernel): audit and align stripped kernel CONFIG
 
 - Audited the stripped kernel keep/drop config against Firecracker `v1.15.1`

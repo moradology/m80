@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::types::{JailerConfig, JailerSocket, Plan};
+use crate::types::{CgroupVersion, JailerConfig, JailerSocket, Plan};
 use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 
@@ -128,6 +128,104 @@ fn firecracker_pid_wait_rejects_non_numeric_file() {
     );
 }
 
+fn launch_and_record_args(cgroup_version: Option<CgroupVersion>) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-cgroup-version");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    let jailer_bin = dir.path().join("fake-jailer-cgroup-version.sh");
+    std::fs::write(
+        &jailer_bin,
+        r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+all_args="$*"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+printf '%s\n' "$all_args" > "$chroot_base/args.txt"
+echo $$ > "$jail_root/firecracker.pid"
+/bin/sleep 30
+"#,
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&jailer_bin, perms).unwrap();
+
+    let cfg = JailerConfig {
+        jailer_bin,
+        jailer_harden_bin: None,
+        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+        run_dir: run_dir.clone(),
+        uid: 3000,
+        gid: 3000,
+        bindings: Vec::new(),
+        sockets: Vec::new(),
+        resource_limits: crate::types::ResourceLimits::default(),
+        new_pid_ns: false,
+        new_net_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        cgroup_version,
+        netns_path: None,
+        seccomp_filter_path: None,
+        stdio_log: None,
+    };
+    let plan = Plan::compute(&cfg).unwrap();
+    let jail_path = run_dir
+        .join("firecracker")
+        .join("vm-cgroup-version")
+        .join("root");
+    let jail = MaterializedJail {
+        plan,
+        jail_path,
+        bind_mounts: Vec::new(),
+        created_dirs: Vec::new(),
+        placeholder_files: Vec::new(),
+    };
+
+    let jailed = jail
+        .launch(Path::new(JailerSocket::Firecracker.jail_path()))
+        .unwrap();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(jailed.jailer_pid() as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .unwrap();
+    std::fs::read_to_string(run_dir.join("args.txt")).unwrap()
+}
+
+#[test]
+fn launch_with_cgroup_version_v2_passes_official_jailer_flag() {
+    let args = launch_and_record_args(Some(CgroupVersion::V2));
+
+    assert!(args.contains("--cgroup-version 2"), "{args}");
+}
+
+#[test]
+fn launch_with_no_cgroup_version_omits_official_jailer_flag() {
+    let args = launch_and_record_args(None);
+
+    assert!(!args.contains("--cgroup-version"), "{args}");
+}
+
+#[test]
+fn launch_with_cgroup_version_v1_omits_official_jailer_flag() {
+    let args = launch_and_record_args(Some(CgroupVersion::V1));
+
+    assert!(!args.contains("--cgroup-version"), "{args}");
+}
+
 #[test]
 fn launch_redirects_stdio_and_passes_hardening_args() {
     let dir = tempfile::tempdir().unwrap();
@@ -223,6 +321,7 @@ echo fake-firecracker-stderr >&2
         new_net_ns: true,
         daemonize: false,
         new_cgroup_ns: true,
+        cgroup_version: None,
         netns_path: None,
         seccomp_filter_path: Some(PathBuf::from("firecracker-seccomp-filter.bin")),
         stdio_log: Some(stdio_log.clone()),
@@ -381,6 +480,7 @@ fi
         new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
+        cgroup_version: None,
         netns_path: None,
         seccomp_filter_path: None,
         stdio_log: None,
@@ -459,6 +559,7 @@ echo $$ > "$jail_root/firecracker.pid"
         new_net_ns: false,
         daemonize: true,
         new_cgroup_ns: false,
+        cgroup_version: None,
         netns_path: None,
         seccomp_filter_path: None,
         stdio_log: None,
@@ -547,6 +648,7 @@ echo $$ > "$jail_root/firecracker.pid"
         new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
+        cgroup_version: None,
         netns_path: None,
         seccomp_filter_path: None,
         stdio_log: None,

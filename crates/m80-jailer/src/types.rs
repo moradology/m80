@@ -51,6 +51,9 @@ pub struct JailerConfig {
     /// Ask `m80-jailer-harden` to enter a private cgroup namespace before
     /// execing the official jailer.
     pub new_cgroup_ns: bool,
+    /// Optional official-jailer cgroup hierarchy version. `V2` emits
+    /// `--cgroup-version 2`; `None` and `V1` leave the argument absent.
+    pub cgroup_version: Option<CgroupVersion>,
     /// Optional caller-provided network namespace path passed to the official
     /// jailer as `--netns`.
     pub netns_path: Option<PathBuf>,
@@ -59,6 +62,16 @@ pub struct JailerConfig {
     /// Optional host-side file that receives firecracker/jailer stdout and
     /// stderr. The orchestrator uses this for the per-VM serial console log.
     pub stdio_log: Option<PathBuf>,
+}
+
+/// Official Firecracker jailer cgroup hierarchy selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CgroupVersion {
+    /// cgroup v1 hierarchy.
+    V1,
+    /// cgroup v2 unified hierarchy.
+    V2,
 }
 
 /// Per-VM process resource limits passed through to Firecracker's official

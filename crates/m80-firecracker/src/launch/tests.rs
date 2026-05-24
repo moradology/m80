@@ -213,6 +213,7 @@ fn launch_jailer_config_enables_pid_namespace() {
     assert!(config.new_pid_ns);
     assert!(config.new_net_ns);
     assert_eq!(config.daemonize, false);
+    assert_eq!(config.cgroup_version, Some(m80_jailer::CgroupVersion::V2));
     assert_eq!(
         config.seccomp_filter_path.as_deref(),
         Some(Path::new(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH))

@@ -244,6 +244,11 @@ PID namespace, so Firecracker is PID 1 in that namespace and m80 records
 host-visible Firecracker PID normally. This keeps VMM descendants scoped to the
 namespace the jailer owns.
 
+m80 also passes `--cgroup-version 2` to Firecracker's official jailer for every
+launch. `m80-cgroup` owns cgroup v2 subtree creation and pid enrollment, so the
+jailer launch path is pinned to the same unified hierarchy instead of relying
+on the jailer's default.
+
 `SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
 before exec'ing Firecracker. The Firecracker API socket remains the management
 surface; m80 records the daemon Firecracker PID and uses `jailer_pid = 0` as the

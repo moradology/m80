@@ -38,6 +38,7 @@ fn launch_observes_pid_file_without_fixed_twenty_five_ms_floor() {
         new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
+        cgroup_version: None,
         netns_path: None,
         seccomp_filter_path: None,
         stdio_log: None,

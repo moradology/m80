@@ -49,8 +49,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `fsize`), optionally enters private cgroup and network namespaces, drops
   supplementary groups, clears inheritable/ambient capabilities, sets
   `no_new_privs`, sets `PDEATHSIG=SIGKILL`, resets the signal mask, and sets
-  umask `0077`, then execs the official jailer. m80 still passes `--resource-limit no-file=<n>` on every launch, optionally passes
-  `--resource-limit fsize=<bytes>` to Firecracker's official jailer, clears the
+  umask `0077`, then execs the official jailer. m80 still passes
+  `--resource-limit no-file=<n>` on every launch, optionally passes
+  `--resource-limit fsize=<bytes>` and `--cgroup-version 2` when
+  `JailerConfig::cgroup_version` is `Some(CgroupVersion::V2)` to
+  Firecracker's official jailer, clears the
   jailer process environment, gives stdin `/dev/null`, gives stdout/stderr
   either the configured log file or `/dev/null`, can pass `--new-pid-ns`, can
   pass `--daemonize`, can pass `--new-net-ns` to the hardening wrapper, and can
@@ -95,9 +98,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
 ## Public surface
 
 - `JailerConfig`, including `resource_limits`, `new_pid_ns`, `new_net_ns`,
-  `daemonize`, `new_cgroup_ns`, optional `netns_path`,
+  `daemonize`, `new_cgroup_ns`, optional `cgroup_version`, optional `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, RoImageStore, Rw, CreateInsideJail }`, `JailerSocket`.
+- `CgroupVersion { V1, V2 }`; `V2` emits `--cgroup-version 2` to the
+  official jailer, while `None` and `V1` leave the flag absent.
 - `JAILER_PLAN_FILE` and `JAILER_STATE_FILE` are the persisted run-dir file
   names for the replayable plan and live pid state.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
@@ -148,6 +153,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   run-dir, `OrphanJail` for plan-only, partial-state, or stale-pid residue,
   and `LiveJail` when the state JSON records a running pid, including the
   `new_pid_ns` `jailer_pid = 0` sentinel.
+- `tests/jailer/cgroup_version.rs` — cgroup version selection persists in the
+  replayable plan JSON; unit tests in `src/materialized.rs` pin official
+  jailer arg emission for `None`, `V1`, and `V2`.
 - `tests/jailer/jail_root_layout.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
 - `tests/jailer/pid_file_backoff.rs` — launch observes a delayed
@@ -155,8 +163,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
   stdio log size capping, seccomp-filter forwarding, private network namespace
-  forwarding, netns validation, `new_pid_ns` parent reaping, and daemonized
-  parent reaping.
+  forwarding, cgroup-version forwarding, netns validation, `new_pid_ns`
+  parent reaping, and daemonized parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization, private mount propagation on m80's bind targets, and real
   Firecracker-jailer `--new-pid-ns` launch state (`jailer_pid = 0`,
