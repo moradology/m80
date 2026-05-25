@@ -3,7 +3,7 @@
 # Read-only; safe to re-run.
 set -uo pipefail
 
-cd /tank/projects/m80
+cd /tank/projects/m80 || exit
 echo "=================================================="
 echo "Validation against /tank/projects/m80/.beads/"
 echo "=================================================="

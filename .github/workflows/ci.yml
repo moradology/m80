@@ -105,6 +105,12 @@ jobs:
       - name: cargo build --workspace
         run: cargo build --workspace --all-targets
 
+      - name: cargo check --workspace --no-default-features
+        run: cargo check --workspace --no-default-features
+
+      - name: cargo check --workspace --all-features
+        run: cargo check --workspace --all-features
+
       # `m80-guestd::exec_with_timeout_returns_timed_out` is a known timing
       # flake under heavy parallel test load (passes solo). `--test-threads=2`
       # keeps the load low enough that it doesn't trip in CI.
@@ -113,6 +119,12 @@ jobs:
 
       - name: cargo test m80-attack-runner malicious artifact
         run: cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2
+
+      - name: cargo test m80-guestd-malicious malicious artifact
+        run: cargo test -p m80-guestd-malicious --features malicious-artifact -- --test-threads=2
+
+      - name: cargo test m80-observability internal surface
+        run: cargo test -p m80-observability --features _test_internal -- --test-threads=2
 
       - name: cargo clippy --workspace --all-targets
         env:
@@ -132,6 +144,8 @@ jobs:
         run: |
           set -euo pipefail
           find scripts -maxdepth 1 -name '*.sh' ! -name 'install.sh' -print0 | sort -z | xargs -0 shellcheck -s bash
+          bash -n specs/03-validate.sh specs/04-deps.sh
+          shellcheck -x -s bash specs/03-validate.sh specs/04-deps.sh
 
   audit:
     runs-on: ubuntu-latest
@@ -146,8 +160,14 @@ jobs:
       - name: Install audit toolchain
         run: rustup toolchain install 1.85 --profile minimal
 
+      - name: Install cargo-deny
+        run: cargo +1.85 install cargo-deny --version 0.19.4 --locked
+
       - name: Install cargo-audit
         run: cargo +1.85 install cargo-audit --version 0.22.1 --locked
+
+      - name: cargo deny
+        run: cargo +1.85 deny check advisories bans licenses sources
 
       - name: cargo audit
         run: cargo +1.85 audit

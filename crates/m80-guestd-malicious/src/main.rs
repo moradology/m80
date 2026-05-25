@@ -451,7 +451,7 @@ mod tests {
                 timeout_ms: None,
                 streaming: true,
             },
-            "req-response-mismatch".into(),
+            "req-response-mismatch",
         );
         let request = RawEnvelope::from_typed(&typed);
         let mut frame = Vec::new();

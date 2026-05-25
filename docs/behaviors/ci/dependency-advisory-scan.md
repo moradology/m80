@@ -1,12 +1,13 @@
 # Dependency Advisory Scan
 
-Behavior capture for bead `m80-8emae.13`.
+Behavior capture for beads `m80-8emae.13` and `m80-s3r28.1`.
 
 ## Contract
 
-CI runs a RustSec advisory scan independently from the workspace build/test job.
-The scan reads `Cargo.lock` and fails the `audit` job on known vulnerability
-advisories reported by `cargo audit`.
+CI runs supply-chain checks independently from the workspace build/test job.
+The audit job reads `Cargo.lock` and fails on known vulnerability advisories,
+license-policy violations, denied crates, unknown sources, or unexpected
+dependency-policy drift.
 
 The scan is intentionally separate from `cargo test --workspace`:
 
@@ -14,9 +15,21 @@ The scan is intentionally separate from `cargo test --workspace`:
 - build/test failures do not hide advisory failures
 - advisory database fetches do not perturb the normal test cache key
 
-`cargo audit` warnings such as unmaintained transitive crates are reported by
-the tool. They become failing policy only when the audit configuration or
-RustSec severity class requires failure.
+The `audit` job installs both tools on Rust 1.85:
+
+- `cargo deny check advisories bans licenses sources`
+- `cargo audit`
+
+`deny.toml` is the repository-owned policy. It allows Apache-2.0, MIT,
+BSD-2-Clause, BSD-3-Clause, ISC, and Unicode-3.0 licenses; warns on duplicate
+crate versions; denies `openssl`; and keeps sources constrained to crates.io by
+default. The existing `tun` crate's WTFPL license is allowed as a crate-local
+exception only, not workspace-wide.
+
+`RUSTSEC-2024-0436` (`paste` unmaintained) is ignored in cargo-deny because it
+is pulled through `rtnetlink` as a compile-time macro dependency. The ignore
+reason carries a revisit date of 2026-09-01. `cargo audit` still reports the
+warning so the audit log keeps visibility into the exception.
 
 ## Nix Version Follow-Up
 
@@ -51,6 +64,7 @@ the dependency-policy problem.
 ## Verification
 
 - `cargo audit`
+- `cargo +1.85 deny check advisories bans licenses sources`
 - `cargo tree -i nix@0.28.0`
 - `cargo tree -i nix@0.29.0`
 - `cargo tree -i nix@0.30.1`
@@ -61,4 +75,5 @@ the dependency-policy problem.
 - `cargo search tun --limit 20`
 - `cargo info tun@0.7.17` and `cargo info tun@0.8.9` fail on Rust 1.82 with
   `feature edition2024 is required`
-- CI workflow YAML includes an `audit` job using `rustsec/audit-check@v2`
+- CI workflow YAML includes an `audit` job that installs `cargo-deny` and
+  `cargo-audit`, then runs both tools.
