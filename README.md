@@ -118,7 +118,8 @@ host-binaries manifest; run `m80 preflight` next to get the host prerequisite
 diagnostic before launching.
 
 Production operators should also read
-[`docs/ops/host-setup.md`](docs/ops/host-setup.md).
+[`docs/ops/host-setup.md`](docs/ops/host-setup.md) and
+[`docs/ops/host-tuning.md`](docs/ops/host-tuning.md).
 
 ## How It Works
 

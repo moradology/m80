@@ -28,6 +28,13 @@ All notable changes to m80 are documented here. Format roughly follows
   exposes network-interface rate limiters, not `rx_queue_size` or
   `tx_queue_size` REST fields.
 
+### Documented — host network sysctl tuning posture
+
+- Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,
+  including the Firecracker `v1.15.1` measurement posture, inspectable socket,
+  TCP, and conntrack settings, and the boundary that m80 does not mutate
+  host-wide network sysctls.
+
 ### Documented — jailer cgroup placement deferral
 
 - Documented why m80 does not forward Firecracker jailer `--cgroup` or

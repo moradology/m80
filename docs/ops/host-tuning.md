@@ -78,6 +78,41 @@ value is reported because it affects whether LAPIC timer advance is relevant.
 This is visibility only. Do not claim a latency win from changing these values
 without a before/after cold-launch artifact.
 
+## Network Sysctls
+
+Firecracker's published `v1.15.1`
+[`network-performance.md`](https://github.com/firecracker-microvm/firecracker/blob/v1.15.1/docs/network-performance.md)
+measurements changed no socket-buffer or other network-related kernel
+parameters. Treat that as the default posture for m80 hosts: do not cargo-cult
+network sysctls before there is a measured bottleneck.
+
+For single-VM development, moderate throughput, and the default `NoEgress`
+mode, distro defaults are usually the right starting point. Under high
+throughput, high connection counts, or many concurrent `OutboundNat` VMs,
+operators can inspect:
+
+```sh
+sysctl net.core.rmem_default
+sysctl net.core.rmem_max
+sysctl net.core.wmem_default
+sysctl net.core.wmem_max
+sysctl net.ipv4.tcp_mem
+sysctl net.core.somaxconn
+sysctl net.netfilter.nf_conntrack_max
+```
+
+Increase these only when host evidence points at that class of limit: socket
+receive/send buffer pressure, listen backlog saturation, TCP memory pressure, or
+conntrack table exhaustion. For Firecracker-specific network ceilings, measure
+host-to-guest and guest-to-host throughput with the target image, kernel, and
+VM count before changing the host.
+
+m80 does not mutate these sysctls. `m80 preflight` checks launch-critical
+network prerequisites, and `m80-net-outbound` owns the bridge, TAP,
+per-VM iptables, DNS admission, and cleanup behavior described in
+[`crates/m80-net-outbound/README.md`](../../crates/m80-net-outbound/README.md).
+Host-wide TCP/socket/conntrack sizing remains operator policy.
+
 ## CPU Governor
 
 Linux exposes the CPU frequency driver and governor for CPU 0 at:
