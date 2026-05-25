@@ -35,6 +35,7 @@ fn jailer_daemonized_pid_sentinel_recovery() {
         overlay_size_bytes: 512 * 1024 * 1024,
         overlay_clone_mode: Default::default(),
         idle_timeout: None,
+        max_lifetime: None,
         daemonize: true,
         request_id: Some("req-daemonized-recovery".into()),
         pmem_layers: Vec::new(),

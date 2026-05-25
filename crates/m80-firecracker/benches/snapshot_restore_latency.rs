@@ -234,6 +234,7 @@ fn sandbox_config(vm_id: String, vcpu_count: u32, mem_size_mib: u32) -> SandboxC
         overlay_size_bytes: 128 * 1024 * 1024,
         overlay_clone_mode: Default::default(),
         idle_timeout: None,
+        max_lifetime: None,
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,

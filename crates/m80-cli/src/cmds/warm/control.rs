@@ -135,6 +135,7 @@ pub(super) enum WarmErrorKind {
     Config,
     InvalidVmId,
     IdleTimedOut,
+    LifetimeExpired,
     OneShotConsumed,
     SandboxDead,
     Protocol,
@@ -193,6 +194,7 @@ impl WarmErrorKind {
             FcError::Config(_) => Self::Config,
             FcError::InvalidVmId { .. } => Self::InvalidVmId,
             FcError::IdleTimedOut => Self::IdleTimedOut,
+            FcError::LifetimeExpired { .. } => Self::LifetimeExpired,
             FcError::OneShotConsumed => Self::OneShotConsumed,
             FcError::SandboxDead { .. } => Self::SandboxDead,
         }
@@ -247,6 +249,7 @@ impl WarmErrorKind {
             Self::Config => "Config",
             Self::InvalidVmId => "InvalidVmId",
             Self::IdleTimedOut => "IdleTimedOut",
+            Self::LifetimeExpired => "LifetimeExpired",
             Self::OneShotConsumed => "OneShotConsumed",
             Self::SandboxDead => "SandboxDead",
             Self::Protocol => "Protocol",

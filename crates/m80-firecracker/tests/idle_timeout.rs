@@ -47,6 +47,7 @@ fn idle_timeout_default_is_five_minutes() {
 fn idle_timeout_none_disables_watcher() {
     let cfg = SandboxConfig {
         idle_timeout: None,
+        max_lifetime: None,
         request_id: None,
         ..SandboxConfig::default()
     };
@@ -211,6 +212,7 @@ fn idle_timeout_resets_on_exec() {
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),
+        max_lifetime: None,
         request_id: None,
         ..SandboxConfig::default()
     };
@@ -292,6 +294,7 @@ fn idle_timeout_fires_after_inactivity() {
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),
+        max_lifetime: None,
         request_id: None,
         ..SandboxConfig::default()
     };

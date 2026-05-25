@@ -151,9 +151,7 @@ impl RunningSandbox {
     }
 
     fn prepare_hotplug_activity(&self) -> Result<(), FcError> {
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
-        }
+        self.ensure_lifecycle_accepts_work()?;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
         Ok(())

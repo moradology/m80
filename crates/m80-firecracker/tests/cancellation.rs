@@ -81,6 +81,7 @@ fn launch_vm(
             overlay_size_bytes: 256 * 1024 * 1024,
             overlay_clone_mode: Default::default(),
             idle_timeout: None,
+            max_lifetime: None,
             daemonize: false,
             request_id: None,
             pmem_layers: Vec::new(),

@@ -559,6 +559,8 @@ needs Firecracker's conservative host sync behavior.
 
 `SandboxConfig::idle_timeout` controls the idle-shutdown timer (default:
 `Some(300s)`). See "Idle timeout" below.
+`SandboxConfig::max_lifetime` controls the absolute wall-clock lifetime cap
+(default: `None`). See "Max lifetime" below.
 `SandboxConfig::request_id` controls diagnostics and wire-frame correlation
 for callers that already minted an opaque request id.
 `SandboxConfig::pmem_layers` declares read-only erofs-over-pmem layers. The
@@ -682,6 +684,23 @@ so long-running execs do not trip the watcher mid-flight. `stop()` and
 
 `idle_timeout: None` disables the watcher entirely.
 
+### Max lifetime
+
+`SandboxConfig::max_lifetime: Option<Duration>` (default: `None`) arms an
+absolute wall-clock cap from the time `launch` or `launch_from_snapshot`
+returns `RunningSandbox`. Unlike `idle_timeout`, this deadline does not reset
+after exec, file-op, ping, metrics, or hotplug activity.
+
+When the lifetime expires, the watcher sets a typed flag. If no request is in
+flight, it also sends the same best-effort graceful shutdown request used by
+the idle watcher. If a request is already in flight, that request is allowed to
+finish; the next lifecycle operation returns `FcError::LifetimeExpired {
+limit }`.
+
+When both `idle_timeout` and `max_lifetime` are configured, the first watcher
+deadline to expire wins. `max_lifetime: None` disables absolute lifetime
+enforcement.
+
 ### Error model
 
 Typed `FcError` variants tell the caller which phase failed; inner
@@ -747,6 +766,9 @@ an invariant fails closed.
   owner-state failures remain distinguishable from configuration.
 - `FcError::IdleTimedOut` — returned by `exec` when the idle-timeout watcher
   has fired. The caller must drop or `stop()` the sandbox.
+- `FcError::LifetimeExpired { limit }` — returned by lifecycle operations after
+  the sandbox exceeds `SandboxConfig::max_lifetime`. CLI JSON envelopes use the
+  `"LifetimeExpired"` variant and map to exit code 9.
 - `FcError::SandboxDead` — returned before a new exec or PTY request when the
   recorded Firecracker PID is already gone; the caller must discard the
   sandbox rather than retrying the dead channel.

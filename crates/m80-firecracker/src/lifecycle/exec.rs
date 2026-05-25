@@ -37,12 +37,13 @@ impl RunningSandbox {
     }
 
     fn begin_exec_activity(&self) -> Result<ExecActivityGuard, FcError> {
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
+        self.active_execs.fetch_add(1, Ordering::Relaxed);
+        if let Err(err) = self.ensure_lifecycle_accepts_work() {
+            self.active_execs.fetch_sub(1, Ordering::Relaxed);
+            return Err(err);
         }
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
-        self.active_execs.fetch_add(1, Ordering::Relaxed);
         Ok(ExecActivityGuard {
             active_execs: Arc::clone(&self.active_execs),
             last_activity_ns: Arc::clone(&self.last_activity_ns),

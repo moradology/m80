@@ -34,6 +34,13 @@ All notable changes to m80 are documented here. Format roughly follows
   validated to `576..=9000` before topology mutation. Current public callers
   still pass `None`, preserving the kernel default TAP MTU.
 
+### Added — Sandbox max lifetime cap
+
+- Added `SandboxConfig::max_lifetime` as an absolute VM wall-clock cap
+  independent of `idle_timeout`. Expired sandboxes reject new lifecycle work
+  with `FcError::LifetimeExpired { limit }`, and the CLI maps that variant to
+  exit code 9.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,

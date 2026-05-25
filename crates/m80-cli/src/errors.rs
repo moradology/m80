@@ -46,6 +46,8 @@ pub(crate) const EXIT_TIMEOUT: i32 = 9;
 pub(crate) const EXIT_RUN_DIR_OWNERSHIP: i32 = 10;
 /// VM idle watchdog fired; session timed out.
 pub(crate) const EXIT_IDLE_TIMED_OUT: i32 = 11;
+/// VM wall-clock lifetime cap fired.
+pub(crate) const EXIT_LIFETIME_EXPIRED: i32 = EXIT_TIMEOUT;
 /// One-shot VM was already consumed; cannot reuse.
 pub(crate) const EXIT_ONE_SHOT_CONSUMED: i32 = 12;
 /// Recorded Firecracker process is dead before a new request.
@@ -71,6 +73,7 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::RunDirAlreadyOwned { .. }
         | FcError::RunDirNotFound { .. } => EXIT_RUN_DIR_OWNERSHIP,
         FcError::IdleTimedOut => EXIT_IDLE_TIMED_OUT,
+        FcError::LifetimeExpired { .. } => EXIT_LIFETIME_EXPIRED,
         FcError::OneShotConsumed => EXIT_ONE_SHOT_CONSUMED,
         FcError::SandboxDead { .. } => EXIT_SANDBOX_DEAD,
         // Storage, Jailer, Network, Client, Vsock, host I/O, and typed runtime
@@ -495,6 +498,15 @@ mod tests {
     #[test]
     fn idle_timed_out_is_11() {
         assert_eq!(exit_code_for(&FcError::IdleTimedOut), EXIT_IDLE_TIMED_OUT);
+    }
+
+    #[test]
+    fn lifetime_expired_is_9() {
+        let err = FcError::LifetimeExpired {
+            limit: std::time::Duration::from_secs(60),
+        };
+        assert_eq!(exit_code_for(&err), EXIT_LIFETIME_EXPIRED);
+        assert_eq!(envelope(&err).variant, "LifetimeExpired");
     }
 
     #[test]

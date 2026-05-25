@@ -45,6 +45,7 @@ fn run_dir_invariants_post_boot() {
         overlay_size_bytes: 512 * 1024 * 1024,
         overlay_clone_mode: Default::default(),
         idle_timeout: None,
+        max_lifetime: None,
         daemonize: false,
         request_id: Some("req-run-dir-invariants".into()),
         pmem_layers: Vec::new(),

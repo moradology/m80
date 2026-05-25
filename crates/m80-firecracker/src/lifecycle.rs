@@ -67,6 +67,17 @@ fn release_shared_pmem_refs(refs: Vec<m80_image_store::SharedImageRef>) -> Resul
 }
 
 impl RunningSandbox {
+    pub(crate) fn ensure_lifecycle_accepts_work(&self) -> Result<(), FcError> {
+        if self.idle_timed_out.load(Ordering::Relaxed) {
+            return Err(FcError::IdleTimedOut);
+        }
+        if self.lifetime_expired.load(Ordering::Relaxed) {
+            let limit = self.max_lifetime.unwrap_or_else(|| self.born_at.elapsed());
+            return Err(FcError::LifetimeExpired { limit });
+        }
+        Ok(())
+    }
+
     /// Return the VM id for this sandbox.
     pub fn vm_id(&self) -> &str {
         &self.vm_id
@@ -185,9 +196,12 @@ impl RunningSandbox {
             permit,
             lease_guard,
             backend: _backend,
+            born_at: _born_at,
+            max_lifetime: _max_lifetime,
             last_activity_ns: _last_activity_ns,
             active_execs: _active_execs,
             idle_timed_out: _idle_timed_out,
+            lifetime_expired: _lifetime_expired,
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
@@ -286,9 +300,12 @@ impl RunningSandbox {
             permit,
             lease_guard,
             backend: _backend,
+            born_at: _born_at,
+            max_lifetime: _max_lifetime,
             last_activity_ns: _last_activity_ns,
             active_execs: _active_execs,
             idle_timed_out: _idle_timed_out,
+            lifetime_expired: _lifetime_expired,
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
@@ -587,39 +604,42 @@ pub(crate) fn monotonic_ns() -> u64 {
     u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
-/// Spawn the idle-timeout watcher thread.
+/// Spawn the lifecycle watcher thread.
 ///
-/// The watcher sleeps in a loop, waking every `poll_interval` to compare
-/// the elapsed time since `last_activity_ns` against `timeout`. In-flight execs
-/// suppress the idle decision; their drop guard resets the deadline when the
-/// request completes. When the deadline expires, the watcher sends a graceful
-/// shutdown request over `vsock_uds` (best-effort; logs on failure) and sets
-/// `idle_timed_out` so the next `exec` returns `FcError::IdleTimedOut`.
+/// The watcher enforces idle timeout and absolute max lifetime. In-flight execs
+/// suppress shutdown; their request is allowed to complete, then the next
+/// lifecycle operation observes the typed deadline flag.
 ///
 /// The thread exits when `stop_flag` is set (by `stop()` or `force_kill()`).
 pub(crate) fn spawn_idle_watcher(
-    timeout: Duration,
+    idle_timeout: Option<Duration>,
+    max_lifetime: Option<Duration>,
+    born_at_ns: u64,
     vsock_uds: std::path::PathBuf,
     firecracker_pid: u32,
     last_activity_ns: Arc<AtomicU64>,
     active_execs: Arc<AtomicUsize>,
     idle_timed_out: Arc<AtomicBool>,
+    lifetime_expired: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     vm_id: String,
 ) -> std::thread::JoinHandle<()> {
     // Poll at most at this interval. Chosen to be short enough to be
     // responsive but not so short it wastes CPU.
-    let poll_interval = std::cmp::min(timeout / 4, Duration::from_secs(30));
+    let poll_interval = lifecycle_watcher_poll_interval(idle_timeout, max_lifetime);
     std::thread::spawn(move || {
         idle_watcher_loop(
-            timeout,
             poll_interval,
             IdleWatcherContext {
                 vsock_uds: &vsock_uds,
                 firecracker_pid,
+                idle_timeout,
+                max_lifetime,
+                born_at_ns,
                 last_activity_ns: &last_activity_ns,
                 active_execs: &active_execs,
                 idle_timed_out: &idle_timed_out,
+                lifetime_expired: &lifetime_expired,
                 stop_flag: &stop_flag,
                 vm_id: &vm_id,
             },
@@ -627,23 +647,36 @@ pub(crate) fn spawn_idle_watcher(
     })
 }
 
+fn lifecycle_watcher_poll_interval(
+    idle_timeout: Option<Duration>,
+    max_lifetime: Option<Duration>,
+) -> Duration {
+    [idle_timeout, max_lifetime]
+        .into_iter()
+        .flatten()
+        .map(|duration| std::cmp::max(duration / 4, Duration::from_millis(1)))
+        .min()
+        .map(|duration| std::cmp::min(duration, Duration::from_secs(30)))
+        .unwrap_or_else(|| Duration::from_secs(30))
+}
+
 pub(crate) struct IdleWatcherContext<'a> {
     pub(crate) vsock_uds: &'a std::path::Path,
     pub(crate) firecracker_pid: u32,
+    pub(crate) idle_timeout: Option<Duration>,
+    pub(crate) max_lifetime: Option<Duration>,
+    pub(crate) born_at_ns: u64,
     pub(crate) last_activity_ns: &'a AtomicU64,
     pub(crate) active_execs: &'a AtomicUsize,
     pub(crate) idle_timed_out: &'a AtomicBool,
+    pub(crate) lifetime_expired: &'a AtomicBool,
     pub(crate) stop_flag: &'a AtomicBool,
     pub(crate) vm_id: &'a str,
 }
 
 /// Inner loop of the idle-timeout watcher. Extracted so it's testable
 /// without spawning a real thread.
-pub(crate) fn idle_watcher_loop(
-    timeout: Duration,
-    poll_interval: Duration,
-    context: IdleWatcherContext<'_>,
-) {
+pub(crate) fn idle_watcher_loop(poll_interval: Duration, context: IdleWatcherContext<'_>) {
     loop {
         std::thread::sleep(poll_interval);
 
@@ -651,30 +684,79 @@ pub(crate) fn idle_watcher_loop(
             return;
         }
 
-        if context.active_execs.load(Ordering::Relaxed) > 0 {
+        let now_ns = monotonic_ns();
+        let active_execs = context.active_execs.load(Ordering::Relaxed);
+        let lifetime_deadline_ns = context
+            .max_lifetime
+            .map(|limit| context.born_at_ns.saturating_add(duration_ns(limit)));
+        let lifetime_expired_now = context.lifetime_expired.load(Ordering::Relaxed)
+            || lifetime_deadline_ns.is_some_and(|deadline| now_ns >= deadline);
+        if lifetime_expired_now {
+            context.lifetime_expired.store(true, Ordering::Relaxed);
+            if active_execs > 0 {
+                continue;
+            }
+        }
+
+        if active_execs > 0 {
             continue;
         }
 
         let last_ns = context.last_activity_ns.load(Ordering::Relaxed);
-        let now_ns = monotonic_ns();
-        let idle_ns = now_ns.saturating_sub(last_ns);
-        let timeout_ns = u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX);
+        let idle_deadline_ns = context
+            .idle_timeout
+            .map(|timeout| last_ns.saturating_add(duration_ns(timeout)));
+        let idle_expired_now = idle_deadline_ns.is_some_and(|deadline| now_ns >= deadline);
 
-        if idle_ns >= timeout_ns {
-            tracing::info!(
-                vm_id = context.vm_id,
-                "idle timeout expired; issuing graceful shutdown"
-            );
-            context.idle_timed_out.store(true, Ordering::Relaxed);
-            if let Err(e) = send_shutdown_request(context.firecracker_pid, context.vsock_uds) {
-                tracing::warn!(
-                    vm_id = context.vm_id,
-                    error = %e,
-                    "idle watcher: graceful shutdown failed (VM may already be stopped)"
-                );
+        match (idle_expired_now, lifetime_expired_now) {
+            (true, true) if idle_deadline_ns <= lifetime_deadline_ns => {
+                expire_idle_timeout(context);
+                return;
             }
-            return;
+            (true, false) => {
+                expire_idle_timeout(context);
+                return;
+            }
+            (_, true) => {
+                expire_max_lifetime(context);
+                return;
+            }
+            (false, false) => {}
         }
+    }
+}
+
+fn duration_ns(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+fn expire_idle_timeout(context: IdleWatcherContext<'_>) {
+    tracing::info!(
+        vm_id = context.vm_id,
+        "idle timeout expired; issuing graceful shutdown"
+    );
+    context.idle_timed_out.store(true, Ordering::Relaxed);
+    if let Err(e) = send_shutdown_request(context.firecracker_pid, context.vsock_uds) {
+        tracing::warn!(
+            vm_id = context.vm_id,
+            error = %e,
+            "idle watcher: graceful shutdown failed (VM may already be stopped)"
+        );
+    }
+}
+
+fn expire_max_lifetime(context: IdleWatcherContext<'_>) {
+    context.lifetime_expired.store(true, Ordering::Relaxed);
+    tracing::info!(
+        vm_id = context.vm_id,
+        "max lifetime expired; issuing graceful shutdown"
+    );
+    if let Err(e) = send_shutdown_request(context.firecracker_pid, context.vsock_uds) {
+        tracing::warn!(
+            vm_id = context.vm_id,
+            error = %e,
+            "lifecycle watcher: graceful shutdown failed (VM may already be stopped)"
+        );
     }
 }
 
@@ -942,20 +1024,24 @@ mod tests {
         let last_activity = AtomicU64::new(0);
         let active_execs = AtomicUsize::new(1);
         let idle_timed_out = AtomicBool::new(false);
+        let lifetime_expired = AtomicBool::new(false);
         let stop_flag = AtomicBool::new(false);
         let socket = std::path::PathBuf::from("/tmp/m80-idle-watcher-test.sock");
 
         std::thread::scope(|scope| {
             let handle = scope.spawn(|| {
                 idle_watcher_loop(
-                    Duration::from_millis(20),
                     Duration::from_millis(5),
                     IdleWatcherContext {
                         vsock_uds: &socket,
                         firecracker_pid: std::process::id(),
+                        idle_timeout: Some(Duration::from_millis(20)),
+                        max_lifetime: None,
+                        born_at_ns: monotonic_ns(),
                         last_activity_ns: &last_activity,
                         active_execs: &active_execs,
                         idle_timed_out: &idle_timed_out,
+                        lifetime_expired: &lifetime_expired,
                         stop_flag: &stop_flag,
                         vm_id: "vm-test",
                     },
@@ -967,5 +1053,101 @@ mod tests {
         });
 
         assert!(!idle_timed_out.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn lifetime_watcher_marks_expired_while_exec_in_flight_without_idle_timeout() {
+        let last_activity = AtomicU64::new(monotonic_ns());
+        let active_execs = AtomicUsize::new(1);
+        let idle_timed_out = AtomicBool::new(false);
+        let lifetime_expired = AtomicBool::new(false);
+        let stop_flag = AtomicBool::new(false);
+        let socket = std::path::PathBuf::from("/tmp/m80-lifetime-watcher-test.sock");
+
+        std::thread::scope(|scope| {
+            let handle = scope.spawn(|| {
+                idle_watcher_loop(
+                    Duration::from_millis(5),
+                    IdleWatcherContext {
+                        vsock_uds: &socket,
+                        firecracker_pid: std::process::id(),
+                        idle_timeout: None,
+                        max_lifetime: Some(Duration::from_millis(20)),
+                        born_at_ns: monotonic_ns(),
+                        last_activity_ns: &last_activity,
+                        active_execs: &active_execs,
+                        idle_timed_out: &idle_timed_out,
+                        lifetime_expired: &lifetime_expired,
+                        stop_flag: &stop_flag,
+                        vm_id: "vm-test",
+                    },
+                );
+            });
+            std::thread::sleep(Duration::from_millis(40));
+            assert!(lifetime_expired.load(Ordering::Relaxed));
+            assert!(!idle_timed_out.load(Ordering::Relaxed));
+            stop_flag.store(true, Ordering::Relaxed);
+            handle.join().expect("watcher exits after stop");
+        });
+    }
+
+    #[test]
+    fn lifecycle_watcher_idle_can_win_before_longer_lifetime() {
+        let last_activity = AtomicU64::new(0);
+        let active_execs = AtomicUsize::new(0);
+        let idle_timed_out = AtomicBool::new(false);
+        let lifetime_expired = AtomicBool::new(false);
+        let stop_flag = AtomicBool::new(false);
+        let socket = std::path::PathBuf::from("/tmp/m80-idle-wins-test.sock");
+
+        idle_watcher_loop(
+            Duration::from_millis(1),
+            IdleWatcherContext {
+                vsock_uds: &socket,
+                firecracker_pid: std::process::id(),
+                idle_timeout: Some(Duration::from_millis(1)),
+                max_lifetime: Some(Duration::from_secs(60)),
+                born_at_ns: 0,
+                last_activity_ns: &last_activity,
+                active_execs: &active_execs,
+                idle_timed_out: &idle_timed_out,
+                lifetime_expired: &lifetime_expired,
+                stop_flag: &stop_flag,
+                vm_id: "vm-test",
+            },
+        );
+
+        assert!(idle_timed_out.load(Ordering::Relaxed));
+        assert!(!lifetime_expired.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn lifecycle_watcher_lifetime_can_win_before_longer_idle_timeout() {
+        let last_activity = AtomicU64::new(0);
+        let active_execs = AtomicUsize::new(0);
+        let idle_timed_out = AtomicBool::new(false);
+        let lifetime_expired = AtomicBool::new(false);
+        let stop_flag = AtomicBool::new(false);
+        let socket = std::path::PathBuf::from("/tmp/m80-lifetime-wins-test.sock");
+
+        idle_watcher_loop(
+            Duration::from_millis(1),
+            IdleWatcherContext {
+                vsock_uds: &socket,
+                firecracker_pid: std::process::id(),
+                idle_timeout: Some(Duration::from_millis(10)),
+                max_lifetime: Some(Duration::from_millis(1)),
+                born_at_ns: 0,
+                last_activity_ns: &last_activity,
+                active_execs: &active_execs,
+                idle_timed_out: &idle_timed_out,
+                lifetime_expired: &lifetime_expired,
+                stop_flag: &stop_flag,
+                vm_id: "vm-test",
+            },
+        );
+
+        assert!(!idle_timed_out.load(Ordering::Relaxed));
+        assert!(lifetime_expired.load(Ordering::Relaxed));
     }
 }

@@ -408,6 +408,7 @@ fn sandbox_config_for_run(
         overlay_size_bytes: scratch_size.unwrap_or(512 * 1024 * 1024),
         overlay_clone_mode: overlay_clone_mode_for_run(overlay_clone_mode),
         idle_timeout: None,
+        max_lifetime: None,
         daemonize: false,
         request_id: Some(request_id),
         pmem_layers: Vec::new(),

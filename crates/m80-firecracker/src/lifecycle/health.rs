@@ -13,9 +13,7 @@ use crate::types::RunningSandbox;
 impl RunningSandbox {
     /// Send one direct health probe to m80-guestd.
     pub fn ping_guest(&mut self) -> Result<PongResponse, FcError> {
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
-        }
+        self.ensure_lifecycle_accepts_work()?;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);

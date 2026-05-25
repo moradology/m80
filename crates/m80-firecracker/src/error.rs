@@ -793,6 +793,16 @@ pub enum FcError {
     /// resources.
     #[error("sandbox idle timeout expired")]
     IdleTimedOut,
+    /// The sandbox exceeded `SandboxConfig::max_lifetime`.
+    ///
+    /// Any in-flight work was allowed to complete before the background
+    /// watcher issued graceful shutdown. The caller must not send further
+    /// lifecycle requests. Drop or `stop()` the sandbox to release resources.
+    #[error("sandbox max lifetime expired after {limit:?}")]
+    LifetimeExpired {
+        /// Configured wall-clock lifetime cap.
+        limit: std::time::Duration,
+    },
     /// The sandbox is configured for one workload and that workload already
     /// began. The caller must stop/drop/discard this VM instead of reusing it.
     #[error("one-shot sandbox already consumed")]
@@ -854,6 +864,7 @@ impl FcError {
             Self::ReapFailed { .. } => "ReapFailed",
             Self::Config(_) => "Config",
             Self::IdleTimedOut => "IdleTimedOut",
+            Self::LifetimeExpired { .. } => "LifetimeExpired",
             Self::OneShotConsumed => "OneShotConsumed",
         }
     }
@@ -899,7 +910,8 @@ impl FcError {
             | Self::PostRestoreHook(_)
             | Self::TenantIdentityMismatch { .. }
             | Self::WarmReadyProbeRejected { .. }
-            | Self::IdleTimedOut => FcErrorKind::GuestOutcome,
+            | Self::IdleTimedOut
+            | Self::LifetimeExpired { .. } => FcErrorKind::GuestOutcome,
 
             Self::Storage(_)
             | Self::ImageStore(_)

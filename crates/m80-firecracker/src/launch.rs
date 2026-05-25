@@ -494,19 +494,27 @@ impl Sandbox {
             let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
             let active_execs = Arc::new(AtomicUsize::new(0));
             let idle_timed_out = Arc::new(AtomicBool::new(false));
+            let lifetime_expired = Arc::new(AtomicBool::new(false));
             let watcher_stop = Arc::new(AtomicBool::new(false));
-            let watcher_thread = self.config.idle_timeout.map(|timeout| {
-                spawn_idle_watcher(
-                    timeout,
-                    vsock_uds.clone(),
-                    firecracker.firecracker_pid(),
-                    Arc::clone(&last_activity_ns),
-                    Arc::clone(&active_execs),
-                    Arc::clone(&idle_timed_out),
-                    Arc::clone(&watcher_stop),
-                    vm_id.clone(),
-                )
-            });
+            let born_at = Instant::now();
+            let born_at_ns = monotonic_ns();
+            let max_lifetime = self.config.max_lifetime;
+            let watcher_thread = (self.config.idle_timeout.is_some() || max_lifetime.is_some())
+                .then(|| {
+                    spawn_idle_watcher(
+                        self.config.idle_timeout,
+                        max_lifetime,
+                        born_at_ns,
+                        vsock_uds.clone(),
+                        firecracker.firecracker_pid(),
+                        Arc::clone(&last_activity_ns),
+                        Arc::clone(&active_execs),
+                        Arc::clone(&idle_timed_out),
+                        Arc::clone(&lifetime_expired),
+                        Arc::clone(&watcher_stop),
+                        vm_id.clone(),
+                    )
+                });
 
             let kill_guard = crate::types::ForceKillGuard::new(
                 vm_id.clone(),
@@ -536,9 +544,12 @@ impl Sandbox {
                 permit: self.permit,
                 lease_guard,
                 backend: backend_for_running,
+                born_at,
+                max_lifetime,
                 last_activity_ns,
                 active_execs,
                 idle_timed_out,
+                lifetime_expired,
                 watcher_stop,
                 watcher_thread,
                 diagnostics,
@@ -919,19 +930,27 @@ impl Sandbox {
             let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
             let active_execs = Arc::new(AtomicUsize::new(0));
             let idle_timed_out = Arc::new(AtomicBool::new(false));
+            let lifetime_expired = Arc::new(AtomicBool::new(false));
             let watcher_stop = Arc::new(AtomicBool::new(false));
-            let watcher_thread = self.config.idle_timeout.map(|timeout| {
-                spawn_idle_watcher(
-                    timeout,
-                    vsock_uds.clone(),
-                    firecracker.firecracker_pid(),
-                    Arc::clone(&last_activity_ns),
-                    Arc::clone(&active_execs),
-                    Arc::clone(&idle_timed_out),
-                    Arc::clone(&watcher_stop),
-                    vm_id.clone(),
-                )
-            });
+            let born_at = Instant::now();
+            let born_at_ns = monotonic_ns();
+            let max_lifetime = self.config.max_lifetime;
+            let watcher_thread = (self.config.idle_timeout.is_some() || max_lifetime.is_some())
+                .then(|| {
+                    spawn_idle_watcher(
+                        self.config.idle_timeout,
+                        max_lifetime,
+                        born_at_ns,
+                        vsock_uds.clone(),
+                        firecracker.firecracker_pid(),
+                        Arc::clone(&last_activity_ns),
+                        Arc::clone(&active_execs),
+                        Arc::clone(&idle_timed_out),
+                        Arc::clone(&lifetime_expired),
+                        Arc::clone(&watcher_stop),
+                        vm_id.clone(),
+                    )
+                });
 
             let snapshot_mount = None;
             let kill_guard = crate::types::ForceKillGuard::new(
@@ -958,9 +977,12 @@ impl Sandbox {
                 permit: self.permit,
                 lease_guard,
                 backend: backend_for_running,
+                born_at,
+                max_lifetime,
                 last_activity_ns,
                 active_execs,
                 idle_timed_out,
+                lifetime_expired,
                 watcher_stop,
                 watcher_thread,
                 diagnostics,

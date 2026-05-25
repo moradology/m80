@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -396,6 +396,13 @@ pub struct SandboxConfig {
     /// `stop()` the sandbox. `None` disables the watcher entirely — the VM
     /// runs until the caller explicitly stops it.
     pub idle_timeout: Option<Duration>,
+    /// Absolute wall-clock lifetime cap for this VM. `None` opts out.
+    ///
+    /// Unlike `idle_timeout`, this deadline does not reset after exec or file
+    /// activity. If it expires while work is in flight, the in-flight request is
+    /// allowed to finish and the next lifecycle operation returns
+    /// `FcError::LifetimeExpired`.
+    pub max_lifetime: Option<Duration>,
     /// Ask the official Firecracker jailer to double-fork before exec'ing
     /// Firecracker. The API socket remains the management surface; m80 records
     /// no live jailer parent PID for daemonized launches.
@@ -439,6 +446,7 @@ impl Default for SandboxConfig {
             overlay_size_bytes: 512 * 1024 * 1024,
             overlay_clone_mode: OverlayTemplateCloneMode::ByteCopy,
             idle_timeout: Some(Duration::from_secs(300)),
+            max_lifetime: None,
             daemonize: false,
             request_id: None,
             pmem_layers: Vec::new(),
@@ -590,6 +598,10 @@ pub struct RunningSandbox {
     pub(crate) lease_guard: LeaseGuard,
     /// Reference to the backend.
     pub(crate) backend: Arc<Backend>,
+    /// Monotonic birth time for absolute lifetime enforcement.
+    pub(crate) born_at: Instant,
+    /// Configured absolute lifetime cap for this VM.
+    pub(crate) max_lifetime: Option<Duration>,
     /// Monotonic timestamp (nanos since an arbitrary epoch) of the last
     /// `exec` activity. Updated at the start and end of every `exec` call.
     /// Written with `Relaxed` ordering — the watcher only needs a recent
@@ -600,6 +612,9 @@ pub struct RunningSandbox {
     /// Watcher sets this flag when the idle deadline expires.
     /// `exec` checks it at entry and returns `FcError::IdleTimedOut`.
     pub(crate) idle_timed_out: Arc<std::sync::atomic::AtomicBool>,
+    /// Watcher sets this flag when the absolute lifetime deadline expires.
+    /// New lifecycle work returns `FcError::LifetimeExpired`.
+    pub(crate) lifetime_expired: Arc<std::sync::atomic::AtomicBool>,
     /// Signal from `stop` / `force_kill` to the watcher thread to exit.
     pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
     /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
