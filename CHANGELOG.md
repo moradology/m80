@@ -28,6 +28,12 @@ All notable changes to m80 are documented here. Format roughly follows
   exposes network-interface rate limiters, not `rx_queue_size` or
   `tx_queue_size` REST fields.
 
+### Added — OutboundNat TAP MTU topology knob
+
+- Added optional private-topology TAP MTU planning for `m80-net-outbound`,
+  validated to `576..=9000` before topology mutation. Current public callers
+  still pass `None`, preserving the kernel default TAP MTU.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,

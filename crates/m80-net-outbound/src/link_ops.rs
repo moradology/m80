@@ -32,7 +32,11 @@ pub(crate) struct PrivateNetnsTapPlan {
     pub(crate) vmm_bridge_mac: [u8; 6],
     pub(crate) bridge_cidr: Ipv4Net,
     pub(crate) tap_link_mac: [u8; 6],
+    pub(crate) tap_mtu: Option<u32>,
 }
+
+pub(crate) const MIN_TAP_MTU: u32 = 576;
+pub(crate) const MAX_TAP_MTU: u32 = 9000;
 
 /// Host link operations needed by bridge/TAP setup.
 ///
@@ -52,6 +56,8 @@ pub(crate) trait LinkOps {
     fn create_tap(&mut self, name: &str) -> Result<(), NetError>;
     /// Set the link MAC address.
     fn set_link_mac(&mut self, name: &str, mac: [u8; 6]) -> Result<(), NetError>;
+    /// Set a link MTU.
+    fn set_link_mtu(&mut self, name: &str, mtu: u32) -> Result<(), NetError>;
     /// Attach a link to a bridge.
     fn attach_link_to_bridge(&mut self, link_name: &str, bridge_name: &str)
         -> Result<(), NetError>;
@@ -92,6 +98,13 @@ pub(crate) trait LinkOps {
         link_name: &str,
         mac: [u8; 6],
     ) -> Result<(), NetError>;
+    /// Set a link MTU inside the namespace identified by `netns_path`.
+    fn set_link_mtu_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        mtu: u32,
+    ) -> Result<(), NetError>;
     /// Attach a link to a bridge inside the namespace identified by `netns_path`.
     fn attach_link_to_bridge_in_namespace(
         &mut self,
@@ -124,6 +137,7 @@ pub(crate) fn create_private_netns_tap_topology(
     ops: &mut impl LinkOps,
     plan: &PrivateNetnsTapPlan,
 ) -> Result<(), NetError> {
+    validate_tap_mtu(plan.tap_mtu)?;
     ops.create_network_namespace(&plan.vmm_netns_name)?;
     ops.create_veth_pair(&plan.host_veth_name, &plan.vmm_veth_name)?;
     ops.attach_link_to_bridge(&plan.host_veth_name, &plan.bridge_name)?;
@@ -150,7 +164,21 @@ pub(crate) fn create_private_netns_tap_topology(
     ops.set_bridge_port_isolated(&plan.host_veth_name)?;
     ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.vmm_bridge_name)?;
     ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.tap_name)?;
+    if let Some(tap_mtu) = plan.tap_mtu {
+        ops.set_link_mtu_in_namespace(&plan.vmm_netns_path, &plan.tap_name, tap_mtu)?;
+    }
     ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.vmm_veth_name)
+}
+
+fn validate_tap_mtu(tap_mtu: Option<u32>) -> Result<(), NetError> {
+    match tap_mtu {
+        Some(mtu) if !(MIN_TAP_MTU..=MAX_TAP_MTU).contains(&mtu) => Err(NetError::InvalidTapMtu {
+            mtu,
+            min: MIN_TAP_MTU,
+            max: MAX_TAP_MTU,
+        }),
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn teardown_private_netns_tap_topology(
@@ -343,6 +371,16 @@ impl LinkOps for NetlinkLinkOps {
         )
     }
 
+    fn set_link_mtu(&mut self, name: &str, mtu: u32) -> Result<(), NetError> {
+        self.block_on(
+            "set link MTU",
+            self.handle
+                .link()
+                .set(LinkUnspec::new_with_name(name).mtu(mtu).build())
+                .execute(),
+        )
+    }
+
     fn attach_link_to_bridge(
         &mut self,
         link_name: &str,
@@ -469,6 +507,17 @@ impl LinkOps for NetlinkLinkOps {
     ) -> Result<(), NetError> {
         self.run_in_namespace(netns_path, "set link MAC in namespace", |ops| {
             ops.set_link_mac(link_name, mac)
+        })
+    }
+
+    fn set_link_mtu_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        mtu: u32,
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "set link MTU in namespace", |ops| {
+            ops.set_link_mtu(link_name, mtu)
         })
     }
 

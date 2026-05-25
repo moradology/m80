@@ -5,11 +5,12 @@ use std::time::Duration;
 
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
-    bridge_state_path, derive_guest_addressing, guest_ipv4_claim_path, planned_bridge_state,
-    planned_vm_network_state, read_bridge_state, read_vm_network_state_record,
-    realize_bridge_and_tap_with_ops_for_routes, vm_network_state_path, write_bridge_state,
-    write_vm_network_state_record, LinkOps, NetError, RealizedNetwork, SetupPhase,
-    BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
+    bridge_state_path, create_private_netns_tap_topology, derive_guest_addressing,
+    guest_ipv4_claim_path, planned_bridge_state, planned_vm_network_state, read_bridge_state,
+    read_vm_network_state_record, realize_bridge_and_tap_with_ops_for_routes,
+    vm_network_state_path, write_bridge_state, write_vm_network_state_record, LinkOps, NetError,
+    PrivateNetnsTapPlan, RealizedNetwork, SetupPhase, BRIDGE_STATE_FILE, MAX_TAP_MTU, MIN_TAP_MTU,
+    NETWORK_STATE_FILE,
 };
 
 const DEFAULT_ONLY_ROUTES: &str = "\
@@ -237,6 +238,86 @@ fn bridge_setup_is_idempotent_with_matching_state() {
     assert_eq!(vm_state.setup_phase, SetupPhase::Ready);
     assert_eq!(vm_state.bridge.setup_phase, SetupPhase::Ready);
     assert_eq!(vm_state.tap_name, realized.tap_name);
+    assert!(
+        ops.operations
+            .iter()
+            .all(|op| !op.starts_with("set_link_mtu")),
+        "default setup must preserve the kernel default TAP MTU"
+    );
+}
+
+#[test]
+fn private_netns_tap_topology_sets_optional_tap_mtu_after_tap_up() {
+    let mut ops = RecordingLinkOps::default();
+    let plan = private_netns_tap_plan(Some(MAX_TAP_MTU));
+
+    create_private_netns_tap_topology(&mut ops, &plan).unwrap();
+
+    let tap_up = ops
+        .operations
+        .iter()
+        .position(|op| {
+            op == &format!(
+                "set_link_up_in_namespace {} {}",
+                plan.vmm_netns_path.display(),
+                plan.tap_name
+            )
+        })
+        .expect("TAP must be brought up");
+    let tap_mtu = ops
+        .operations
+        .iter()
+        .position(|op| {
+            op == &format!(
+                "set_link_mtu_in_namespace {} {} {}",
+                plan.vmm_netns_path.display(),
+                plan.tap_name,
+                MAX_TAP_MTU
+            )
+        })
+        .expect("TAP MTU must be set when configured");
+    assert!(
+        tap_up < tap_mtu,
+        "TAP MTU should be set after the TAP link-up operation"
+    );
+}
+
+#[test]
+fn private_netns_tap_topology_rejects_out_of_range_mtu_before_mutation() {
+    for mtu in [MIN_TAP_MTU - 1, MAX_TAP_MTU + 1] {
+        let mut ops = RecordingLinkOps::default();
+        let err = create_private_netns_tap_topology(&mut ops, &private_netns_tap_plan(Some(mtu)))
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NetError::InvalidTapMtu {
+                mtu: actual,
+                min: MIN_TAP_MTU,
+                max: MAX_TAP_MTU,
+            } if actual == mtu
+        ));
+        assert!(
+            ops.operations.is_empty(),
+            "invalid TAP MTU must fail before topology mutation"
+        );
+    }
+}
+
+fn private_netns_tap_plan(tap_mtu: Option<u32>) -> PrivateNetnsTapPlan {
+    PrivateNetnsTapPlan {
+        bridge_name: "brfc123456789ab".to_owned(),
+        tap_name: "tfc123456789abc".to_owned(),
+        vmm_netns_name: "m80-vmm-123".to_owned(),
+        vmm_netns_path: "/run/netns/m80-vmm-123".into(),
+        host_veth_name: "vhfc123456789".to_owned(),
+        vmm_veth_name: "vvfc123456789".to_owned(),
+        vmm_bridge_name: "brvmm0".to_owned(),
+        vmm_bridge_mac: [0x02, 0x80, 0x22, 0x33, 0x44, 0x55],
+        bridge_cidr: "172.16.1.0/24".parse().unwrap(),
+        tap_link_mac: [0x02, 0x40, 0x22, 0x33, 0x44, 0x55],
+        tap_mtu,
+    }
 }
 
 fn vmm_bridge_mac_from_guest_mac(guest_mac: &str) -> String {
@@ -640,6 +721,10 @@ impl LinkOps for SharedBridgeRaceOps {
         Ok(())
     }
 
+    fn set_link_mtu(&mut self, _name: &str, _mtu: u32) -> Result<(), NetError> {
+        Ok(())
+    }
+
     fn attach_link_to_bridge(
         &mut self,
         _link_name: &str,
@@ -701,6 +786,15 @@ impl LinkOps for SharedBridgeRaceOps {
         _netns_path: &std::path::Path,
         _link_name: &str,
         _mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_mtu_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _mtu: u32,
     ) -> Result<(), NetError> {
         Ok(())
     }
@@ -790,6 +884,11 @@ impl LinkOps for RecordingLinkOps {
             "set_link_mac {name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
         ));
+        Ok(())
+    }
+
+    fn set_link_mtu(&mut self, name: &str, mtu: u32) -> Result<(), NetError> {
+        self.operations.push(format!("set_link_mtu {name} {mtu}"));
         Ok(())
     }
 
@@ -895,6 +994,19 @@ impl LinkOps for RecordingLinkOps {
             mac[3],
             mac[4],
             mac[5]
+        ));
+        Ok(())
+    }
+
+    fn set_link_mtu_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+        mtu: u32,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "set_link_mtu_in_namespace {} {link_name} {mtu}",
+            netns_path.display()
         ));
         Ok(())
     }

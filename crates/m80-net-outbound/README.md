@@ -94,6 +94,10 @@ Sequestering it has three benefits:
   through rtnetlink.
   This split is intentional: Linux `tun.c` allows rtnetlink deletion and
   introspection for TUN/TAP links, but not creation.
+- The private VMM namespace topology can set a TAP MTU in the operator range
+  `576..=9000` after the TAP link is brought up. Current public
+  `OutboundIntent` / `SandboxConfig` callers do not expose this knob, so
+  m80 launches populate `None` and preserve the kernel default TAP MTU.
 - `prepare_pid_one_network_cmdline(state)` is the current Ubuntu/Minimal
   PID-1 guest network path. It discovers admitted non-loopback IPv4 DNS resolvers,
   records `dns_resolvers` and `runtime_rootfs_configured=true` back to
@@ -184,6 +188,7 @@ Sequestering it has three benefits:
   `NoUsableDnsResolvers`,
   `NetlinkOperationFailed { operation, detail }`,
   `TapOperationFailed { operation, source }`,
+  `InvalidTapMtu { mtu, min, max }`,
   `LinkNotFound { operation, name }`, `ForeignChainRule { rule }`,
   `NetworkAllocationConflict { path, detail }`,
   `InvalidNetworkState { path, detail }`,

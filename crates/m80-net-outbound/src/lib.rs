@@ -51,6 +51,10 @@ pub(crate) use iptables::{
     apply_outbound_nat_policy_with_ops, permanent_deny_cidrs, PolicyCommandOutput,
 };
 pub(crate) use iptables::{outbound_nat_filter_chain, outbound_nat_rule_comment, PolicyOps};
+#[cfg(test)]
+pub(crate) use link_ops::{
+    create_private_netns_tap_topology, PrivateNetnsTapPlan, MAX_TAP_MTU, MIN_TAP_MTU,
+};
 pub(crate) use link_ops::{LinkOps, NetlinkLinkOps};
 use m80_net_mode::OutboundIntent;
 #[cfg(test)]
@@ -188,6 +192,7 @@ pub(crate) fn realize_bridge_and_tap_with_ops_for_routes(
         vmm_bridge_mac: derive_vmm_bridge_mac_bytes(run_root, vm_id),
         bridge_cidr: bridge.cidr,
         tap_link_mac: derive_tap_link_mac_bytes(run_root, vm_id),
+        tap_mtu: None,
     };
     if let Err(setup_err) = link_ops::create_private_netns_tap_topology(ops, &tap_plan) {
         rollback_failed_vm_network_setup(ops, run_root, run_dir, &vm_state)?;
@@ -620,6 +625,16 @@ pub enum NetError {
         /// I/O error returned by the TAP backend.
         #[source]
         source: io::Error,
+    },
+    /// Requested TAP MTU is outside the m80-supported operator range.
+    #[error("invalid tap MTU {mtu}; expected {min}..={max}")]
+    InvalidTapMtu {
+        /// Requested MTU.
+        mtu: u32,
+        /// Minimum accepted MTU.
+        min: u32,
+        /// Maximum accepted MTU.
+        max: u32,
     },
     /// A link needed for an operation was not present.
     #[error("link {name} not found while trying to {operation}")]

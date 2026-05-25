@@ -452,6 +452,10 @@ impl LinkOps for RecordingLinkOps {
         Ok(())
     }
 
+    fn set_link_mtu(&mut self, _name: &str, _mtu: u32) -> Result<(), NetError> {
+        Ok(())
+    }
+
     fn attach_link_to_bridge(
         &mut self,
         _link_name: &str,
@@ -523,6 +527,15 @@ impl LinkOps for RecordingLinkOps {
         _netns_path: &std::path::Path,
         _link_name: &str,
         _mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_mtu_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _mtu: u32,
     ) -> Result<(), NetError> {
         Ok(())
     }
