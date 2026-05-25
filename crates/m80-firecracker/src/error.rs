@@ -155,6 +155,27 @@ impl std::fmt::Display for NetworkHelperOperation {
     }
 }
 
+/// Cleanup phase whose host operation is guarded by a fixed deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupDeadlinePhase {
+    /// `MaterializedJail::drop` unmount/rmdir cleanup.
+    JailDrop,
+    /// Privileged outbound network cleanup for one stopped VM.
+    NetworkCleanup,
+    /// Per-VM run directory removal.
+    RunDirDelete,
+}
+
+impl std::fmt::Display for CleanupDeadlinePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::JailDrop => "jail_drop",
+            Self::NetworkCleanup => "network_cleanup",
+            Self::RunDirDelete => "run_dir_delete",
+        })
+    }
+}
+
 /// Failure while talking to the privileged m80 network helper.
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkHelperError {
@@ -741,6 +762,18 @@ pub enum FcError {
         /// Missing artifact path.
         path: PathBuf,
     },
+    /// A host cleanup phase did not finish within its teardown budget. The
+    /// cleanup worker is detached and may still finish later; the lifecycle
+    /// caller is not allowed to block indefinitely.
+    #[error("cleanup phase {phase} for vm_id {vm_id:?} exceeded deadline {timeout:?}")]
+    CleanupDeadlineExceeded {
+        /// VM id whose cleanup phase exceeded its budget.
+        vm_id: String,
+        /// Teardown phase that timed out.
+        phase: CleanupDeadlinePhase,
+        /// Fixed deadline for that cleanup phase.
+        timeout: Duration,
+    },
     /// Warm-pool background fill failed before the requested ready count arrived.
     #[error("warm pool fill failed: {detail}")]
     WarmPoolFillFailed {
@@ -885,6 +918,7 @@ impl FcError {
             Self::CommandSpawnFailed { .. } => "CommandSpawnFailed",
             Self::CommandFailed { .. } => "CommandFailed",
             Self::ArtifactMissing { .. } => "ArtifactMissing",
+            Self::CleanupDeadlineExceeded { .. } => "CleanupDeadlineExceeded",
             Self::WarmPoolFillFailed { .. } => "WarmPoolFillFailed",
             Self::WarmReadyProbeRejected { .. } => "WarmReadyProbeRejected",
             Self::WarmOwnerSocketExists { .. } => "WarmOwnerSocketExists",
@@ -932,6 +966,7 @@ impl FcError {
             | Self::ApiSocketTimeout { .. }
             | Self::HostInfrastructure { .. }
             | Self::HostIo { .. }
+            | Self::CleanupDeadlineExceeded { .. }
             | Self::WarmPoolFillFailed { .. }
             | Self::KillFailed { .. }
             | Self::ReapTimeout { .. }

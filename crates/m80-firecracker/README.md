@@ -648,15 +648,22 @@ operation opens the normal exec channel on guest port 9001. Timeout maps to
 `RunningSandbox::stop` is architecture-independent in v0.1: it sends
 `ShutdownRequest` to guestd over vsock, then SIGKILLs the Firecracker process
 after the RPC returns or fails. `RunningSandbox::force_kill` skips the guest RPC
-and SIGKILLs both Firecracker and jailer pids. Both methods consume the running
-handle, so repeated stop is prevented by the type-state API rather than handled
-as a runtime retry. See `docs/behaviors/lifecycle/graceful-stop.md`.
+and SIGKILLs both Firecracker and jailer pids. Reap timeout retries SIGKILL
+once before returning `FcError::ReapTimeout`. Watcher join and jail cleanup are
+deadline-bounded so teardown does not block indefinitely. Both methods consume
+the running handle, so repeated stop is prevented by the type-state API rather
+than handled as a runtime retry. See
+`docs/behaviors/lifecycle/graceful-stop.md` and
+`docs/behaviors/lifecycle/cleanup-deadlines.md`.
 
 ### Delete and recovery
 
 `StoppedSandbox::delete` removes the entire per-VM run directory and treats an
-already-missing run-dir as clean. Recovery runs once during `Backend::new()` and
-remains available through the explicit `Backend::recover_stale_run_root()` pass:
+already-missing run-dir as clean. Outbound network cleanup and run-dir removal
+are each bounded by `RUN_DIR_DELETE_TIMEOUT = 5s`; deadline misses return
+`FcError::CleanupDeadlineExceeded` instead of hanging the caller. Recovery runs
+once during `Backend::new()` and remains available through the explicit
+`Backend::recover_stale_run_root()` pass:
 live `ownership.lock` directories are skipped, `.preserved/` triage archives are
 skipped, the `warm/` owner control tree is skipped, clear orphan directories
 are reaped, orphaned live jail pids are killed before removal, owned network
@@ -710,7 +717,8 @@ tracks the last `exec` activity. On expiry:
 
 `exec` updates the activity timestamp at the **start and end** of every call,
 so long-running execs do not trip the watcher mid-flight. `stop()` and
-`force_kill()` signal the watcher thread to exit and join it before returning.
+`force_kill()` signal the watcher thread to exit and wait up to
+`WATCHER_JOIN_TIMEOUT = 2s` before detaching the join waiter.
 
 `idle_timeout: None` disables the watcher entirely.
 
@@ -784,6 +792,10 @@ an invariant fails closed.
   `CommandFailed`, and `ArtifactMissing` preserve concrete host paths,
   operation labels, serialization contexts, and helper-command status instead
   of collapsing them into config strings.
+- `FcError::CleanupDeadlineExceeded { vm_id, phase, timeout }` reports a
+  host-side cleanup phase (`JailDrop`, `NetworkCleanup`, or `RunDirDelete`) that
+  exceeded its fixed teardown budget. The cleanup worker is detached and may
+  still finish later; the lifecycle caller is not blocked indefinitely.
 - `FcError::ImageStore` preserves failures while resolving declared image
   digests to host-side erofs/ext4 artifacts.
 - `FcError::NetworkHelper(NetworkHelperError)` preserves helper spawn,
@@ -901,6 +913,8 @@ Core types:
 - `FcErrorKind` — coarse recovery class returned by `FcError::kind()`.
   `FcError::variant_name()` returns the stable variant string used in CLI
   envelopes, diagnostics, and launch failure summaries.
+- `CleanupDeadlinePhase` — finite phase labels used by
+  `FcError::CleanupDeadlineExceeded`.
 - `NetworkHelperError` and `NetworkHelperOperation` — typed diagnostics for the
   privileged outbound-network helper boundary.
 

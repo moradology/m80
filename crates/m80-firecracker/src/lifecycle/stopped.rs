@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use m80_observability::Phase;
 use m80_storage::ChangeSet;
 
-use crate::error::{ConfigError, FcError};
+use crate::error::{CleanupDeadlinePhase, ConfigError, FcError};
+use crate::lifecycle::cleanup_deadline::{run_cleanup_with_timeout, RUN_DIR_DELETE_TIMEOUT};
 use crate::runroot::unix_ms_now;
 use crate::types::StoppedSandbox;
 
@@ -49,16 +50,20 @@ impl StoppedSandbox {
             "delete started",
         );
         self.cleanup_outbound_network_if_needed()?;
-        match std::fs::remove_dir_all(&self.run_dir) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(FcError::PathIo {
-                    path: self.run_dir.clone(),
+        let run_dir = self.run_dir.clone();
+        run_cleanup_with_timeout(
+            &self.vm_id,
+            CleanupDeadlinePhase::RunDirDelete,
+            RUN_DIR_DELETE_TIMEOUT,
+            move || match std::fs::remove_dir_all(&run_dir) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(FcError::PathIo {
+                    path: run_dir,
                     source,
-                });
-            }
-        }
+                }),
+            },
+        )?;
         // `self` drops here; AdmissionPermit::drop returns the slot.
         Ok(())
     }
@@ -103,8 +108,19 @@ impl StoppedSandbox {
             self.request_id.as_deref(),
             "outbound network cleanup started",
         );
-        self.network_helper
-            .cleanup_vm(&self.vm_id, &self.run_root)?;
+        let network_helper = std::sync::Arc::clone(&self.network_helper);
+        let vm_id = self.vm_id.clone();
+        let run_root = self.run_root.clone();
+        run_cleanup_with_timeout(
+            &self.vm_id,
+            CleanupDeadlinePhase::NetworkCleanup,
+            RUN_DIR_DELETE_TIMEOUT,
+            move || {
+                network_helper
+                    .cleanup_vm(&vm_id, &run_root)
+                    .map_err(FcError::NetworkHelper)
+            },
+        )?;
         self.network_cleanup = false;
         crate::diagnostics::record_owned(
             &mut self.diagnostics,

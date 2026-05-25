@@ -2,6 +2,8 @@ mod common;
 
 #[path = "cleanup/arch_sensitive_stop.rs"]
 mod arch_sensitive_stop;
+#[path = "cleanup/cleanup_deadlines.rs"]
+mod cleanup_deadlines;
 #[path = "cleanup/force_kill_preservation.rs"]
 mod force_kill_preservation;
 #[path = "cleanup/idempotent_teardown.rs"]

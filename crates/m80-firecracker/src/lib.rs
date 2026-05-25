@@ -31,10 +31,11 @@ pub use config::{
     ConfigFilePaths,
 };
 pub use error::{
-    CapabilityDropError, CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError,
-    DisconnectCause, FcError, FcErrorKind, HostFaultKind, LifecycleFailureKind, NetworkHelperError,
-    NetworkHelperOperation, StopDisposition, WireProtocolError, CLEANUP_AUTHORITY,
-    CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
+    CapabilityDropError, CleanupAuthority, CleanupDeadlinePhase, CleanupPhase,
+    CleanupReleaseBlocker, ConfigError, DisconnectCause, FcError, FcErrorKind, HostFaultKind,
+    LifecycleFailureKind, NetworkHelperError, NetworkHelperOperation, StopDisposition,
+    WireProtocolError, CLEANUP_AUTHORITY, CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS,
+    STOP_DISPOSITIONS,
 };
 pub use hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
 pub use launch::PreparedSandbox;

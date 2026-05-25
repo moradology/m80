@@ -71,6 +71,7 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::Config(_) | FcError::InvalidVmId { .. } => EXIT_CONFIG,
         FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
         FcError::ExecTimeoutHost { .. } => EXIT_TIMEOUT,
+        FcError::CleanupDeadlineExceeded { .. } => EXIT_TIMEOUT,
         FcError::ApiSocketTimeout { .. } | FcError::HostInfrastructure { .. } => {
             EXIT_HOST_INFRASTRUCTURE
         }

@@ -1,6 +1,7 @@
 //! [`RunningSandbox`] and [`StoppedSandbox`] method implementations.
 //! Transitions consume the prior handle (move semantics).
 
+mod cleanup_deadline;
 mod exec;
 mod fileops;
 mod health;
@@ -31,6 +32,7 @@ use crate::error::{
     CleanupReleaseBlocker, ConfigError, FcError, StopDisposition, WireProtocolError,
 };
 use crate::layout::{FIRECRACKER_API_SOCKET, VSOCK_SOCKET};
+use crate::lifecycle::cleanup_deadline::{drop_jail_with_timeout, join_watcher_with_timeout};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 pub(crate) use pmem::phase_13_pmem_guest_mount;
@@ -214,13 +216,11 @@ impl RunningSandbox {
         let mut diagnostics = diagnostics;
 
         phase_event("stop_bounded", &vm_id, t_bounded.elapsed());
-        // Join the watcher thread after destructuring (the stop flag is already
-        // set above; the thread will exit on its next wake interval).
         if let Some(handle) = watcher_thread {
-            let _ = handle.join();
+            join_watcher_with_timeout(&vm_id, handle);
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
-        drop(jail);
+        drop_jail_with_timeout(&vm_id, jail);
         release_shared_pmem_refs(shared_pmem_refs)?;
         phase_event("stop_release", &vm_id, t_release.elapsed());
         crate::diagnostics::record_stop_reason(
@@ -318,10 +318,10 @@ impl RunningSandbox {
         let mut diagnostics = diagnostics;
 
         if let Some(handle) = watcher_thread {
-            let _ = handle.join();
+            join_watcher_with_timeout(&vm_id, handle);
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
-        drop(jail);
+        drop_jail_with_timeout(&vm_id, jail);
         release_shared_pmem_refs(shared_pmem_refs)?;
         crate::diagnostics::record_stop_reason(
             &mut diagnostics,
@@ -811,39 +811,96 @@ fn fail_kill_pid_if_requested(_pid: u32) -> Result<(), FcError> {
 /// children. Treat `ECHILD` as success because daemonized/new-pid-ns paths are
 /// reaped by their real parent.
 pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
+    kill_and_reap_pid_with_ops(
+        pid,
+        REAP_TIMEOUT,
+        kill_pid,
+        poll_reap_pid,
+        std::thread::sleep,
+    )
+}
+
+fn kill_and_reap_pid_with_ops<K, P, S>(
+    pid: u32,
+    timeout: Duration,
+    mut kill: K,
+    mut poll: P,
+    mut sleep: S,
+) -> Result<(), FcError>
+where
+    K: FnMut(u32) -> Result<(), FcError>,
+    P: FnMut(u32) -> Result<ReapPoll, FcError>,
+    S: FnMut(Duration),
+{
+    for attempt in 0..=1 {
+        kill(pid)?;
+        if pid == 0 {
+            return Ok(());
+        }
+        match reap_pid_once_with_ops(pid, timeout, &mut poll, &mut sleep) {
+            Ok(()) => return Ok(()),
+            Err(FcError::ReapTimeout { .. }) if attempt == 0 => {
+                tracing::warn!(
+                    pid,
+                    timeout = ?timeout,
+                    "pid did not reap after SIGKILL; retrying SIGKILL once"
+                );
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(FcError::ReapTimeout { pid, timeout })
+}
+
+fn reap_pid_once_with_ops<P, S>(
+    pid: u32,
+    timeout: Duration,
+    poll: &mut P,
+    sleep: &mut S,
+) -> Result<(), FcError>
+where
+    P: FnMut(u32) -> Result<ReapPoll, FcError>,
+    S: FnMut(Duration),
+{
+    let deadline = Instant::now() + timeout;
+    let mut backoff = ReapPollBackoff::new();
+    loop {
+        match poll(pid)? {
+            ReapPoll::Reaped => return Ok(()),
+            ReapPoll::StillAlive => {
+                if Instant::now() >= deadline {
+                    return Err(FcError::ReapTimeout { pid, timeout });
+                }
+                sleep(reap_sleep_duration(&mut backoff, deadline));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReapPoll {
+    Reaped,
+    StillAlive,
+}
+
+fn poll_reap_pid(pid: u32) -> Result<ReapPoll, FcError> {
     use nix::errno::Errno;
     use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
     use nix::unistd::Pid;
 
-    kill_pid(pid)?;
-    if pid == 0 {
-        return Ok(());
-    }
-
     let reap_pid = Pid::from_raw(pid as i32);
-    let timeout = REAP_TIMEOUT;
-    let deadline = Instant::now() + timeout;
-    let mut backoff = ReapPollBackoff::new();
-    loop {
-        match waitpid(reap_pid, Some(WaitPidFlag::WNOHANG)) {
-            Ok(WaitStatus::Exited(_, _))
-            | Ok(WaitStatus::Signaled(_, _, _))
-            | Err(Errno::ECHILD)
-            | Err(Errno::ESRCH) => return Ok(()),
-            Ok(WaitStatus::StillAlive) => {
-                if Instant::now() >= deadline {
-                    return Err(FcError::ReapTimeout { pid, timeout });
-                }
-                std::thread::sleep(reap_sleep_duration(&mut backoff, deadline));
-            }
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                return Err(FcError::ReapFailed {
-                    pid,
-                    source: std::io::Error::from_raw_os_error(e as i32),
-                });
-            }
-        }
+    match waitpid(reap_pid, Some(WaitPidFlag::WNOHANG)) {
+        Ok(WaitStatus::Exited(_, _))
+        | Ok(WaitStatus::Signaled(_, _, _))
+        | Err(Errno::ECHILD)
+        | Err(Errno::ESRCH) => Ok(ReapPoll::Reaped),
+        Ok(WaitStatus::StillAlive) => Ok(ReapPoll::StillAlive),
+        Ok(_) => Ok(ReapPoll::Reaped),
+        Err(e) => Err(FcError::ReapFailed {
+            pid,
+            source: std::io::Error::from_raw_os_error(e as i32),
+        }),
     }
 }
 
@@ -1006,6 +1063,42 @@ mod tests {
                 "exit_after={exit_after:?} observed_at={observed_at:?} bound={bound:?}"
             );
         }
+    }
+
+    #[test]
+    fn reap_timeout_retries_sigkill_once_before_returning_error() {
+        let mut kill_count = 0;
+        let mut poll_count = 0;
+
+        let err = kill_and_reap_pid_with_ops(
+            123,
+            Duration::ZERO,
+            |pid| {
+                assert_eq!(pid, 123);
+                kill_count += 1;
+                Ok(())
+            },
+            |pid| {
+                assert_eq!(pid, 123);
+                poll_count += 1;
+                Ok(ReapPoll::StillAlive)
+            },
+            |_| {},
+        )
+        .expect_err("still-live pid should time out after retry");
+
+        assert!(
+            matches!(
+                err,
+                FcError::ReapTimeout {
+                    pid: 123,
+                    timeout: Duration::ZERO,
+                }
+            ),
+            "unexpected reap error: {err:?}"
+        );
+        assert_eq!(kill_count, 2, "SIGKILL should be retried once");
+        assert_eq!(poll_count, 2, "each SIGKILL attempt should poll once");
     }
 
     fn simulated_reap_observation_delay(exit_after: Duration) -> Duration {
