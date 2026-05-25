@@ -62,7 +62,7 @@ fn mixed_output_request() -> ExecRequest {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn exec_and_exec_streaming_report_equivalent_output() {
     let (backend, run_root) = backend();
     let sandbox = backend
@@ -100,7 +100,7 @@ fn exec_and_exec_streaming_report_equivalent_output() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn exec_with_no_output_longer_than_bridge_timeout_completes() {
     let (backend, run_root) = backend();
     let vm_id = "longidle";
@@ -134,7 +134,7 @@ fn exec_with_no_output_longer_than_bridge_timeout_completes() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn dropped_streaming_caller_releases_guestd_for_next_exec() {
     let (backend, run_root) = backend();
     let sandbox = backend
@@ -186,7 +186,7 @@ fn dropped_streaming_caller_releases_guestd_for_next_exec() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancellable_streaming_exec_kills_shell_grandchild_and_allows_next_exec() {
     let (backend, run_root) = backend();
     let sandbox = backend
@@ -243,7 +243,7 @@ fn cancellable_streaming_exec_kills_shell_grandchild_and_allows_next_exec() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancellable_large_stdout_stream_kills_writer_and_allows_next_exec() {
     let (backend, run_root) = backend();
     let vm_id = "scls";
@@ -308,7 +308,7 @@ fn cancellable_large_stdout_stream_kills_writer_and_allows_next_exec() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn disconnect_mid_streaming_exec_maps_to_disconnect_before_terminal() {
     let (backend, run_root) = backend();
     let vm_id = "sdmx";
@@ -367,7 +367,7 @@ fn disconnect_mid_streaming_exec_maps_to_disconnect_before_terminal() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn exec_on_dead_firecracker_fails_fast_without_open_retry() {
     let (backend, run_root) = backend();
     let vm_id = "deadx";

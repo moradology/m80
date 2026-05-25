@@ -3,7 +3,7 @@
 mod common;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn fc_native_logger_file_exists_after_launch() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

@@ -23,6 +23,23 @@ The setup is idempotent. It installs qemu/libvirt/cloud-init tooling, loads the
 KVM, TUN, bridge, and vsock modules, starts libvirt, activates the default NAT
 network, and verifies `/dev/kvm`, `/dev/net/tun`, and nested KVM mode.
 
+Host requirements:
+
+- KVM-capable x86_64 CPU with VMX or SVM exposed.
+- Linux kernel with `kvm`, `kvm_intel` or `kvm_amd`, `tun`, `bridge`, and
+  `vhost_vsock` modules available.
+- Nested KVM enabled: `/sys/module/kvm_intel/parameters/nested` or
+  `/sys/module/kvm_amd/parameters/nested` reads `Y`, `y`, or `1`.
+- `/dev/kvm` readable/writable by the runner account through the `kvm` group or
+  `sudo`; `/dev/net/tun` present.
+- Passwordless `sudo -n` for host setup, iptables/netlink cleanup, and
+  privileged E2E commands when the runner is not root.
+
+The setup script installs this Ubuntu package set when `--no-apt` is not used:
+`qemu-system-x86`, `qemu-utils`, `libvirt-daemon-system`, `libvirt-clients`,
+`virtinst`, `cloud-image-utils`, `dnsmasq-base`, `bridge-utils`, `iproute2`,
+`iptables`, `ipset`, `linux-headers-generic`, and `build-essential`.
+
 For a read-only check:
 
 ```sh

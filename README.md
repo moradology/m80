@@ -141,6 +141,8 @@ Production operators should read:
   trusted-tenant and development preflight overrides.
 - [`docs/ops/host-tuning.md`](docs/ops/host-tuning.md) for THP, KVM halt-poll,
   CPU governor, and network sysctl tuning.
+- [`docs/operations/e2e-local-dev.md`](docs/operations/e2e-local-dev.md) for
+  running the privileged real-KVM test battery from a developer checkout.
 
 ## Diagnostics
 

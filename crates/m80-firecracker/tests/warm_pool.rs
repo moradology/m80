@@ -135,7 +135,7 @@ fn workspace_backed_pool_config_is_rejected() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -221,7 +221,7 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn warm_pool_empty_returns_pool_empty_error() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -286,7 +286,7 @@ fn warm_pool_empty_returns_pool_empty_error() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn dead_ready_slot_is_discarded_instead_of_leased() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -363,7 +363,7 @@ fn dead_ready_slot_is_discarded_instead_of_leased() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn warm_pool_simultaneous_lease_and_refill() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -457,7 +457,7 @@ fn warm_pool_simultaneous_lease_and_refill() {
 }
 
 #[test]
-#[ignore = "requires root, writable cgroup v2, KVM, and real Firecracker binary"]
+#[ignore = "requires-kvm requires-root requires-cgroup-v2"]
 fn warm_pool_cpuset_allocator_assigns_disjoint_concurrent_slots() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

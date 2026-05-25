@@ -83,7 +83,7 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, cmd: &str) -> m80_prot
 ///
 /// exec1 writes a marker; exec2 reads it back.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn two_execs_filesystem_state_persists() {
     let (backend, run_root) = make_backend();
     let vm_id = "persist-fs";
@@ -132,7 +132,7 @@ fn two_execs_filesystem_state_persists() {
 ///
 /// exec1 writes `/workspace/ws_file.txt`; exec2 reads it back.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn two_execs_workspace_persists() {
     let (backend, run_root) = make_backend();
     let vm_id = "persist-workspace";
@@ -168,7 +168,7 @@ fn two_execs_workspace_persists() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn extract_changes_after_unclean_stop_coherent() {
     let (backend, run_root) = make_backend();
     let vm_id = "extract-after-cancel";
@@ -266,7 +266,7 @@ fn extract_changes_after_unclean_stop_coherent() {
 /// exec1 writes "1"; exec2 reads and increments to "2"; exec3 reads and
 /// increments to "3".  Verifies three-turn state accumulation.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn three_execs_increment_counter() {
     let (backend, run_root) = make_backend();
     let vm_id = "persist-counter";
@@ -308,7 +308,7 @@ fn three_execs_increment_counter() {
 /// exec1 runs `/bin/false` (exits 1); exec2 runs `echo ok-after-fail` on
 /// the same VM and must succeed.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn exec_after_failed_exec_still_works() {
     let (backend, run_root) = make_backend();
     let vm_id = "persist-after-fail";

@@ -20,7 +20,7 @@ use nix::unistd::Pid;
 const M80_CGROUP_PARENT: &str = "/sys/fs/cgroup/m80-firecracker";
 
 #[test]
-#[ignore = "requires root or CAP_SETGID/CAP_SETPCAP"]
+#[ignore = "requires-root"]
 fn wrapper_applies_inherited_hardening_before_exec() {
     let wrapper = env!("CARGO_BIN_EXE_m80-jailer-harden");
     let inherited_file = tempfile::NamedTempFile::new().expect("inherited fd file");
@@ -116,7 +116,7 @@ fn cap_mask(indices: &[u8]) -> u64 {
 }
 
 #[test]
-#[ignore = "requires root, CAP_SYS_ADMIN, and a writable cgroup v2 hierarchy"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn wrapper_new_cgroup_ns_roots_proc_self_cgroup() {
     let wrapper = env!("CARGO_BIN_EXE_m80-jailer-harden");
     let vm_id = format!("m80-cgroup-ns-{}", std::process::id());

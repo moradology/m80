@@ -593,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires CAP_NET_ADMIN and creates a host TAP interface"]
+    #[ignore = "requires-root requires-network-namespace"]
     fn tap_creation_and_teardown_without_sbin_ip() {
         let suffix = std::process::id() & 0x00ff_ffff;
         let tap_name = format!("tfctest{suffix:06x}");

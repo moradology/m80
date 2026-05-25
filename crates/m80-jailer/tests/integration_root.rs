@@ -22,7 +22,7 @@ use std::process::Command;
 /// real syscalls, and `jailer-plan.json` + `jailer-state.json` are written to
 /// the run-dir.
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root"]
+#[ignore = "requires-root"]
 fn materialize_creates_jail_root_and_persists_plan() {
     let run_dir = tempfile::tempdir().unwrap();
     let kernel_file = tempfile::NamedTempFile::new().unwrap();
@@ -72,7 +72,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root"]
+#[ignore = "requires-root"]
 fn materialize_binds_proc_fd_source_without_reopening_original_path() {
     use std::io::Write;
     use std::os::fd::AsRawFd;
@@ -126,7 +126,7 @@ fn materialize_binds_proc_fd_source_without_reopening_original_path() {
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root"]
+#[ignore = "requires-root"]
 fn jailer_placeholder_cleanup_on_partial_bind_failure() {
     let run_dir = tempfile::tempdir().unwrap();
     let first_file = tempfile::NamedTempFile::new().unwrap();
@@ -181,7 +181,7 @@ fn jailer_placeholder_cleanup_on_partial_bind_failure() {
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root"]
+#[ignore = "requires-root"]
 fn jailer_partial_failure_mid_bind_reverses_prior_steps() {
     let run_dir = tempfile::tempdir().unwrap();
     let file_one = tempfile::NamedTempFile::new().unwrap();
@@ -254,7 +254,7 @@ fn jailer_partial_failure_mid_bind_reverses_prior_steps() {
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root"]
+#[ignore = "requires-root"]
 fn jailer_pid_timeout_recovery_returns_orphan_jail() {
     let run_dir = tempfile::tempdir().unwrap();
     let jailer_bin = run_dir.path().join("fake-jailer-no-pid.sh");
@@ -331,7 +331,7 @@ jail_root="$chroot_base/$exec_base/$id/root"
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root and setpriv"]
+#[ignore = "requires-root"]
 fn jailer_dir_perms_enforced_against_non_owner() {
     let run_dir = tempfile::tempdir().unwrap();
     let mut run_dir_perms = std::fs::metadata(run_dir.path()).unwrap().permissions();
@@ -395,7 +395,7 @@ fn jailer_dir_perms_enforced_against_non_owner() {
 }
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN / root and real Firecracker jailer"]
+#[ignore = "requires-kvm requires-root"]
 fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
     let run_root = PathBuf::from(
         std::env::var("M80_RUN_ROOT").unwrap_or_else(|_| "/var/lib/m80-run".to_owned()),

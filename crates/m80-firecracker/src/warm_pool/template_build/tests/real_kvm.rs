@@ -3,7 +3,7 @@ use crate::{WarmPool, WarmPoolConfig, WarmStrategy};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn injected_after_capture_failure_leaves_store_miss() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -27,7 +27,7 @@ fn injected_after_capture_failure_leaves_store_miss() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn identical_real_kvm_template_builds_produce_matching_fingerprints() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -58,7 +58,7 @@ fn identical_real_kvm_template_builds_produce_matching_fingerprints() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn store_resident_template_restores_from_outside_run_root() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -98,7 +98,7 @@ fn store_resident_template_restores_from_outside_run_root() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn snapshot_restore_warm_strategy_fills_ready_slot() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();

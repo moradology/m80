@@ -132,7 +132,7 @@ fn oversized_chunk_request(upload_id: &str) -> Envelope<FileWriteChunkRequest> {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn read_file_nonexistent_path_returns_not_found() {
     let (mut running, run_dir, _firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -148,7 +148,7 @@ fn read_file_nonexistent_path_returns_not_found() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn read_file_kernel_protected_returns_io() {
     let (mut running, run_dir, _firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -164,7 +164,7 @@ fn read_file_kernel_protected_returns_io() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn write_file_readonly_returns_permission_denied() {
     let (mut running, run_dir, _firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -180,7 +180,7 @@ fn write_file_readonly_returns_permission_denied() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn write_file_missing_parent_returns_not_found() {
     let (mut running, run_dir, _firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -200,7 +200,7 @@ fn write_file_missing_parent_returns_not_found() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn chunked_write_sequence_gap_returns_invalid_sequence() {
     let (running, run_dir, firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -237,7 +237,7 @@ fn chunked_write_sequence_gap_returns_invalid_sequence() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn chunked_write_unknown_commit_returns_not_found() {
     let (running, run_dir, firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -260,7 +260,7 @@ fn chunked_write_unknown_commit_returns_not_found() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn chunked_write_oversized_frame_drops_channel() {
     let (running, run_dir, firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());

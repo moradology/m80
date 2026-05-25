@@ -16,7 +16,7 @@ use snapshot_template_support::*;
 use tempfile::TempDir;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_2_restore_refill_scaffold() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -53,7 +53,7 @@ fn e2e_2_restore_refill_scaffold() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_7_template_invalidation() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -102,7 +102,7 @@ fn e2e_7_template_invalidation() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_8_concurrent_lease_isolation() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -172,7 +172,7 @@ fn e2e_8_concurrent_lease_isolation() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, pmem, and erofs+DAX support"]
+#[ignore = "requires-kvm requires-artifacts requires-pmem"]
 fn e2e_9_compose_pmem_pervm() {
     let _guard = real_kvm_test_lock();
     let image_store = pmem_shared_support::open_default_store();
@@ -203,7 +203,7 @@ fn e2e_9_compose_pmem_pervm() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, pmem, and erofs+DAX support"]
+#[ignore = "requires-kvm requires-artifacts requires-pmem"]
 fn e2e_10_compose_pmem_shared() {
     let _guard = real_kvm_test_lock();
     let image_store = pmem_shared_support::open_default_store();
@@ -253,7 +253,7 @@ fn e2e_10_compose_pmem_shared() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_11_no_leak_teardown() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();

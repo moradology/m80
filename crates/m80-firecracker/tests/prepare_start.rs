@@ -72,7 +72,7 @@ fn exec_true(running: &mut m80_firecracker::RunningSandbox) {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn prepare_start_yields_functional_running_sandbox() {
     let (backend, _run_root) = backend_with_temp_run_root();
     let prepared = backend
@@ -89,7 +89,7 @@ fn prepare_start_yields_functional_running_sandbox() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn prepared_abort_releases_permit_and_deletes_run_dir() {
     let (backend, _run_root) = backend_with_temp_run_root();
     let prepared = backend
@@ -110,7 +110,7 @@ fn prepared_abort_releases_permit_and_deletes_run_dir() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn prepared_sandbox_can_start_after_delay() {
     let (backend, _run_root) = backend_with_temp_run_root();
     let prepared = backend
@@ -128,7 +128,7 @@ fn prepared_sandbox_can_start_after_delay() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn launch_convenience_path_still_yields_functional_running_sandbox() {
     let (backend, _run_root) = backend_with_temp_run_root();
     let mut running = backend

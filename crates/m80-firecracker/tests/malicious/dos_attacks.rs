@@ -7,7 +7,7 @@ use m80_proto::ExecRequest;
 use super::common::RunDirDumpGuard;
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn unsolicited_flood_fails_fast_without_host_memory_growth() {
     let (_backend, mut running, run_dir) = super::launch_malicious("unsolicited_flood");
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -44,7 +44,7 @@ fn unsolicited_flood_fails_fast_without_host_memory_growth() {
 }
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn slowloris_partial_frame_times_out_without_stuck_reader() {
     let (_backend, mut running, run_dir) = super::launch_malicious("slowloris");
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());

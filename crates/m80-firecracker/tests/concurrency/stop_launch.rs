@@ -4,7 +4,7 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, Sandbox
 use m80_proto::{ExecRequest, ExecStatus};
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn concurrent_stop_launch_run_dir_race() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

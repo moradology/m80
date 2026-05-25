@@ -12,7 +12,7 @@ const REQUEST_ID: &str = "req-diagnostics-phase-e2e";
 const EXEC_REQUEST_ID_PREFIX: &str = "req-diagnostics-phase-e2e-exec-";
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn diagnostics_phase_markers_emitted_on_exec() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();

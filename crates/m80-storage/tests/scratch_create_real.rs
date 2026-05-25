@@ -9,7 +9,7 @@ use m80_storage::Scratch;
 
 /// Full create-and-verify round trip.
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn scratch_create_hydrates_workspace() {
     if !common::require_root("scratch_create_real") {
         return;
@@ -32,7 +32,7 @@ fn scratch_create_hydrates_workspace() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn scratch_create_rejects_symlink_in_workspace() {
     use std::os::unix::fs::symlink;
 
@@ -55,7 +55,7 @@ fn scratch_create_rejects_symlink_in_workspace() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn scratch_create_accepts_large_explicit_size() {
     if !common::require_root("scratch_create_accepts_large_explicit_size") {
         return;

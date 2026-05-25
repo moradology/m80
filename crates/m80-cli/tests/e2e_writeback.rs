@@ -58,37 +58,37 @@ fn run_root_parent() -> PathBuf {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn never_with_exit_0_preserves_host() {
     run_writeback_case("never", 0, false);
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn never_with_exit_nonzero_preserves_host() {
     run_writeback_case("never", 7, false);
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn on_success_with_exit_0_extracts() {
     run_writeback_case("on-success", 0, true);
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn on_success_with_failed_exit_does_not_extract() {
     run_writeback_case("on-success", 7, false);
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn always_with_exit_0_extracts() {
     run_writeback_case("always", 0, true);
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn always_with_failed_exit_still_extracts() {
     run_writeback_case("always", 7, true);
 }

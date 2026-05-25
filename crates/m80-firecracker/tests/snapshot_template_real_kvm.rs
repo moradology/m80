@@ -14,7 +14,7 @@ use snapshot_template_support::*;
 use tempfile::TempDir;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_1_deterministic_fingerprint() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -44,7 +44,7 @@ fn e2e_1_deterministic_fingerprint() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_3_post_restore_reseed() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -74,7 +74,7 @@ fn e2e_3_post_restore_reseed() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_4_per_lease_machine_id() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -104,7 +104,7 @@ fn e2e_4_per_lease_machine_id() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_5_hostname_hook() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();
@@ -137,7 +137,7 @@ fn e2e_5_hostname_hook() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot-template support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn e2e_6_hook_failure_fail_closed() {
     let _guard = real_kvm_test_lock();
     let discovery = real_kvm_discovery();

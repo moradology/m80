@@ -550,7 +550,7 @@ fn drop_without_cgroup_kill_removes_empty_temp_leaf() {
 }
 
 #[test]
-#[ignore = "requires root and a writable cgroup v2 hierarchy"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn cgroup_drop_with_live_procs_uses_cgroup_kill_then_rmdir() {
     Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 

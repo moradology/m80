@@ -52,7 +52,7 @@ fn explicit_recovery_api_remains_available_after_startup_pass() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn recovery_during_launch_preserves_fresh_vms() {
     const LAUNCHES: usize = 10;
 

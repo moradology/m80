@@ -19,7 +19,7 @@ use m80_proto::{Envelope, ExecRequest, ExecStatus};
 use m80_vsock::Channel;
 
 #[test]
-#[ignore = "requires privileged jailer host with real m80 artifacts"]
+#[ignore = "requires-kvm requires-root requires-artifacts"]
 fn api_socket_timeout_cleans_partial_state() {
     let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
     let fake_firecracker = write_fake_firecracker(fake_dir.path(), "fake-firecracker");
@@ -61,7 +61,7 @@ fn api_socket_timeout_cleans_partial_state() {
 }
 
 #[test]
-#[ignore = "requires privileged jailer host with writable cgroup v2 hierarchy"]
+#[ignore = "requires-kvm requires-root requires-cgroup-v2 requires-artifacts"]
 fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
     let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
     // fc_basename eats into the 107-byte AF_UNIX path budget alongside vm_id;
@@ -112,7 +112,7 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker artifacts and waits for guestd ready timeout"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn guestd_not_ready_timeout_cleans_partial_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -150,7 +150,7 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker artifacts and snapshot support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn restore_guestd_not_ready_timeout_cleans_partial_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

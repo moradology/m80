@@ -194,7 +194,7 @@ fn firecracker_pid(run_dir: &Path) -> u32 {
 }
 
 #[test]
-#[ignore = "requires KVM host and CAP_NET_ADMIN"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
 fn allow_outbound_firecracker_runs_in_private_netns() {
     let (running, run_dir) = launch_outbound_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -214,7 +214,7 @@ fn allow_outbound_firecracker_runs_in_private_netns() {
 }
 
 #[test]
-#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts requires-external-network"]
 fn allow_outbound_reaches_external_http_by_ip() {
     if !external_network_enabled() {
         eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
@@ -235,7 +235,7 @@ fn allow_outbound_reaches_external_http_by_ip() {
 }
 
 #[test]
-#[ignore = "requires KVM host and CAP_NET_ADMIN"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
 fn allow_outbound_rejects_peer_guest_ipv4_on_shared_bridge() {
     let backend = outbound_backend(2);
     let (mut first, first_run_dir) =
@@ -268,7 +268,7 @@ fn allow_outbound_rejects_peer_guest_ipv4_on_shared_bridge() {
 }
 
 #[test]
-#[ignore = "requires KVM host, CAP_NET_ADMIN at process start, and opt-in external network"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts requires-external-network"]
 fn allow_outbound_survives_parent_cap_net_admin_drop() {
     if !external_network_enabled() {
         eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
@@ -318,7 +318,7 @@ fn allow_outbound_survives_parent_cap_net_admin_drop() {
 }
 
 #[test]
-#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts requires-external-network"]
 fn allow_outbound_resolves_external_dns() {
     if !external_network_enabled() {
         eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
@@ -338,7 +338,7 @@ fn allow_outbound_resolves_external_dns() {
 }
 
 #[test]
-#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts requires-external-network"]
 fn allow_outbound_rejects_external_icmp() {
     if !external_network_enabled() {
         eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
@@ -359,7 +359,7 @@ fn allow_outbound_rejects_external_icmp() {
 }
 
 #[test]
-#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts requires-external-network"]
 fn allow_outbound_reaches_external_http() {
     if !external_network_enabled() {
         eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");

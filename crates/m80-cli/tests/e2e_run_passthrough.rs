@@ -92,7 +92,7 @@ fn run_root_parent() -> PathBuf {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn run_passthrough_separates_stdio_and_exits_zero() {
     let fixture = KvmFixture::new();
     let workspace = tempfile::tempdir().expect("workspace tempdir");
@@ -142,7 +142,7 @@ fn run_passthrough_separates_stdio_and_exits_zero() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn failing_guest_exit_passthrough_still_deletes_sandbox() {
     let fixture = KvmFixture::new();
 
@@ -182,7 +182,7 @@ fn failing_guest_exit_passthrough_still_deletes_sandbox() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn stdout_chunk_arrives_before_guest_process_exits() {
     let fixture = KvmFixture::new();
     let mut child = fixture
@@ -260,7 +260,7 @@ fn stdout_chunk_arrives_before_guest_process_exits() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pipe_streaming_stdout_is_not_capped_at_one_mib() {
     let fixture = KvmFixture::new();
 
@@ -300,7 +300,7 @@ fn pipe_streaming_stdout_is_not_capped_at_one_mib() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pipe_streaming_large_stderr_preserves_identity_and_exit_code() {
     let fixture = KvmFixture::new();
 
@@ -337,7 +337,7 @@ fn pipe_streaming_large_stderr_preserves_identity_and_exit_code() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pipe_interleaved_stdout_stderr_preserves_per_stream_order() {
     let fixture = KvmFixture::new();
 
@@ -370,7 +370,7 @@ fn pipe_interleaved_stdout_stderr_preserves_per_stream_order() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn run_tty_smoke_uses_guest_terminal_and_preserves_exit_code() {
     let fixture = KvmFixture::new();
 
@@ -419,7 +419,7 @@ fn run_tty_smoke_uses_guest_terminal_and_preserves_exit_code() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn sigterm_cancels_guest_child_and_deletes_sandbox() {
     let fixture = KvmFixture::new();
     let mut child = fixture

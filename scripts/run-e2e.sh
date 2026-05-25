@@ -25,6 +25,8 @@ pass/fail/skip with explicit reasons.
 
 Environment:
   M80_E2E_RUN_ROOT                 default /var/lib/m80-r
+  M80_E2E_REAP_MIN_AGE_HOURS       default 1
+  M80_E2E_SKIP_REAPER=1            skip stale-state cleanup before a run
   M80_E2E_TEST_TIMEOUT_SECONDS     default 180
   M80_KERNEL_IMAGE                 default /tmp/m80-build-current/artifacts/vmlinux
   M80_ROOTFS_IMAGE                 default /tmp/m80-build-current/artifacts/output.ext4
@@ -82,7 +84,7 @@ if [[ "${#sudo_cmd[@]}" -gt 0 ]] && ! sudo -n true >/dev/null 2>&1; then
 fi
 
 have_kvm=0
-if [[ -e /dev/kvm ]]; then
+if [[ -r /dev/kvm && -w /dev/kvm ]]; then
     have_kvm=1
 fi
 
@@ -94,6 +96,41 @@ fi
 have_harden=0
 if [[ -x "$jailer_harden_bin" ]]; then
     have_harden=1
+fi
+
+have_ip=0
+if command -v ip >/dev/null 2>&1; then
+    have_ip=1
+fi
+
+have_cgroup_v2=0
+if [[ -f /sys/fs/cgroup/cgroup.controllers ]]; then
+    have_cgroup_v2=1
+fi
+
+have_loop_device=0
+if [[ -e /dev/loop-control || -e /dev/loop0 ]]; then
+    have_loop_device=1
+fi
+
+have_debugfs=0
+if command -v debugfs >/dev/null 2>&1; then
+    have_debugfs=1
+fi
+
+have_docker=0
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    have_docker=1
+fi
+
+measurement_enabled=0
+if [[ "${M80_RUN_MEASUREMENT_E2E:-}" == "1" ]]; then
+    measurement_enabled=1
+fi
+
+pmem_artifacts=0
+if [[ -n "${M80_PMEM_LAYERS:-}" || -n "${M80_PMEM_EROFS_IMAGE:-}" || -n "${M80_PMEM_LAYER_ARTIFACT_DIR:-}" ]]; then
+    pmem_artifacts=1
 fi
 
 external_network_enabled=0
@@ -141,6 +178,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 build_json="$tmpdir/cargo-test-artifacts.jsonl"
 executables="$tmpdir/executables.txt"
 results="$tmpdir/results.jsonl"
+ignore_reasons="$tmpdir/ignore-reasons.tsv"
 
 record_result() {
     local status="$1"
@@ -190,31 +228,136 @@ with open(sys.argv[1], "a", encoding="utf-8") as f:
 PY
 }
 
+write_ignore_reason_map() {
+    local package_name="$1"
+    local out_path="$2"
+    python3 - "$package_name" "$out_path" <<'PY'
+import pathlib
+import re
+import sys
+
+package = sys.argv[1]
+out = pathlib.Path(sys.argv[2])
+crate = pathlib.Path("crates") / package
+allowed = {
+    "requires-kvm",
+    "requires-root",
+    "requires-network-namespace",
+    "slow",
+    "requires-cgroup-v2",
+    "requires-artifacts",
+    "requires-external-network",
+    "requires-malicious-artifacts",
+    "requires-docker",
+    "requires-mount-namespace",
+    "requires-loop-device",
+    "requires-snapshot-support",
+    "requires-debugfs",
+    "requires-pmem",
+    "measurement",
+    "manual",
+}
+pattern = re.compile(
+    r'(?ms)^[ \t]*#\s*\[\s*ignore\s*=\s*"([^"]+)"\s*\]\s*'
+    r'(?:^[ \t]*#\[[^\n]*\]\s*)*'
+    r'^[ \t]*(?:pub\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)'
+)
+
+entries = {}
+if crate.exists():
+    for path in sorted(crate.rglob("*.rs")):
+        text = path.read_text()
+        for match in pattern.finditer(text):
+            reason = match.group(1)
+            tokens = reason.split()
+            unknown = [token for token in tokens if token not in allowed]
+            if not tokens or unknown:
+                location = f"{path}:{text.count(chr(10), 0, match.start()) + 1}"
+                raise SystemExit(f"{location}: invalid #[ignore] reason {reason!r}")
+            entries[match.group(2)] = reason
+
+with out.open("w", encoding="utf-8") as fh:
+    for name, reason in sorted(entries.items()):
+        fh.write(f"{name}\t{reason}\n")
+PY
+}
+
+ignore_tokens_for() {
+    local test_name="$1"
+    awk -F '\t' -v test="$test_name" '
+        test == $1 || test ~ ("(^|::)" $1 "$") { print $2; found = 1; exit }
+        END { if (!found) print "" }
+    ' "$ignore_reasons"
+}
+
 skip_reason_for() {
     local binary_name="$1"
     local test_name="$2"
+    local tokens
+    tokens="$(ignore_tokens_for "$test_name")"
 
-    if [[ "$have_sudo" -ne 1 ]]; then
+    has_token() {
+        local token="$1"
+        [[ " $tokens " == *" $token "* ]]
+    }
+
+    if [[ -z "$tokens" ]]; then
+        echo "unclassified-ignore"
+        return
+    fi
+    if has_token manual; then
+        echo "manual-ignore"
+        return
+    fi
+    if has_token measurement && [[ "$measurement_enabled" -ne 1 ]]; then
+        echo "measurement-not-enabled"
+        return
+    fi
+    if has_token requires-root && [[ "$have_sudo" -ne 1 ]]; then
         echo "sudo-not-available"
         return
     fi
-    if [[ "$have_kvm" -ne 1 ]]; then
+    if has_token requires-kvm && [[ "$have_kvm" -ne 1 ]]; then
         echo "requires-kvm"
         return
     fi
-    if [[ "$have_artifacts" -ne 1 ]]; then
+    if has_token requires-artifacts && [[ "$have_artifacts" -ne 1 ]]; then
         echo "missing-kernel-or-rootfs-artifacts"
         return
     fi
-    if [[ "$have_harden" -ne 1 ]]; then
+    if has_token requires-kvm && [[ "$have_harden" -ne 1 ]]; then
         echo "missing-m80-jailer-harden"
         return
     fi
-    if [[ "$binary_name" == *egress_outbound_real_kvm* && "$external_network_enabled" -ne 1 ]]; then
+    if has_token requires-network-namespace && [[ "$have_ip" -ne 1 ]]; then
+        echo "missing-iproute2"
+        return
+    fi
+    if has_token requires-cgroup-v2 && [[ "$have_cgroup_v2" -ne 1 ]]; then
+        echo "requires-cgroup-v2"
+        return
+    fi
+    if has_token requires-loop-device && [[ "$have_loop_device" -ne 1 ]]; then
+        echo "missing-loop-device"
+        return
+    fi
+    if has_token requires-debugfs && [[ "$have_debugfs" -ne 1 ]]; then
+        echo "missing-debugfs"
+        return
+    fi
+    if has_token requires-docker && [[ "$have_docker" -ne 1 ]]; then
+        echo "requires-docker"
+        return
+    fi
+    if has_token requires-pmem && [[ "$pmem_artifacts" -ne 1 ]]; then
+        echo "missing-pmem-artifacts"
+        return
+    fi
+    if has_token requires-external-network && [[ "$external_network_enabled" -ne 1 ]]; then
         echo "external-network-not-enabled"
         return
     fi
-    if [[ "$binary_name" == *malicious* && "$malicious_artifacts" -ne 1 ]]; then
+    if has_token requires-malicious-artifacts && [[ "$malicious_artifacts" -ne 1 ]]; then
         echo "missing-malicious-artifacts"
         return
     fi
@@ -296,12 +439,22 @@ PY
 }
 
 if [[ "$list_only" -eq 0 ]]; then
+    if [[ "${M80_E2E_SKIP_REAPER:-0}" != "1" && "$have_sudo" -eq 1 ]]; then
+        if ! scripts/e2e-reap.sh \
+            --run-root "$run_root" \
+            --min-age-hours "${M80_E2E_REAP_MIN_AGE_HOURS:-1}" \
+            >/dev/null; then
+            echo "e2e reaper failed before test execution" >&2
+            exit 1
+        fi
+    fi
     "${sudo_cmd[@]}" mkdir -p "$run_root"
     if [[ "${#sudo_cmd[@]}" -gt 0 ]]; then
         "${sudo_cmd[@]}" chown "$(id -u):$(id -g)" "$run_root" || true
     fi
 fi
 
+write_ignore_reason_map "$package" "$ignore_reasons"
 cargo build -p m80-jailer-harden >/dev/null
 cargo test -p "$package" --tests --no-run --message-format=json > "$build_json"
 

@@ -6,7 +6,7 @@ mod pmem_shared_support;
 use pmem_shared_support as support;
 
 #[test]
-#[ignore = "requires KVM host, real Firecracker binary, and root privileges"]
+#[ignore = "requires-kvm requires-root requires-artifacts"]
 fn shared_pmem_inode_identity_matches_store_while_per_vm_uses_clones() {
     let _serial = support::REAL_KVM_LOCK.lock().expect("real-kvm test lock");
     let store = support::open_default_store();

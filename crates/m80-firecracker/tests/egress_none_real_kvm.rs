@@ -61,7 +61,7 @@ fn shell_request(script: &str) -> ExecRequest {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn no_egress_firecracker_runs_in_private_netns() {
     let (running, run_dir) = launch_no_egress_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -81,7 +81,7 @@ fn no_egress_firecracker_runs_in_private_netns() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn no_egress_blocks_external_ip_traffic() {
     let (mut running, run_dir) = launch_no_egress_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -117,7 +117,7 @@ fn firecracker_pid(run_dir: &std::path::Path) -> u32 {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn no_egress_blocks_external_dns_resolution() {
     let (mut running, run_dir) = launch_no_egress_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);

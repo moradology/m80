@@ -116,7 +116,7 @@ fn run_root_parent() -> PathBuf {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn interactive_tty_probe_reads_input_writes_ansi_and_preserves_exit_code() {
     let fixture = KvmFixture::new();
     let workspace = tempfile::tempdir().expect("workspace tempdir");
@@ -239,7 +239,7 @@ fn interactive_tty_probe_reads_input_writes_ansi_and_preserves_exit_code() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn interactive_tty_enables_and_restores_host_raw_mode() {
     let fixture = KvmFixture::new();
     let pty = openpty(None, None).expect("host pty");

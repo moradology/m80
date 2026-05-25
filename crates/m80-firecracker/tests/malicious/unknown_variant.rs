@@ -4,7 +4,7 @@ use m80_proto::ExecRequest;
 use super::common::RunDirDumpGuard;
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn unknown_variant_tag_returns_malformed_peer_with_field_number() {
     let (_backend, mut running, run_dir) = super::launch_malicious("unknown_variant");
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());

@@ -185,7 +185,7 @@ fn assert_console_protocol_error(run_dir: &Path) {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn frame_length_at_max_bytes_round_trips() {
     let discovery = m80_preflight::run().expect("preflight");
     let (running, run_dir) = launch_vm(&discovery);
@@ -208,7 +208,7 @@ fn frame_length_at_max_bytes_round_trips() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn frame_length_over_max_drops_current_channel_only() {
     let discovery = m80_preflight::run().expect("preflight");
     let (running, run_dir) = launch_vm(&discovery);
@@ -243,7 +243,7 @@ fn frame_length_over_max_drops_current_channel_only() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn malformed_frame_mid_stream_maps_to_user_visible_error() {
     let discovery = m80_preflight::run().expect("preflight");
     let (running, run_dir) = launch_vm(&discovery);
@@ -301,7 +301,7 @@ fn malformed_frame_mid_stream_maps_to_user_visible_error() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn protocol_version_mismatch_returns_failed_response_and_fresh_channel_survives() {
     let discovery = m80_preflight::run().expect("preflight");
     let (running, run_dir) = launch_vm(&discovery);

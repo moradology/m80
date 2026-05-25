@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn run_dir_invariants_post_boot() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

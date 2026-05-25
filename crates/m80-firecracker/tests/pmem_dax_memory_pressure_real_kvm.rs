@@ -27,7 +27,7 @@ const LATENCY_TIMING_SOURCE: &str =
     "host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)";
 
 #[test]
-#[ignore = "measurement-shaped; set M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1"]
+#[ignore = "requires-kvm requires-artifacts requires-pmem measurement"]
 fn pmem_dax_memory_pressure_real_kvm() {
     if std::env::var("M80_RUN_PMEM_DAX_MEMORY_PRESSURE").as_deref() != Ok("1") {
         eprintln!("SKIP: set M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 to write the measurement artifact");

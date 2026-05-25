@@ -214,7 +214,7 @@ fn probe_failure(case: &ProbeCase, response: &ExecResponse) -> Option<String> {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn layer1_guest_known_cve_primitives_are_blocked_in_guest() {
     let probe = compile_probe_binary();
     let (mut running, run_dir) = launch_no_egress_vm();

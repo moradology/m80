@@ -78,7 +78,7 @@ fn warm_snapshot_dir(discovery: &m80_preflight::Discovery, name: &str) -> PathBu
 /// This verifies that the snapshot preserves in-VM state (the guest memory
 /// and disk state) and that exec dispatch works post-restore.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn capture_then_restore_round_trip() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -164,7 +164,7 @@ fn capture_then_restore_round_trip() {
 /// then exec a simple command. Asserts exec succeeds, proving that the vsock
 /// probe correctly waits for the exec channel to become live.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn restore_executes_after_idle() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -230,7 +230,7 @@ fn restore_executes_after_idle() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn plain_restore_reseeds_urandom_before_handoff() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -277,7 +277,7 @@ fn plain_restore_reseeds_urandom_before_handoff() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn post_restore_hooks_run_before_restored_sandbox_is_returned() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -358,7 +358,7 @@ fn post_restore_hooks_run_before_restored_sandbox_is_returned() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn corrupted_snapshot_file_fails_clearly() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -408,7 +408,7 @@ fn corrupted_snapshot_file_fails_clearly() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-snapshot-support"]
 fn post_capture_mutation_does_not_change_snapshot_restore_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -516,7 +516,7 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
 /// Assert the error is a typed `FcError`, not a panic, and is surfaced
 /// (not silently recovered). The test needs KVM to get past the jailer phase.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn restore_with_missing_snapshot_fails_clearly() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

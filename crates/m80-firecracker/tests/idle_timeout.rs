@@ -192,7 +192,7 @@ fn idle_timed_out_error_displays() {
 ///
 /// Requires KVM access; run with `cargo test -- --ignored`.
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn idle_timeout_resets_on_exec() {
     use common::RunDirDumpGuard;
     use m80_firecracker::{Backend, BackendConfig, CgroupMode};
@@ -275,7 +275,7 @@ fn idle_timeout_resets_on_exec() {
 ///
 /// Requires KVM access; run with `cargo test -- --ignored`.
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn idle_timeout_fires_after_inactivity() {
     use common::RunDirDumpGuard;
     use m80_firecracker::{Backend, BackendConfig, CgroupMode};

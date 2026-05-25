@@ -112,7 +112,7 @@ fn open_raw_channel(
 /// Boot VM → send `sleep 60` exec + cancel on the same channel → assert
 /// `CancelResponse { status: Cancelled }` arrives, total elapsed << 60 s.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancel_kills_running_process() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -164,7 +164,7 @@ fn cancel_kills_running_process() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn two_concurrent_cancels_idempotent() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -215,7 +215,7 @@ fn two_concurrent_cancels_idempotent() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancel_then_disconnect_handles_lost_ack() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -278,7 +278,7 @@ fn cancel_then_disconnect_handles_lost_ack() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancel_frame_mid_chunked_upload_leaves_no_partial_files() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -355,7 +355,7 @@ fn assert_file_not_found(running: &mut m80_firecracker::RunningSandbox, path: &s
 /// Boot VM → exec `/bin/true` → wait for it to complete → send cancel →
 /// assert `CancelResponse { status: AlreadyExited }`.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancel_after_exit_returns_already_exited() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -398,7 +398,7 @@ fn cancel_after_exit_returns_already_exited() {
 /// Boot VM → send `sleep 60` exec + cancel with BOGUS request_id on same
 /// channel → assert `CancelResponse { status: AlreadyExited }` (not Cancelled).
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn wrong_request_id_returns_already_exited() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
@@ -446,7 +446,7 @@ fn wrong_request_id_returns_already_exited() {
 /// finishes normally. Cancellation is same-connection-only, not global by
 /// request id.
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn cancel_on_separate_connection_handled_safely() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();

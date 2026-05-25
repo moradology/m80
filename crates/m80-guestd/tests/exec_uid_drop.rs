@@ -1,7 +1,7 @@
 //! Root-only integration check for the hidden guest exec shim.
 
 #[test]
-#[ignore = "requires root because it verifies the guest exec uid/gid/capability drop"]
+#[ignore = "requires-root"]
 fn exec_shim_runs_workload_non_root_with_no_new_privs_and_empty_caps() {
     let script = r#"
 set -eu

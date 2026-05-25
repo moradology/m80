@@ -63,6 +63,10 @@ Run the detected privileged battery one test at a time:
 scripts/run-e2e.sh
 ```
 
+The wrapper uses the taxonomy in
+[`e2e-test-selection.md`](e2e-test-selection.md) and runs the stale-state
+reaper in [`e2e-reaper.md`](e2e-reaper.md) before real test execution.
+
 List what the wrapper would run or skip:
 
 ```sh
@@ -86,22 +90,15 @@ Before a large local run, clear stale m80 residue from previous failed
 privileged tests:
 
 ```sh
-sudo find /var/lib/m80-r /var/lib/m80-run -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} +
-ip link show | grep -E 'tfc[0-9a-f]{12}|m80-br' || true
-sudo iptables -S FORWARD | grep m80 || true
+scripts/e2e-reap.sh --dry-run --json | jq '.actions, .skipped, .errors'
+sudo -n scripts/e2e-reap.sh --run-root /var/lib/m80-r
 ```
 
-If a leftover tap or bridge is clearly m80-owned and no test is running, delete
-it explicitly:
+If iptables is in a weird state, inspect exact m80 comments before deleting
+anything by hand:
 
 ```sh
-sudo ip link delete <tap-or-bridge-name>
-```
-
-If iptables is in a weird state, inspect handles before deleting anything:
-
-```sh
-sudo iptables -L FORWARD -n --line-numbers | grep m80
+sudo iptables -S | grep 'm80:'
 ```
 
 Use `scripts/run-e2e.sh --list` after cleanup to confirm the environment

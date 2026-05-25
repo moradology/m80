@@ -38,7 +38,7 @@ const FIXTURE: &str = include_str!("fixtures/composed-e2e/bootspec.yaml");
 const BACKGROUND_REFILL_HEADROOM: usize = 4;
 
 #[test]
-#[ignore = "requires real KVM, Firecracker, jailer, pmem, erofs+DAX, and snapshot templates"]
+#[ignore = "requires-kvm requires-root requires-artifacts requires-snapshot-support requires-pmem"]
 fn composed_e2e_layered_warm_pool() {
     let _guard = snapshot_template_support::real_kvm_test_lock();
     let (allow_other_firecracker_vms, preexisting_firecrackers) =

@@ -45,7 +45,7 @@ const CROSS_TENANT_ATTACKS: &[&str] = &[
 ];
 
 #[test]
-#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+#[ignore = "requires-kvm requires-root requires-cgroup-v2 requires-malicious-artifacts"]
 fn compromised_fc_blocked_by_jailer_alone() {
     for name in STANDARD_LAYER2_ATTACKS {
         assert_attack_blocked(name);

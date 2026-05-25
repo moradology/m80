@@ -19,7 +19,7 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 
 #[test]
-#[ignore = "requires CAP_SYS_ADMIN/root for loop mount"]
+#[ignore = "requires-root requires-loop-device"]
 fn image_build_write_atomicity_under_signal() {
     if !cfg!(debug_assertions) {
         eprintln!("release builds do not include the debug-only loop-mount sleep hook");

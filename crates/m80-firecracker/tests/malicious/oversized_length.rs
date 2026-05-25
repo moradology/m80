@@ -4,7 +4,7 @@ use m80_proto::{ExecRequest, MAX_FRAME_BYTES};
 use super::common::RunDirDumpGuard;
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn oversized_length_prefix_returns_typed_protocol_error() {
     let (_backend, mut running, run_dir) = super::launch_malicious("oversized_length");
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());

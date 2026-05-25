@@ -19,7 +19,7 @@ use m80_proto::{ExecRequest, ExecStatus};
 mod common;
 
 #[test]
-#[ignore = "requires KVM host, real Firecracker binary, and M80_PMEM_LAYERS or M80_PMEM_EROFS_IMAGE"]
+#[ignore = "requires-kvm requires-artifacts requires-pmem"]
 fn pmem_layer_real_kvm_mounts_erofs_dax_before_workload() {
     std::fs::create_dir_all(DEFAULT_STORE_ROOT).expect("create default image store root");
     let store = ImageStore::open_default().expect("open default image store");

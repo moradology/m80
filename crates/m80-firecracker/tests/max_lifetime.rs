@@ -28,7 +28,7 @@ fn lifetime_expired_error_displays_limit() {
 }
 
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn max_lifetime_fires_after_configured_duration_with_no_exec_in_flight() {
     let mut sandbox = launch_with(Some(Duration::from_secs(1)), None);
     let run_dir = sandbox.run_dir().to_owned();
@@ -45,7 +45,7 @@ fn max_lifetime_fires_after_configured_duration_with_no_exec_in_flight() {
 }
 
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn max_lifetime_expiring_during_exec_allows_in_flight_result_then_rejects_next_exec() {
     let mut sandbox = launch_with(Some(Duration::from_secs(1)), None);
     let run_dir = sandbox.run_dir().to_owned();
@@ -71,7 +71,7 @@ fn max_lifetime_expiring_during_exec_allows_in_flight_result_then_rejects_next_e
 }
 
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn max_lifetime_none_never_fires() {
     let mut sandbox = launch_with(None, None);
     let run_dir = sandbox.run_dir().to_owned();
@@ -85,7 +85,7 @@ fn max_lifetime_none_never_fires() {
 }
 
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn idle_timeout_wins_when_shorter_than_max_lifetime() {
     let mut sandbox = launch_with(Some(Duration::from_secs(60)), Some(Duration::from_secs(1)));
     let run_dir = sandbox.run_dir().to_owned();
@@ -100,7 +100,7 @@ fn idle_timeout_wins_when_shorter_than_max_lifetime() {
 }
 
 #[test]
-#[ignore = "requires KVM access and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn max_lifetime_wins_when_shorter_than_idle_timeout() {
     let mut sandbox = launch_with(Some(Duration::from_secs(1)), Some(Duration::from_secs(60)));
     let run_dir = sandbox.run_dir().to_owned();

@@ -1,7 +1,7 @@
 use m80_cgroup::cleanup_orphan_subtree;
 
 #[test]
-#[ignore = "requires writable cgroup hierarchy"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn cleanup_idempotent() {
     let vm_id = format!("m80-test-missing-{}", std::process::id());
 

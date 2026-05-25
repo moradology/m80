@@ -4,7 +4,7 @@ use m80_proto::ExecRequest;
 use super::common::RunDirDumpGuard;
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn unsolicited_response_is_rejected_as_request_id_mismatch_and_diagnosed() {
     let (_backend, mut running, run_dir) = super::launch_malicious("unsolicited_response");
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());

@@ -28,7 +28,7 @@ fn shell_request(script: &str) -> ExecRequest {
 }
 
 #[test]
-#[ignore = "requires root, writable cgroup v2, KVM, and real Firecracker binary"]
+#[ignore = "requires-kvm requires-root requires-cgroup-v2 requires-artifacts"]
 fn cgroup_memory_limit_oom_kills_workload() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable cgroup-v2 host");

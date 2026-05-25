@@ -17,7 +17,7 @@ mod quiet_host;
 use pmem_shared_support as support;
 
 #[test]
-#[ignore = "measurement-shaped; m80-q420k.3.8 owns the verified density run"]
+#[ignore = "requires-kvm requires-artifacts measurement"]
 fn shared_pmem_host_page_sharing_measurement_lives_in_density_gate() {
     if std::env::var_os("M80_RUN_PMEM_SHARED_DENSITY").is_none() {
         eprintln!("skipping density run; run scripts/smoke-pmem-shared.sh for m80-q420k.3.8");

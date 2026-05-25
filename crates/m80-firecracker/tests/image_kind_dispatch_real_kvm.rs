@@ -150,7 +150,7 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str) -> Strin
 }
 
 #[test]
-#[ignore = "requires KVM host with real Minimal and Ubuntu Firecracker artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn image_kind_minimal_boots() {
     let minimal_dir = artifact_dir("M80_MINIMAL_ARTIFACT_DIR", "/tmp/m80-build/minimal");
     let minimal_discovery = discovery_for_artifacts(&minimal_dir);
@@ -171,7 +171,7 @@ fn image_kind_minimal_boots() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Minimal erofs Firecracker artifacts"]
+#[ignore = "requires-kvm requires-artifacts requires-pmem"]
 fn image_kind_minimal_erofs_boots() {
     let erofs_dir = artifact_dir(
         "M80_MINIMAL_EROFS_ARTIFACT_DIR",
@@ -206,7 +206,7 @@ fn image_kind_minimal_erofs_boots() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Ubuntu Firecracker artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn image_kind_ubuntu_boots_guestd_as_pid_one() {
     let ubuntu_dir = artifact_dir("M80_UBUNTU_ARTIFACT_DIR", "/tmp/m80-build/ubuntu");
     let ubuntu_discovery = discovery_for_artifacts(&ubuntu_dir);
@@ -234,7 +234,7 @@ fn image_kind_ubuntu_boots_guestd_as_pid_one() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Minimal and Ubuntu Firecracker artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn overlay_assembly_per_image_kind() {
     for (label, env_key, default_path, kind) in [
         (

@@ -91,7 +91,7 @@ impl Drop for ChildGuard {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn foreground_warm_owner_serves_run_and_drains_without_cold_fallback() {
     let fixture = KvmFixture::new();
     let owner = ChildGuard::new(
@@ -199,7 +199,7 @@ fn foreground_warm_owner_serves_run_and_drains_without_cold_fallback() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn foreground_warm_owner_sigterm_removes_owner_state() {
     let fixture = KvmFixture::new();
     let mut owner = ChildGuard::new(

@@ -14,7 +14,7 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, SandboxConfig, Snapsho
 use m80_proto::{ExecRequest, ExecStatus};
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn snapshot_concurrent_capture_and_restore() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

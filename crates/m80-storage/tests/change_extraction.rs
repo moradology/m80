@@ -38,7 +38,7 @@ fn rollback_on_extract_failure() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn stages_into_sibling_directory() {
     if !common::require_root("stages_into_sibling_directory") {
         return;
@@ -69,7 +69,7 @@ fn stages_into_sibling_directory() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn loop_mount_extracts_changed_file_set() {
     if !common::require_root("loop_mount_extracts_changed_file_set") {
         return;

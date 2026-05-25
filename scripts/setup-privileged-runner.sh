@@ -84,7 +84,7 @@ install_packages() {
     fi
     local missing=()
     local package
-    for package in qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils dnsmasq-base bridge-utils; do
+    for package in qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst cloud-image-utils dnsmasq-base bridge-utils iproute2 iptables ipset linux-headers-generic build-essential; do
         if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
             missing+=("$package")
         fi
@@ -167,7 +167,7 @@ fix_device_modes() {
 
 verify() {
     local failures=()
-    for cmd in virsh virt-install qemu-system-x86_64 qemu-img cloud-localds ssh ssh-keygen; do
+    for cmd in virsh virt-install qemu-system-x86_64 qemu-img cloud-localds ssh ssh-keygen ip iptables ipset make cc; do
         if ! have_command "$cmd"; then
             failures+=("missing command: $cmd")
         fi

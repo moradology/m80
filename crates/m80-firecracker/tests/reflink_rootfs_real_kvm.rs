@@ -19,7 +19,7 @@ const WRITE_MIB: u64 = 16;
 const MIN_DIVERGENCE_BLOCKS: u64 = 30_000;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn reflink_rootfs_real_kvm_boot_write_diverges_overlay_from_template() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

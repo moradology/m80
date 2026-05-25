@@ -146,7 +146,7 @@ fn assert_status_value_with_context(status: &str, field: &str, expected: &str, c
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and current m80-guestd image"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn real_kvm_guestd_seccomp_preserves_exec_paths() {
     let (mut running, run_dir) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);

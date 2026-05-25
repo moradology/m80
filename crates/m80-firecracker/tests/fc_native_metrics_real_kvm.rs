@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use m80_firecracker::SnapshotPaths;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn fc_native_metrics_file_exists_after_launch() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -32,7 +32,7 @@ fn fc_native_metrics_file_exists_after_launch() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn fc_native_metrics_file_exists_after_snapshot_restore() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

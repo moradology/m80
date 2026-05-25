@@ -261,7 +261,7 @@ fn workspace_mount_reports_final_failure_after_mkfs() {
 /// Requires a real filesystem path that is a directory; "/" works.
 /// The syscall is stubbed in #[cfg(test)] so no privilege is needed.
 #[test]
-#[ignore = "requires a mount namespace; run in a real VM or with unshare -m"]
+#[ignore = "requires-root requires-mount-namespace"]
 fn pivot_rootfs_on_real_namespace() {
     // Would call pivot_rootfs("/merged") in a real mount namespace.
     // Stub path exercises the open/fchdir/defer logic without actual

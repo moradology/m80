@@ -71,7 +71,7 @@ fn pty_request(shell: &str, size: PtySize) -> PtyRequest {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pty_eof_on_stdin_completes_read() {
     let (mut running, run_dir) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -103,7 +103,7 @@ fn pty_eof_on_stdin_completes_read() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pty_sigint_during_read_returns_exit_130() {
     let (mut running, run_dir) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -150,7 +150,7 @@ fn pty_sigint_during_read_returns_exit_130() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn pty_sigwinch_propagates_dimensions() {
     let (mut running, run_dir) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);

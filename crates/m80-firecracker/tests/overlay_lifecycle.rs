@@ -39,7 +39,7 @@ fn overlay_allocated_bytes(path: &std::path::Path) -> u64 {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and debugfs"]
+#[ignore = "requires-kvm requires-debugfs"]
 fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -139,7 +139,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary and debugfs"]
+#[ignore = "requires-kvm requires-debugfs"]
 fn overlay_immutability_lower_unchanged_after_upper_write() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -229,7 +229,7 @@ fn overlay_immutability_lower_unchanged_after_upper_write() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn overlay_grows_under_sustained_guest_writes() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -297,7 +297,7 @@ fn overlay_grows_under_sustained_guest_writes() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm"]
 fn three_drive_order_mounts_workspace_as_vdc_and_preserves_base() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

@@ -69,7 +69,7 @@ fn launch_vm(
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn stop_disposition_normal_records_normal_stop() {
     let request_id = "req-stop-normal";
     let vm_id = common::unique_vm_id("stop-normal");
@@ -85,7 +85,7 @@ fn stop_disposition_normal_records_normal_stop() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn stop_disposition_force_records_force_kill() {
     let request_id = "req-stop-force";
     let vm_id = common::unique_vm_id("stop-force");
@@ -101,7 +101,7 @@ fn stop_disposition_force_records_force_kill() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn implicit_drop_force_kills_before_resource_teardown() {
     let request_id = "req-drop-order";
     let vm_id = common::unique_vm_id("drop-order");
@@ -123,7 +123,7 @@ fn implicit_drop_force_kills_before_resource_teardown() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn forced_kill_ambiguous_blocks_release() {
     let request_id = "req-force-kill-ambiguous";
     let vm_id = common::unique_vm_id("fk-ambig");
@@ -187,7 +187,7 @@ fn forced_kill_ambiguous_blocks_release() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete() {
     let request_id = "req-stop-unreachable-guestd";
     let vm_id = common::unique_vm_id("stop-unreach");

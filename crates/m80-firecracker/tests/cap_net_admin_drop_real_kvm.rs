@@ -5,7 +5,7 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode};
 const CAP_NET_ADMIN_MASK: u64 = 1u64 << 12;
 
 #[test]
-#[ignore = "requires real preflight artifacts and irreversibly drops CAP_NET_ADMIN in this test process"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
 fn backend_init_drops_parent_cap_net_admin() {
     let discovery = m80_preflight::run().expect("preflight");
     let backend = Backend::new(

@@ -91,13 +91,13 @@ time.sleep(30)
 "#;
 
 #[test]
-#[ignore = "requires cgroup v2 host; run with sudo cargo test -p m80-cgroup -- --ignored"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn probe_returns_ok_on_unified_v2_host() {
     m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 }
 
 #[test]
-#[ignore = "requires root and a writable cgroup v2 hierarchy"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn cgroup_pids_max_enforced_against_fork_bomb() {
     m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 
@@ -156,7 +156,7 @@ fn cgroup_pids_max_enforced_against_fork_bomb() {
 }
 
 #[test]
-#[ignore = "requires root and a writable cgroup v2 hierarchy"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn cgroup_cpuset_pinning_actually_constrains_affinity() {
     m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 
@@ -202,7 +202,7 @@ fn cgroup_cpuset_pinning_actually_constrains_affinity() {
 }
 
 #[test]
-#[ignore = "requires root, a writable cgroup v2 hierarchy, and a block-backed temp dir"]
+#[ignore = "requires-root requires-cgroup-v2"]
 fn cgroup_io_max_throttles_disk_writes() {
     m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 

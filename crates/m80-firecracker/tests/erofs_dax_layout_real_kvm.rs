@@ -18,7 +18,7 @@ mod pmem_shared_support;
 use pmem_shared_support as support;
 
 #[test]
-#[ignore = "requires KVM host, real Firecracker binary, stripped erofs+DAX kernel, and root privileges"]
+#[ignore = "requires-kvm requires-root requires-artifacts requires-pmem"]
 fn erofs_dax_layout_matrix_real_kvm() {
     let _serial = support::REAL_KVM_LOCK.lock().expect("real-kvm test lock");
 

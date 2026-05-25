@@ -14,7 +14,7 @@ use m80_storage::Scratch;
 /// Creates a workspace, formats + hydrates a scratch image, then extracts it
 /// back and verifies the ChangeSet matches.
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn scratch_extract_round_trips_workspace() {
     if !common::require_root("scratch_extract_real") {
         return;
@@ -52,7 +52,7 @@ fn scratch_extract_round_trips_workspace() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn scratch_extract_rejects_into_already_exists() {
     if !common::require_root("scratch_extract_real") {
         return;
@@ -77,7 +77,7 @@ fn scratch_extract_rejects_into_already_exists() {
 }
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn writeback_preserves_file_modes() {
     if !common::require_root("writeback_preserves_file_modes") {
         return;

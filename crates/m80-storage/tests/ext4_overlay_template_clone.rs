@@ -10,7 +10,7 @@ const DEFAULT_SAMPLES: usize = 30;
 const OVERLAY_SIZE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[test]
-#[ignore = "measurement harness for m80-q420k.8.16; set M80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE=1"]
+#[ignore = "measurement"]
 fn ext4_overlay_template_clone_measurement() {
     if std::env::var("M80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE").as_deref() != Ok("1") {
         eprintln!(

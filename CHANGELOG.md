@@ -11,6 +11,10 @@ All notable changes to m80 are documented here. Format roughly follows
   release validation harness for the A-E public-release proof ladder. The
   level-E lane installs a real public release inside the nested-KVM L1 and
   records the `m80 run -- echo hello` proof artifact.
+- Hardened privileged E2E operations with structured ignored-test reason
+  tokens, `scripts/run-e2e.sh` taxonomy enforcement, and a pre-run
+  `scripts/e2e-reap.sh` stale-state cleanup for m80-owned links, iptables
+  rules, run directories, and empty cgroup leaves.
 
 ### Added — stripped-kernel PVH direct boot note
 

@@ -13,7 +13,7 @@ use m80_proto::{ExecRequest, ExecStatus};
 use common::RunDirDumpGuard;
 
 #[test]
-#[ignore = "requires root, iproute2 netns support, KVM host, and real Firecracker binary"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
 fn join_netns_routes_guest_traffic_through_caller_namespace() {
     let topology = JoinNetnsTopology::create();
     assert_other_namespace_cannot_reach_peer(&topology);

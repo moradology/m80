@@ -25,7 +25,7 @@ use m80_firecracker::{
 use nix::unistd::{chown, Gid, Uid};
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -164,7 +164,7 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn drive_attach_out_of_range_slot_rejects_and_refills_slot() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -234,7 +234,7 @@ fn drive_attach_out_of_range_slot_rejects_and_refills_slot() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn drive_attach_detach_attach_reuses_slot_placeholder_lifecycle() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -330,7 +330,7 @@ fn drive_attach_detach_attach_reuses_slot_placeholder_lifecycle() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+#[ignore = "requires-kvm requires-artifacts requires-snapshot-support"]
 fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");

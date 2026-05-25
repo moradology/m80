@@ -31,7 +31,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod common;
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn end_to_end_real_kvm_boot_exec_stop_delete() {
     // Full preflight discovers the binaries and validates the environment.
     let discovery =
@@ -64,7 +64,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -112,7 +112,7 @@ fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn end_to_end_real_kvm_file_ops() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -200,7 +200,7 @@ fn end_to_end_real_kvm_file_ops() {
 }
 
 #[test]
-#[ignore = "requires KVM host with real Firecracker binary"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn end_to_end_real_kvm_jailer_security_parity() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -279,7 +279,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
 }
 
 #[test]
-#[ignore = "requires root, iproute2 netns support, KVM host, and real Firecracker binary"]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
 fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
     let netns = NetnsGuard::create();
     netns.create_tap("tapm80struct");

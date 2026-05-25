@@ -9,7 +9,7 @@ use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 
 #[test]
-#[ignore = "requires KVM host and M80_MALICIOUS_ARTIFACT_DIR image built with m80-guestd-malicious"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn malicious_guestd_noop_reaches_ready_signal() {
     let artifact_dir = std::env::var_os("M80_MALICIOUS_ARTIFACT_DIR")
         .map(PathBuf::from)

@@ -16,7 +16,7 @@
 //! ```
 
 #[test]
-#[ignore = "requires KVM-capable Linux host with all m80 artifacts installed"]
+#[ignore = "requires-kvm requires-artifacts"]
 fn run_on_kvm_host() {
     let result = m80_preflight::run();
     match &result {

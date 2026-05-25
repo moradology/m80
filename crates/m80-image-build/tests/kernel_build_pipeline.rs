@@ -393,7 +393,7 @@ fn kernel_build_script_strips_symbol_tables_before_publish() {
 /// `build_stripped_kernel` is ignored in CI (Docker + network required).
 /// Run manually with `cargo test -- --ignored` or `--include-ignored`.
 #[test]
-#[ignore = "requires Docker daemon + network access; run manually with `-- --ignored`"]
+#[ignore = "requires-docker"]
 fn build_stripped_kernel_smoke() {
     use assert_cmd::Command;
 
@@ -431,7 +431,7 @@ fn build_stripped_kernel_smoke() {
 }
 
 #[test]
-#[ignore = "requires Docker daemon + network access; run manually with `-- --ignored`"]
+#[ignore = "requires-docker"]
 fn stripped_kernel_build_is_deterministic() {
     let workspace_root = workspace_root();
 

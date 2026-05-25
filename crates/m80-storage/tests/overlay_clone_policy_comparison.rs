@@ -15,7 +15,7 @@ const DEFAULT_CONCURRENT_ROUNDS: usize = 20;
 const DEFAULT_OVERLAY_SIZE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[test]
-#[ignore = "storage benchmark; set M80_RUN_OVERLAY_CLONE_COMPARISON=1"]
+#[ignore = "measurement"]
 fn overlay_clone_policy_comparison() {
     if std::env::var("M80_RUN_OVERLAY_CLONE_COMPARISON").as_deref() != Ok("1") {
         eprintln!("SKIP: set M80_RUN_OVERLAY_CLONE_COMPARISON=1 to write the benchmark artifact");

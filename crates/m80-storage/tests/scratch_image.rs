@@ -3,7 +3,7 @@ mod common;
 use m80_storage::Scratch;
 
 #[test]
-#[ignore = "requires root and a loop device"]
+#[ignore = "requires-root requires-loop-device"]
 fn hydrates_from_host_workspace() {
     if !common::require_root("hydrates_from_host_workspace") {
         return;
