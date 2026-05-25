@@ -68,10 +68,10 @@ fn release_shared_pmem_refs(refs: Vec<m80_image_store::SharedImageRef>) -> Resul
 
 impl RunningSandbox {
     pub(crate) fn ensure_lifecycle_accepts_work(&self) -> Result<(), FcError> {
-        if self.idle_timed_out.load(Ordering::Relaxed) {
+        if self.idle_timed_out.load(Ordering::Acquire) {
             return Err(FcError::IdleTimedOut);
         }
-        if self.lifetime_expired.load(Ordering::Relaxed) {
+        if self.lifetime_expired.load(Ordering::Acquire) {
             let limit = self.max_lifetime.unwrap_or_else(|| self.born_at.elapsed());
             return Err(FcError::LifetimeExpired { limit });
         }
@@ -171,7 +171,7 @@ impl RunningSandbox {
 
         // Signal the idle-watcher thread to exit before teardown so it does
         // not race with the shutdown we are about to send.
-        self.watcher_stop.store(true, Ordering::Relaxed);
+        self.watcher_stop.store(true, Ordering::Release);
 
         // Phase 2: bounded_stop.
         let t_bounded = Instant::now();
@@ -262,7 +262,7 @@ impl RunningSandbox {
         );
 
         // Signal the watcher to exit before killing the process.
-        self.watcher_stop.store(true, Ordering::Relaxed);
+        self.watcher_stop.store(true, Ordering::Release);
 
         match force_kill_disposition() {
             StopDisposition::HostForceKill => {
@@ -666,10 +666,20 @@ pub(crate) struct IdleWatcherContext<'a> {
     pub(crate) idle_timeout: Option<Duration>,
     pub(crate) max_lifetime: Option<Duration>,
     pub(crate) born_at_ns: u64,
+    /// Timestamp counter only; loaded with `Relaxed` because freshness, not
+    /// publication ordering, controls timeout decisions.
     pub(crate) last_activity_ns: &'a AtomicU64,
+    /// In-flight exec counter only; loaded with `Relaxed` to suppress shutdown
+    /// while nonzero.
     pub(crate) active_execs: &'a AtomicUsize,
+    /// Idle-expired publication flag. Stores use `Release`; lifecycle entry
+    /// points load with `Acquire`.
     pub(crate) idle_timed_out: &'a AtomicBool,
+    /// Lifetime-expired publication flag. Stores use `Release`; lifecycle
+    /// entry points load with `Acquire`.
     pub(crate) lifetime_expired: &'a AtomicBool,
+    /// Watcher shutdown signal. Stop/drop paths store with `Release`; the
+    /// watcher loads with `Acquire`.
     pub(crate) stop_flag: &'a AtomicBool,
     pub(crate) vm_id: &'a str,
 }
@@ -680,7 +690,7 @@ pub(crate) fn idle_watcher_loop(poll_interval: Duration, context: IdleWatcherCon
     loop {
         std::thread::sleep(poll_interval);
 
-        if context.stop_flag.load(Ordering::Relaxed) {
+        if context.stop_flag.load(Ordering::Acquire) {
             return;
         }
 
@@ -689,10 +699,10 @@ pub(crate) fn idle_watcher_loop(poll_interval: Duration, context: IdleWatcherCon
         let lifetime_deadline_ns = context
             .max_lifetime
             .map(|limit| context.born_at_ns.saturating_add(duration_ns(limit)));
-        let lifetime_expired_now = context.lifetime_expired.load(Ordering::Relaxed)
+        let lifetime_expired_now = context.lifetime_expired.load(Ordering::Acquire)
             || lifetime_deadline_ns.is_some_and(|deadline| now_ns >= deadline);
         if lifetime_expired_now {
-            context.lifetime_expired.store(true, Ordering::Relaxed);
+            context.lifetime_expired.store(true, Ordering::Release);
             if active_execs > 0 {
                 continue;
             }
@@ -735,7 +745,7 @@ fn expire_idle_timeout(context: IdleWatcherContext<'_>) {
         vm_id = context.vm_id,
         "idle timeout expired; issuing graceful shutdown"
     );
-    context.idle_timed_out.store(true, Ordering::Relaxed);
+    context.idle_timed_out.store(true, Ordering::Release);
     if let Err(e) = send_shutdown_request(context.firecracker_pid, context.vsock_uds) {
         tracing::warn!(
             vm_id = context.vm_id,
@@ -746,7 +756,7 @@ fn expire_idle_timeout(context: IdleWatcherContext<'_>) {
 }
 
 fn expire_max_lifetime(context: IdleWatcherContext<'_>) {
-    context.lifetime_expired.store(true, Ordering::Relaxed);
+    context.lifetime_expired.store(true, Ordering::Release);
     tracing::info!(
         vm_id = context.vm_id,
         "max lifetime expired; issuing graceful shutdown"
@@ -1048,11 +1058,11 @@ mod tests {
                 );
             });
             std::thread::sleep(Duration::from_millis(40));
-            stop_flag.store(true, Ordering::Relaxed);
+            stop_flag.store(true, Ordering::Release);
             handle.join().expect("watcher exits after stop");
         });
 
-        assert!(!idle_timed_out.load(Ordering::Relaxed));
+        assert!(!idle_timed_out.load(Ordering::Acquire));
     }
 
     #[test]
@@ -1084,9 +1094,9 @@ mod tests {
                 );
             });
             std::thread::sleep(Duration::from_millis(40));
-            assert!(lifetime_expired.load(Ordering::Relaxed));
-            assert!(!idle_timed_out.load(Ordering::Relaxed));
-            stop_flag.store(true, Ordering::Relaxed);
+            assert!(lifetime_expired.load(Ordering::Acquire));
+            assert!(!idle_timed_out.load(Ordering::Acquire));
+            stop_flag.store(true, Ordering::Release);
             handle.join().expect("watcher exits after stop");
         });
     }
@@ -1117,8 +1127,8 @@ mod tests {
             },
         );
 
-        assert!(idle_timed_out.load(Ordering::Relaxed));
-        assert!(!lifetime_expired.load(Ordering::Relaxed));
+        assert!(idle_timed_out.load(Ordering::Acquire));
+        assert!(!lifetime_expired.load(Ordering::Acquire));
     }
 
     #[test]
@@ -1147,7 +1157,7 @@ mod tests {
             },
         );
 
-        assert!(!idle_timed_out.load(Ordering::Relaxed));
-        assert!(lifetime_expired.load(Ordering::Relaxed));
+        assert!(!idle_timed_out.load(Ordering::Acquire));
+        assert!(lifetime_expired.load(Ordering::Acquire));
     }
 }

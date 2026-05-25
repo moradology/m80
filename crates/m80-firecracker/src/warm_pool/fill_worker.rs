@@ -49,7 +49,7 @@ pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<S
         let launched = inner.launch_slot(cpuset_cpus.clone());
         let fill_duration_us = duration_micros_u64(fill_started.elapsed());
         let backoff = match launched {
-            Ok(slot) if inner.shutdown.load(std::sync::atomic::Ordering::Relaxed) => {
+            Ok(slot) if inner.shutdown.load(std::sync::atomic::Ordering::Acquire) => {
                 let discard_result = discard_sandbox(slot.sandbox);
                 let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
                 state.filling = state.filling.saturating_sub(1);

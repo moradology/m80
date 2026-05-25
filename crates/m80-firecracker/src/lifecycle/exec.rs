@@ -385,7 +385,7 @@ impl RunningSandbox {
                 let (done_tx, done_rx) = mpsc::channel();
                 let handle = std::thread::spawn(move || {
                     let _done = ForwarderDone(done_tx);
-                    while !stop_for_thread.load(Ordering::Relaxed) {
+                    while !stop_for_thread.load(Ordering::Acquire) {
                         match cancel_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
                             Ok(()) => {
                                 let _ = sender.send(&Envelope::new(CancelRequest {
@@ -620,6 +620,8 @@ fn claim_one_shot_exec(one_shot: bool, consumed: &mut bool) -> Result<(), FcErro
 }
 
 struct CancelForwarder {
+    /// Drop signal for the cancel-forwarder thread. Drop publishes with
+    /// `Release`; the thread loads with `Acquire`.
     stop: Arc<AtomicBool>,
     done_rx: mpsc::Receiver<()>,
     handle: Option<JoinHandle<()>>,
@@ -627,7 +629,7 @@ struct CancelForwarder {
 
 impl Drop for CancelForwarder {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
         join_forwarder_with_timeout(
             "cancel forwarder",
             &self.done_rx,
@@ -638,6 +640,8 @@ impl Drop for CancelForwarder {
 }
 
 struct PtyEventForwarder {
+    /// Drop signal for the PTY event-forwarder thread. Drop publishes with
+    /// `Release`; the thread loads with `Acquire`.
     stop: Arc<AtomicBool>,
     done_rx: mpsc::Receiver<()>,
     handle: Option<JoinHandle<()>>,
@@ -645,7 +649,7 @@ struct PtyEventForwarder {
 
 impl Drop for PtyEventForwarder {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
         join_forwarder_with_timeout(
             "pty event forwarder",
             &self.done_rx,
@@ -806,7 +810,7 @@ fn spawn_pty_event_forwarder(
         // channel-closed result means the guest has already disconnected
         // (normal PTY teardown), and there is no recovery path from within
         // this fire-and-forget forwarder thread.
-        while !stop_for_thread.load(Ordering::Relaxed) {
+        while !stop_for_thread.load(Ordering::Acquire) {
             match event_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
                 Ok(PtyHostEvent::Input(bytes)) => {
                     let frame = PtyInput {

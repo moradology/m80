@@ -102,13 +102,23 @@ pub struct WarmPool {
 struct WarmPoolInner {
     backend: Arc<Backend>,
     config: WarmPoolConfig,
+    /// Runtime ready-slot target. Mutated by resize and read by fill workers;
+    /// resize publishes with `Release`, readers observe with `Acquire`.
     target_ready: AtomicUsize,
     cpu_allocator_capacity: Option<usize>,
     state: Mutex<WarmPoolState>,
     changed: Condvar,
+    /// Pool shutdown signal. Drop publishes with `Release`; fill loops and
+    /// workers load with `Acquire` before deciding whether to spawn or retain
+    /// slots.
     shutdown: AtomicBool,
+    /// Monotonic slot id counter only. `Relaxed` is sufficient because the
+    /// numeric uniqueness, not cross-thread publication ordering, is the
+    /// invariant.
     next_slot: AtomicU64,
     #[cfg(test)]
+    /// Test-only panic injection flag. Uses `SeqCst` at the injection point so
+    /// test ordering stays deliberately conservative.
     panic_next_launch_slot: AtomicBool,
 }
 
@@ -208,7 +218,7 @@ impl WarmPool {
     /// Restore slots synchronously until `target_ready` ready slots exist.
     pub fn fill_to_target_blocking(&self) -> Result<(), FcError> {
         loop {
-            if self.inner.shutdown.load(Ordering::Relaxed) {
+            if self.inner.shutdown.load(Ordering::Acquire) {
                 return Ok(());
             }
             {
@@ -308,7 +318,7 @@ impl WarmPool {
             let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
             self.inner
                 .target_ready
-                .store(target_ready, Ordering::Relaxed);
+                .store(target_ready, Ordering::Release);
             let mut discard = Vec::new();
             while state.ready.len() > target_ready {
                 let slot = state
@@ -412,7 +422,7 @@ impl WarmPool {
 
 impl Drop for WarmPool {
     fn drop(&mut self) {
-        self.inner.shutdown.store(true, Ordering::Relaxed);
+        self.inner.shutdown.store(true, Ordering::Release);
         loop {
             let ready = {
                 let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());

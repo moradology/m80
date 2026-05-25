@@ -500,6 +500,8 @@ pub(crate) struct ForceKillGuard {
     pub(crate) vm_id: String,
     pub(crate) firecracker_pid: u32,
     pub(crate) jailer_pid: u32,
+    /// Signal to the lifecycle watcher that fallback Drop cleanup has started.
+    /// Drop publishes with `Release`; the watcher loads with `Acquire`.
     pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) snapshot_mount: Option<PathBuf>,
     armed: bool,
@@ -536,7 +538,7 @@ impl Drop for ForceKillGuard {
         }
         tracing::warn!(vm_id = %self.vm_id, "RunningSandbox dropped without stop/force_kill — force-killing");
         self.watcher_stop
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+            .store(true, std::sync::atomic::Ordering::Release);
         // Best-effort SIGKILL; errors logged and swallowed because Drop must not panic.
         if let Err(e) = crate::lifecycle::kill_and_reap_pid(self.firecracker_pid) {
             tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill firecracker failed");
@@ -614,14 +616,23 @@ pub struct RunningSandbox {
     /// value; happens-before precision is not required.
     pub(crate) last_activity_ns: Arc<AtomicU64>,
     /// Number of exec requests currently in flight.
+    ///
+    /// Counter only: readers use it to suppress idle shutdown while nonzero,
+    /// and no non-atomic state is published through the value. `Relaxed`
+    /// ordering is sufficient.
     pub(crate) active_execs: Arc<AtomicUsize>,
     /// Watcher sets this flag when the idle deadline expires.
     /// `exec` checks it at entry and returns `FcError::IdleTimedOut`.
+    /// The watcher stores with `Release`; lifecycle entry points load with
+    /// `Acquire` before accepting more work.
     pub(crate) idle_timed_out: Arc<std::sync::atomic::AtomicBool>,
     /// Watcher sets this flag when the absolute lifetime deadline expires.
     /// New lifecycle work returns `FcError::LifetimeExpired`.
+    /// The watcher stores with `Release`; lifecycle entry points load with
+    /// `Acquire`.
     pub(crate) lifetime_expired: Arc<std::sync::atomic::AtomicBool>,
     /// Signal from `stop` / `force_kill` to the watcher thread to exit.
+    /// Stop paths store with `Release`; the watcher loads with `Acquire`.
     pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
     /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
     pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,

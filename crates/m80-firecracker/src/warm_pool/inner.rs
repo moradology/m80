@@ -76,7 +76,7 @@ impl WarmPoolInner {
         let mut fills_to_spawn = Vec::new();
         {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-            if self.shutdown.load(Ordering::Relaxed) {
+            if self.shutdown.load(Ordering::Acquire) {
                 return;
             }
             let deficit = self
@@ -114,7 +114,7 @@ impl WarmPoolInner {
     }
 
     pub(super) fn target_ready(&self) -> usize {
-        self.target_ready.load(Ordering::Relaxed)
+        self.target_ready.load(Ordering::Acquire)
     }
 
     pub(super) fn discard_unleased_slot(&self, slot: WarmSlot, reason: &'static str) {
