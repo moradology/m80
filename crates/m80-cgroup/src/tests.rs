@@ -198,6 +198,43 @@ fn pid_assignment_skips_new_pid_namespace_sentinel() {
 }
 
 #[test]
+fn create_rejects_existing_leaf_with_live_pids_before_enrollment() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("sys/fs/cgroup");
+    let parent = base.join("m80-firecracker");
+    let leaf = parent.join("vm-live");
+    fs::create_dir_all(&leaf).unwrap();
+    for path in [&base, &parent] {
+        fs::write(path.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
+        fs::write(path.join("cgroup.subtree_control"), "").unwrap();
+    }
+    fs::write(leaf.join("cgroup.procs"), "4242\n").unwrap();
+
+    let jailed = JailedFirecracker::new(11, 22);
+    let err = Subtree::create_at(
+        &base,
+        &parent,
+        "vm-live",
+        dir.path(),
+        &jailed,
+        &Limits::default(),
+    )
+    .expect_err("existing live pids must block cgroup leaf reuse");
+
+    assert!(
+        matches!(
+            err,
+            CgroupError::LivePids { ref path, ref pids } if *path == leaf && pids == "4242"
+        ),
+        "expected live-pid rejection, got {err:?}"
+    );
+    assert!(
+        !leaf.join("cpu.max").exists(),
+        "limits must not be applied after live-pid rejection"
+    );
+}
+
+#[test]
 fn io_max_formats_v2_row() {
     assert_eq!(
         IoMax {

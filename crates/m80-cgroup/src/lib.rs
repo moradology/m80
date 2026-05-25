@@ -91,6 +91,7 @@ impl Subtree {
 
         let leaf = parent.join(vm_id);
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
+        reject_existing_live_pids(&leaf)?;
         if limits.cpuset_cpus.is_none() {
             inherit_sparse_cpuset_file(parent, &leaf, "cpuset.cpus")?;
         }
@@ -212,6 +213,18 @@ pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
     fs::remove_dir(&leaf).map_err(|source| CgroupError::Io { path: leaf, source })?;
 
     Ok(())
+}
+
+fn reject_existing_live_pids(leaf: &Path) -> Result<(), CgroupError> {
+    let procs = cgroup_procs(leaf)?;
+    if procs.trim().is_empty() {
+        Ok(())
+    } else {
+        Err(CgroupError::LivePids {
+            path: leaf.to_path_buf(),
+            pids: procs.trim().to_owned(),
+        })
+    }
 }
 
 /// Per-controller limits for one subtree.

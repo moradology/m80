@@ -45,9 +45,14 @@ emitted and the error is swallowed. No panic.
 `cleanup_orphan_subtree(vm_id)` implements the same idempotent pattern for
 recovery at startup:
 - Non-existent path → `Ok(())`.
-- `cgroup.procs` non-empty → warn and return `Ok(())` (live pids; orchestrator
-  must kill them first).
+- `cgroup.procs` non-empty → return `CgroupError::LivePids`; orchestrators must
+  preserve the matching run-dir so a future same-`vm_id` launch cannot adopt
+  the live pids.
 - `cgroup.procs` empty → `rmdir` the leaf.
+
+`m80-firecracker::Backend::recover_stale_run_root()` maps the live-pid case to
+`FcError::StaleCgroupLeaf` and does not delete the run-dir. See
+`docs/behaviors/cgroup/stale-live-pid-recovery.md`.
 
 m80 does not attempt to clean up the parent `m80-firecracker/` directory
 automatically; the parent persists across VM lifetimes and is shared.

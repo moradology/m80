@@ -511,6 +511,17 @@ pub enum FcError {
     /// failed" vs "host config didn't parse".
     #[error("cgroup: {0}")]
     Cgroup(#[from] CgroupError),
+    /// Recovery found a stale cgroup leaf with live pids and preserved the
+    /// matching run-dir so a future same-vm-id launch cannot adopt them.
+    #[error("stale cgroup leaf for vm_id {vm_id:?} at {} still has live pids: {pids}", path.display())]
+    StaleCgroupLeaf {
+        /// VM id derived from the stale run-dir name.
+        vm_id: String,
+        /// Cgroup v2 leaf that still contains live pids.
+        path: PathBuf,
+        /// Raw `cgroup.procs` content with surrounding whitespace trimmed.
+        pids: String,
+    },
     /// Network realization or cleanup failed.
     #[error("network: {0}")]
     Network(#[from] NetError),
@@ -840,6 +851,7 @@ impl FcError {
             Self::ImageStore(_) => "ImageStore",
             Self::Jailer(_) => "Jailer",
             Self::Cgroup(_) => "Cgroup",
+            Self::StaleCgroupLeaf { .. } => "StaleCgroupLeaf",
             Self::Network(_) => "Network",
             Self::NetworkHelper(_) => "NetworkHelper",
             Self::CapabilityDrop(_) => "CapabilityDrop",
@@ -946,6 +958,7 @@ impl FcError {
             | Self::TemplateStore(_)
             | Self::InvalidState { .. }
             | Self::RunDirOwnershipAmbiguous { .. }
+            | Self::StaleCgroupLeaf { .. }
             | Self::PathIo { .. }
             | Self::Json { .. }
             | Self::CommandSpawnFailed { .. }

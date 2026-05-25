@@ -35,10 +35,12 @@ Test:
 
 ## Startup Pass
 
-Startup recovery runs once during `Backend::new`. This pass is synchronous and
-best-effort: individual run-dir cleanup failures are logged and construction
-continues. A CLI/admin command or resident owner can still run
-`Backend::recover_stale_run_root()` later.
+Startup recovery runs once during `Backend::new`. This pass is synchronous.
+Most per-run-dir cleanup failures are logged and construction continues, but a
+stale cgroup leaf with live pids is surfaced as `FcError::StaleCgroupLeaf` by
+the recovery API and logged by `Backend::new` while preserving the run-dir. A
+CLI/admin command or resident owner can still run
+`Backend::recover_stale_run_root()` later and receive the typed error.
 
 Test:
 - `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::explicit_recovery_api_remains_available_after_startup_pass`

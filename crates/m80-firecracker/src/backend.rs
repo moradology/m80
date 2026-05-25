@@ -162,8 +162,10 @@ impl Backend {
 
     /// Walk every subdirectory of `<run_root>/` and reap orphaned run-dirs.
     ///
-    /// Best-effort: individual failure to reap a specific dir is logged but
-    /// does not cause this method to return an error.
+    /// Best-effort: ordinary cleanup failures for one run-dir are logged and
+    /// recovery continues. A stale cgroup leaf with live pids is different:
+    /// recovery preserves the run-dir and returns `FcError::StaleCgroupLeaf`
+    /// so the next launch cannot silently adopt those pids into a reused VM id.
     ///
     /// When `force` is true, dirs with ambiguous ownership locks are also
     /// reaped rather than skipped.
@@ -237,7 +239,7 @@ impl Backend {
                         "recover_stale_run_root: killing orphaned firecracker"
                     );
                     kill_orphan_pids(jailer_pid, firecracker_pid);
-                    self.remove_run_dir(&subdir);
+                    self.remove_run_dir(&subdir)?;
                 }
                 Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
                     // `reap_plan` from the plan file is ignored —
@@ -245,10 +247,10 @@ impl Backend {
                     // authoritative mount list, which covers cases the
                     // persisted plan doesn't (partial materialize, older
                     // binary, etc.).
-                    self.remove_run_dir(&subdir);
+                    self.remove_run_dir(&subdir)?;
                 }
                 Ok(m80_jailer::InspectionDecision::NoJail) => {
-                    self.remove_run_dir(&subdir);
+                    self.remove_run_dir(&subdir)?;
                 }
                 Err(e) => {
                     warn!(
@@ -263,10 +265,10 @@ impl Backend {
         Ok(())
     }
 
-    fn remove_run_dir(&self, subdir: &std::path::Path) {
+    fn remove_run_dir(&self, subdir: &std::path::Path) -> Result<(), FcError> {
         remove_run_dir_with_network_cleanup(&self.config.run_root, subdir, |vm_id, run_root| {
             self.network_helper.cleanup_vm(vm_id, run_root)
-        });
+        })
     }
 
     fn sweep_stale_shared_pmem_refs(&self) -> Result<(), FcError> {
@@ -492,20 +494,49 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
 fn remove_run_dir_with_network_cleanup<F>(
     run_root: &std::path::Path,
     subdir: &std::path::Path,
-    mut cleanup_network: F,
-) where
+    cleanup_network: F,
+) -> Result<(), FcError>
+where
     F: FnMut(&str, &std::path::Path) -> Result<(), crate::NetworkHelperError>,
 {
-    unmount_under(subdir);
+    remove_run_dir_with_cleanup(
+        run_root,
+        subdir,
+        cleanup_network,
+        m80_cgroup::cleanup_orphan_subtree,
+    )
+}
+
+fn remove_run_dir_with_cleanup<F, G>(
+    run_root: &std::path::Path,
+    subdir: &std::path::Path,
+    mut cleanup_network: F,
+    mut cleanup_cgroup: G,
+) -> Result<(), FcError>
+where
+    F: FnMut(&str, &std::path::Path) -> Result<(), crate::NetworkHelperError>,
+    G: FnMut(&str) -> Result<(), m80_cgroup::CgroupError>,
+{
     match subdir.file_name().and_then(|s| s.to_str()) {
         Some(vm_id) => {
+            match cleanup_cgroup(vm_id) {
+                Ok(()) => {}
+                Err(m80_cgroup::CgroupError::LivePids { path, pids }) => {
+                    return Err(FcError::StaleCgroupLeaf {
+                        vm_id: vm_id.to_owned(),
+                        path,
+                        pids,
+                    });
+                }
+                Err(e) => {
+                    warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
+                }
+            }
+            unmount_under(subdir);
             if subdir.join(m80_net_outbound::NETWORK_STATE_FILE).exists() {
                 if let Err(e) = cleanup_network(vm_id, run_root) {
                     warn!(vm_id, err = %e, "recover_stale_run_root: network cleanup failed");
                 }
-            }
-            if let Err(e) = m80_cgroup::cleanup_orphan_subtree(vm_id) {
-                warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
             }
         }
         None => {
@@ -513,6 +544,7 @@ fn remove_run_dir_with_network_cleanup<F>(
                 path = %subdir.display(),
                 "recover_stale_run_root: non-UTF-8 dir name; skipping cgroup cleanup"
             );
+            unmount_under(subdir);
         }
     }
     if let Err(e) = std::fs::remove_dir_all(subdir) {
@@ -520,6 +552,7 @@ fn remove_run_dir_with_network_cleanup<F>(
     } else {
         tracing::info!(path = %subdir.display(), "recover_stale_run_root: reaped orphan run-dir");
     }
+    Ok(())
 }
 
 /// SIGKILL any orphaned jailer / firecracker pid and poll until /proc/<pid>
@@ -780,7 +813,8 @@ done
             );
             calls.borrow_mut().push(vm_id.to_owned());
             Ok::<(), crate::NetworkHelperError>(())
-        });
+        })
+        .expect("run-dir cleanup");
 
         assert_eq!(calls.into_inner(), vec!["vm-net"]);
         assert!(!subdir.exists());
@@ -800,9 +834,59 @@ done
                 kind: m80_net_outbound::NetworkHelperFailureKind::OperationFailed,
                 detail: "synthetic cleanup failure".to_owned(),
             })
-        });
+        })
+        .expect("network cleanup failure remains best-effort");
 
         assert!(!subdir.exists());
+    }
+
+    #[test]
+    fn remove_run_dir_preserves_state_when_cgroup_has_live_pids() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let subdir = run_root.path().join("vm-live-cgroup");
+        std::fs::create_dir_all(&subdir).expect("run dir");
+        std::fs::write(subdir.join(m80_net_outbound::NETWORK_STATE_FILE), b"{}")
+            .expect("network state");
+        let cgroup_path = PathBuf::from("/sys/fs/cgroup/m80-firecracker/vm-live-cgroup");
+        let network_called = RefCell::new(false);
+
+        let err = remove_run_dir_with_cleanup(
+            run_root.path(),
+            &subdir,
+            |_vm_id, _cleanup_root| {
+                *network_called.borrow_mut() = true;
+                Ok::<(), crate::NetworkHelperError>(())
+            },
+            |vm_id| {
+                assert_eq!(vm_id, "vm-live-cgroup");
+                Err(m80_cgroup::CgroupError::LivePids {
+                    path: cgroup_path.clone(),
+                    pids: "4242".to_owned(),
+                })
+            },
+        )
+        .expect_err("live cgroup pids must fail recovery");
+
+        assert!(
+            matches!(
+                err,
+                FcError::StaleCgroupLeaf {
+                    ref vm_id,
+                    ref path,
+                    ref pids,
+                } if vm_id == "vm-live-cgroup" && *path == cgroup_path && pids == "4242"
+            ),
+            "expected stale cgroup leaf error, got {err:?}"
+        );
+        assert!(subdir.exists(), "run-dir must be preserved");
+        assert!(
+            subdir.join(m80_net_outbound::NETWORK_STATE_FILE).exists(),
+            "network-state evidence must be preserved"
+        );
+        assert!(
+            !*network_called.borrow(),
+            "network cleanup must not mutate state after live cgroup detection"
+        );
     }
 
     fn test_backend(run_root: &std::path::Path) -> Arc<Backend> {

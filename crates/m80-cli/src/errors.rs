@@ -77,7 +77,8 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::GuestdReadyTimeout { .. } => EXIT_GUESTD_READY,
         FcError::RunDirOwnershipAmbiguous { .. }
         | FcError::RunDirAlreadyOwned { .. }
-        | FcError::RunDirNotFound { .. } => EXIT_RUN_DIR_OWNERSHIP,
+        | FcError::RunDirNotFound { .. }
+        | FcError::StaleCgroupLeaf { .. } => EXIT_RUN_DIR_OWNERSHIP,
         FcError::IdleTimedOut => EXIT_IDLE_TIMED_OUT,
         FcError::LifetimeExpired { .. } => EXIT_LIFETIME_EXPIRED,
         FcError::OneShotConsumed => EXIT_ONE_SHOT_CONSUMED,
@@ -519,6 +520,17 @@ mod tests {
             run_dir: "/run/m80/x".into(),
         };
         assert_eq!(exit_code_for(&err), EXIT_RUN_DIR_OWNERSHIP);
+    }
+
+    #[test]
+    fn stale_cgroup_leaf_is_10() {
+        let err = FcError::StaleCgroupLeaf {
+            vm_id: "vm0".into(),
+            path: "/sys/fs/cgroup/m80-firecracker/vm0".into(),
+            pids: "4242".into(),
+        };
+        assert_eq!(exit_code_for(&err), EXIT_RUN_DIR_OWNERSHIP);
+        assert_eq!(envelope(&err).variant, "StaleCgroupLeaf");
     }
 
     #[test]

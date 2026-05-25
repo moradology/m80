@@ -773,6 +773,10 @@ an invariant fails closed.
   a VM-readiness exit class, distinct from host infrastructure.
 - `FcError::RunDirOwnershipAmbiguous`, `RunDirAlreadyOwned`, and
   `RunDirNotFound` distinguish run-root admission/walk failures.
+- `FcError::StaleCgroupLeaf { vm_id, path, pids }` is returned by explicit
+  stale run-root recovery when the matching cgroup leaf still has live pids.
+  The run-dir and network-state evidence are preserved so a later same-`vm_id`
+  launch cannot adopt those pids into the new VM's cgroup.
 - `FcError::AdmissionRefused` is raised by `Backend::admit()` when the backend
   has no admission permits available. Admission is non-blocking; callers decide
   whether and when to retry.
