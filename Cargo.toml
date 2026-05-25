@@ -7,7 +7,7 @@ exclude = ["support/m80-close-range"]
 version = "0.2.20"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/nathanp/m80"
+repository = "https://github.com/moradology/m80"
 rust-version = "1.82"
 
 [profile.release]
