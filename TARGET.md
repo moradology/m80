@@ -60,21 +60,20 @@ In priority order. Update freely as work lands.
    pre-test reaper + ignored-test taxonomy. Without these, the privileged
    battery is "manually-provable" not "routinely-enforced", which means
    gate (2) above is hard to verify in practice.
-2. **`m80-16hx7.9` → `m80-16hx7.10` → `m80-16hx7.11` — public-release
-   proof chain.** First provision a nested-virt L1 runner on the bare-metal
-   AMD host, then land the isolated release-validation harness, then produce
-   the verified nested-KVM public-install smoke artifact. This is the shortest
-   path from "release scripts exist" to "a public user can install and run it".
-3. **`m80-16hx7.3` + `m80-16hx7.4` — privileged-test operability.** The
+2. **`m80-16hx7.3` + `m80-16hx7.4` — privileged-test operability.** The
    ignored-test taxonomy and pre-test reaper make real-KVM runs repeatable
-   enough to trust. Keep them near the front of the queue while the runner
-   path lands.
+   enough to trust. These are the next two blockers now that the nested-L1
+   release proof chain is closed.
+3. **`m80-16hx7.1` — reconcile or close the older privileged-runner task.**
+   The chosen strategy and concrete nested-L1 implementation landed through
+   `m80-16hx7.9`; inspect `.1` and either close it as superseded/covered or
+   narrow it to the remaining full-battery requirement.
 
-`m80-16hx7.1` overlaps the nested-runner work; re-triage it after
-`m80-16hx7.9` lands rather than building two runner stories. Children `.2`
-(artifact cache), `.5` (post-test cleanup verification), `.6` (structured
-reporting), and `.7` (CI workflow) can lag until the public-release proof
-chain is green.
+Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
+produced the nested-KVM public-install smoke artifact for `v0.2.20`. Children
+`.2` (artifact cache), `.5` (post-test cleanup verification), `.6` (structured
+reporting), and `.7` (CI workflow) can still lag until `.3`/`.4` make the
+privileged battery routine.
 
 ## Deferred (not v0.1, no calendar)
 
