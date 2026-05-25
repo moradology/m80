@@ -53,6 +53,12 @@ All notable changes to m80 are documented here. Format roughly follows
   model. Use explicit `mem_size_mib` sizing instead of guest-driver-mediated
   memory reclaim.
 
+### Documented — memory-scaling boundary
+
+- Documented that m80 v0.x does not expose runtime memory hotplug or general
+  writable pmem memory expansion. Existing `PmemLayer` support remains scoped
+  to bounded, read-only erofs-over-pmem content layers.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,
