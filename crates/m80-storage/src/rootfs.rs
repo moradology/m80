@@ -250,13 +250,33 @@ fn expected_template_metadata(size_bytes: u64) -> String {
 
 fn write_template_metadata(template: &Path, size_bytes: u64) -> Result<(), StorageError> {
     let meta = template_metadata_path(template);
+    let tmp = template_metadata_tmp_path(&meta);
     let expected = expected_template_metadata(size_bytes);
-    let mut file = File::create(&meta).map_err(|e| StorageError::OverlayTemplateCreateFailed {
-        path: meta.clone(),
+
+    let _ = std::fs::remove_file(&tmp);
+    let mut file = File::create(&tmp).map_err(|e| StorageError::OverlayTemplateCreateFailed {
+        path: tmp.clone(),
         err: e,
     })?;
-    file.write_all(expected.as_bytes())
-        .map_err(|e| StorageError::OverlayTemplateCreateFailed { path: meta, err: e })
+    if let Err(err) = file.write_all(expected.as_bytes()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(StorageError::OverlayTemplateCreateFailed { path: tmp, err });
+    }
+    if let Err(err) = file.sync_all() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(StorageError::OverlayTemplateCreateFailed { path: tmp, err });
+    }
+    drop(file);
+
+    if let Err(err) = std::fs::rename(&tmp, &meta) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(StorageError::OverlayTemplateCreateFailed { path: meta, err });
+    }
+    Ok(())
+}
+
+fn template_metadata_tmp_path(meta: &Path) -> PathBuf {
+    meta.with_extension(format!("meta.{}.tmp", std::process::id()))
 }
 
 fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageError> {
@@ -416,11 +436,34 @@ impl Drop for TemplateLock {
 
 #[cfg(test)]
 mod tests {
-    use super::{BYTE_COPY_CLONE_ARGS, REFLINK_CLONE_ARGS};
+    use super::{
+        expected_template_metadata, template_metadata_path, template_metadata_tmp_path,
+        write_template_metadata, BYTE_COPY_CLONE_ARGS, REFLINK_CLONE_ARGS,
+    };
 
     #[test]
     fn template_clone_commands_are_explicit() {
         assert_eq!(REFLINK_CLONE_ARGS, &["--reflink=always", "--sparse=auto"]);
         assert_eq!(BYTE_COPY_CLONE_ARGS, &["--reflink=never", "--sparse=auto"]);
+    }
+
+    #[test]
+    fn template_metadata_publish_replaces_tmp_with_final_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join(".rootfs-overlay-template-v1-4096.ext4");
+        let meta = template_metadata_path(&template);
+        let tmp = template_metadata_tmp_path(&meta);
+        std::fs::write(&tmp, "stale partial metadata").unwrap();
+
+        write_template_metadata(&template, 4096).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&meta).unwrap(),
+            expected_template_metadata(4096)
+        );
+        assert!(
+            !tmp.exists(),
+            "metadata temp file must be renamed away after successful publish"
+        );
     }
 }

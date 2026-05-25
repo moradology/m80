@@ -18,7 +18,9 @@ After sending `CONNECT <port>\n` the host reads a single acknowledgement line.
 Any line that does not start with `"OK "` is rejected as
 `VsockError::HandshakeFailed`. A well-formed ack has the form
 `OK <host_port>\n`; the host port value is present but not used further
-(Firecracker assigns it dynamically).
+(Firecracker assigns it dynamically). The ack line is bounded to 64 bytes and
+must include the newline terminator. Oversized or unterminated replies fail
+closed as `HandshakeFailed` before the host allocates an unbounded buffer.
 
 **Predecessor source:** `crates/sandbox/agent-sandbox-firecracker/src/vsock.rs:130-152`
 (`send_connect` ack parsing) and test `rejects_unexpected_connect_acknowledgement`.

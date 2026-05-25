@@ -11,10 +11,10 @@ use tempfile::TempDir;
 
 use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
-    CancelRequest, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming,
-    PAYLOAD_KIND_CANCEL_REQUEST,
+    CancelRequest, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, ProtoError,
+    RawEnvelope, PAYLOAD_KIND_CANCEL_REQUEST,
 };
-use m80_vsock::Channel;
+use m80_vsock::{Channel, VsockError};
 
 fn sample_request() -> ExecRequest {
     ExecRequest {
@@ -88,6 +88,40 @@ fn cloned_sender_writes_control_frame_on_same_connection() {
     server.join().unwrap();
 }
 
+#[test]
+fn cloned_sender_can_send_while_channel_waits_to_recv() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+
+    let server = std::thread::spawn(move || {
+        let mut reader = accept_and_handshake(&listener, 22222);
+
+        let received = m80_proto::read_raw_frame(&mut reader).unwrap();
+        assert_eq!(received.kind, PAYLOAD_KIND_CANCEL_REQUEST);
+
+        let response = Envelope::new(sample_response());
+        m80_proto::write_frame(reader.get_mut(), &response).unwrap();
+    });
+
+    let mut channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
+    let mut sender = channel.try_clone_sender().unwrap();
+    let sender_thread = std::thread::spawn(move || {
+        sender
+            .send(&Envelope::new(CancelRequest {
+                request_id: "req-concurrent".to_owned(),
+            }))
+            .unwrap();
+    });
+
+    let response: Envelope<ExecResponse> = channel.recv().unwrap();
+    assert_eq!(response.payload.status, ExecStatus::Completed);
+
+    sender_thread.join().unwrap();
+    drop(channel);
+    server.join().unwrap();
+}
+
 /// Client sends a request; server echoes it back as a response envelope;
 /// client receives and verifies the response.
 #[test]
@@ -119,6 +153,35 @@ fn send_recv_envelope_round_trips() {
     assert_eq!(response.payload.status, ExecStatus::Completed);
     assert_eq!(response.payload.stdout, b"hello\n");
     assert_eq!(response.payload.exit_code, Some(0));
+
+    drop(channel);
+    server.join().unwrap();
+}
+
+#[test]
+fn unknown_envelope_kind_string_is_rejected_on_typed_recv() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+
+    let server = std::thread::spawn(move || {
+        let mut reader = accept_and_handshake(&listener, 22222);
+        let envelope = Envelope::new(sample_response());
+        let mut raw = RawEnvelope::from_typed(&envelope);
+        raw.kind = "unknown_response_kind".to_owned();
+        m80_proto::write_raw_frame(reader.get_mut(), raw).unwrap();
+    });
+
+    let mut channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
+    let err = channel.recv::<ExecResponse>().unwrap_err();
+
+    match err {
+        VsockError::Proto(ProtoError::MalformedPayload(msg)) => {
+            assert!(msg.contains("payload kind mismatch"));
+            assert!(msg.contains("unknown_response_kind"));
+        }
+        other => panic!("expected malformed payload kind mismatch, got {other:?}"),
+    }
 
     drop(channel);
     server.join().unwrap();

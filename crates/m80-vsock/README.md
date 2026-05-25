@@ -22,7 +22,8 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
   VsockError>` connects to the supplied Firecracker UDS, applies five-second
   read/write timeouts only for the `CONNECT <guest_port>` / `OK ...`
   handshake, clears those socket timeouts, and returns a duplex channel that
-  reads/writes `m80-proto::Envelope` frames.
+  reads/writes `m80-proto::Envelope` frames. The `OK` acknowledgement line is
+  capped at 64 bytes and must include its newline terminator.
 - The caller supplies the full host UDS path. `m80-vsock` does not construct
   run-root paths or assume layout above that socket.
 - Readiness is already established before `Channel::open_uds_only` is called.

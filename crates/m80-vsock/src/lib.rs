@@ -21,6 +21,10 @@ use m80_proto::{Envelope, Payload, ProtoError, RawEnvelope};
 /// handshake. Application traffic may legitimately stay idle for longer than
 /// this; exec duration is enforced by guestd and optional host deadlines.
 const BRIDGE_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum CONNECT acknowledgement line accepted from Firecracker's vsock
+/// bridge. The expected line is `OK <host_port>\n`; this cap keeps malformed
+/// peers from growing an unbounded `String` before the channel exists.
+const MAX_HANDSHAKE_LINE_BYTES: u64 = 64;
 /// Maximum socket read timeout used while enforcing an explicit receive
 /// deadline. The absolute deadline still owns the final budget.
 const DEADLINE_READ_POLL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -154,10 +158,7 @@ impl Channel {
         // Read OK response.
         let reader_stream = stream.try_clone().map_err(|e| io_err(&host_uds_arc, e))?;
         let mut buf_reader = BufReader::new(reader_stream);
-        let mut ack = String::new();
-        buf_reader
-            .read_line(&mut ack)
-            .map_err(|e| io_err(&host_uds_arc, e))?;
+        let ack = read_handshake_ack(&mut buf_reader, &host_uds_arc)?;
         if debug_wire::is_enabled("vsock") {
             tracing::trace!(direction = "in", msg = ack.trim(), "vsock handshake");
         }
@@ -280,6 +281,22 @@ impl Channel {
         }
         result
     }
+}
+
+fn read_handshake_ack(
+    buf_reader: &mut BufReader<UnixStream>,
+    host_uds: &Arc<Path>,
+) -> Result<String, VsockError> {
+    let mut ack = Vec::new();
+    let mut limited = buf_reader.take(MAX_HANDSHAKE_LINE_BYTES + 1);
+    limited
+        .read_until(b'\n', &mut ack)
+        .map_err(|e| io_err(host_uds, e))?;
+
+    if ack.is_empty() || ack.len() > MAX_HANDSHAKE_LINE_BYTES as usize || !ack.ends_with(b"\n") {
+        return Err(VsockError::HandshakeFailed);
+    }
+    String::from_utf8(ack).map_err(|_| VsockError::HandshakeFailed)
 }
 
 struct DeadlineReader<'a> {

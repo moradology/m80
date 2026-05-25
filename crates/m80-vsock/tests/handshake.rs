@@ -33,6 +33,35 @@ fn bad_handshake_reply_returns_handshake_failed() {
 }
 
 #[test]
+fn ok_handshake_without_newline_is_rejected() {
+    let (_dir, path, server) =
+        spawn_fake_firecracker_uds(HandshakeBehavior::OkWithoutNewline { port: 12345 });
+
+    let err = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap_err();
+
+    assert!(
+        matches!(err, VsockError::HandshakeFailed),
+        "expected HandshakeFailed, got {err:?}"
+    );
+
+    server.join().unwrap();
+}
+
+#[test]
+fn oversized_ok_handshake_line_is_rejected() {
+    let (_dir, path, server) = spawn_fake_firecracker_uds(HandshakeBehavior::OversizedOkLine);
+
+    let err = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap_err();
+
+    assert!(
+        matches!(err, VsockError::HandshakeFailed),
+        "expected HandshakeFailed, got {err:?}"
+    );
+
+    server.join().unwrap();
+}
+
+#[test]
 fn connect_to_nonexistent_uds_returns_io_error() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("does_not_exist.sock");

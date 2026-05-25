@@ -58,8 +58,10 @@ base from one set of pages.
   `prepare`; this function does not re-verify.** The template is
   formatted once with `mkfs.ext4 -F`, trimmed with `fallocate -d`, and
   guarded by metadata recording schema version, ext4 identity, size,
-  mkfs command, and postprocess command; a stale or wrong-size template
-  is a hard error.
+  mkfs command, and postprocess command. Metadata is written to a
+  same-directory temp file and atomically renamed into place, so a partial
+  sidecar is never the published template identity. A stale or wrong-size
+  template is a hard error.
 - `Rootfs::new_at(base: &Path, overlay: &Path) -> Rootfs` — wraps a pair
   of existing paths without allocating; for tests and recovery scenarios.
 - `Rootfs::base_path(&self) -> &Path` — the shared, read-only base ext4.

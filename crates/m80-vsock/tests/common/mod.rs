@@ -14,6 +14,10 @@ use tempfile::TempDir;
 pub(crate) enum HandshakeBehavior {
     /// Complete the handshake (`OK N\n`) then hold the connection briefly.
     OkThenHold { port: u32, hold_ms: u64 },
+    /// Send `OK N` without the terminating newline.
+    OkWithoutNewline { port: u32 },
+    /// Send an `OK` line larger than the accepted handshake cap.
+    OversizedOkLine,
     /// Complete the handshake with a bad reply (triggers `HandshakeFailed`).
     BadReply,
 }
@@ -48,6 +52,20 @@ pub(crate) fn spawn_fake_firecracker_uds(
                     .write_all(reply.as_bytes())
                     .expect("write OK");
                 std::thread::sleep(Duration::from_millis(hold_ms));
+            }
+            HandshakeBehavior::OkWithoutNewline { port } => {
+                let reply = format!("OK {port}");
+                reader
+                    .get_mut()
+                    .write_all(reply.as_bytes())
+                    .expect("write OK without newline");
+            }
+            HandshakeBehavior::OversizedOkLine => {
+                let reply = format!("OK {}\n", "1".repeat(128));
+                reader
+                    .get_mut()
+                    .write_all(reply.as_bytes())
+                    .expect("write oversized OK");
             }
             HandshakeBehavior::BadReply => {
                 reader
