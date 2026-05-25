@@ -59,6 +59,13 @@ All notable changes to m80 are documented here. Format roughly follows
   writable pmem memory expansion. Existing `PmemLayer` support remains scoped
   to bounded, read-only erofs-over-pmem content layers.
 
+### Documented — production operator runbooks
+
+- Added production deployment runbooks for host hardware, host kernel posture,
+  speculative-execution threat model, MMDS non-use, and trusted-tenant
+  preflight overrides. README now links the full operator set from a dedicated
+  production deployment section.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,

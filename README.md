@@ -117,15 +117,30 @@ The operator/test-only `m80 quickstart --no-run` path does not generate the
 host-binaries manifest; run `m80 preflight` next to get the host prerequisite
 diagnostic before launching.
 
-Production operators should also read
-[`docs/ops/host-setup.md`](docs/ops/host-setup.md) and
-[`docs/ops/host-tuning.md`](docs/ops/host-tuning.md).
-
 ## How It Works
 
 `m80 run` wraps one process in one Firecracker microVM. The process still looks
 like a normal command to the caller: stdin goes in, stdout/stderr/exit come
 back, and m80 handles the VM setup and teardown around it.
+
+## Production Deployment
+
+Production operators should read:
+
+- [`docs/ops/host-setup.md`](docs/ops/host-setup.md) for artifact ownership,
+  runtime privilege, and build/deploy/run identity separation.
+- [`docs/ops/host-hardware.md`](docs/ops/host-hardware.md) for ECC/TRR memory
+  and host hardware assumptions.
+- [`docs/ops/host-kernel-config.md`](docs/ops/host-kernel-config.md) for
+  microcode, modules, host cmdline, and cgroup-favordynmods posture.
+- [`docs/ops/threat-model.md`](docs/ops/threat-model.md) for the operator-owned
+  side of the Firecracker/KVM threat model.
+- [`docs/ops/mmds-non-use.md`](docs/ops/mmds-non-use.md) for why m80 does not
+  expose Firecracker MMDS.
+- [`docs/ops/preflight-overrides.md`](docs/ops/preflight-overrides.md) for
+  trusted-tenant and development preflight overrides.
+- [`docs/ops/host-tuning.md`](docs/ops/host-tuning.md) for THP, KVM halt-poll,
+  CPU governor, and network sysctl tuning.
 
 ## Diagnostics
 
