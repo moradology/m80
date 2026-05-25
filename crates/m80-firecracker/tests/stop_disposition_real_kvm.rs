@@ -102,6 +102,28 @@ fn stop_disposition_force_records_force_kill() {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
+fn implicit_drop_force_kills_before_resource_teardown() {
+    let request_id = "req-drop-order";
+    let vm_id = common::unique_vm_id("drop-order");
+    let (backend, running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    drop(running);
+
+    wait_dead(firecracker_pid);
+    assert_no_mountinfo_references(&run_dir);
+    backend
+        .recover_stale_run_root(true)
+        .expect("recover run-dir after implicit drop");
+    assert!(
+        !run_dir.exists(),
+        "stale recovery must remove dropped sandbox run-dir: {}",
+        run_dir.display()
+    );
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
 fn forced_kill_ambiguous_blocks_release() {
     let request_id = "req-force-kill-ambiguous";
     let vm_id = common::unique_vm_id("fk-ambig");
@@ -255,6 +277,19 @@ fn wait_dead(pid: u32) {
     assert!(
         !process_exists(pid),
         "firecracker pid {pid} should be gone after stop disposition"
+    );
+}
+
+fn assert_no_mountinfo_references(path: &Path) {
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").expect("host mountinfo");
+    let needle = path.as_os_str().as_encoded_bytes();
+    assert!(
+        !mountinfo
+            .as_bytes()
+            .windows(needle.len())
+            .any(|w| w == needle),
+        "host mountinfo still references {} after implicit drop:\n{mountinfo}",
+        path.display()
     );
 }
 

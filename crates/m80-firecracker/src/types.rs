@@ -576,6 +576,25 @@ impl Drop for ForceKillGuard {
 /// }
 /// ```
 pub struct RunningSandbox {
+    // FIELD ORDER IS LOAD-BEARING.
+    //
+    // Rust drops fields in declaration order. If a caller abandons
+    // RunningSandbox without stop()/force_kill(), fallback teardown must run
+    // before any foundation resource tears itself down:
+    // 1. kill_guard: signal watcher, SIGKILL firecracker/jailer, unmount
+    //    snapshot bind.
+    // 2. watcher_thread: detach only after the watcher has been asked to stop.
+    // 3. cgroup: kill/rmdir after the VM process has been killed.
+    // 4. jail: unmount/remove the chroot after process and cgroup cleanup.
+    /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
+    /// they perform their own teardown, so Drop is a no-op on the happy path.
+    pub(crate) kill_guard: ForceKillGuard,
+    /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
+    pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
+    /// Cgroup subtree (Some if UnifiedV2 mode).
+    pub(crate) cgroup: Option<m80_cgroup::Subtree>,
+    /// The materialized jailer chroot.
+    pub(crate) jail: MaterializedJail,
     /// VM identifier.
     pub(crate) vm_id: String,
     /// Opaque request id for launch/stop diagnostics when one was supplied by
@@ -583,12 +602,8 @@ pub struct RunningSandbox {
     pub(crate) request_id: Option<String>,
     /// Per-VM run directory.
     pub(crate) run_dir: PathBuf,
-    /// The materialized jailer chroot.
-    pub(crate) jail: MaterializedJail,
     /// Active-use markers for shared pmem image-store artifacts.
     pub(crate) shared_pmem_refs: Vec<m80_image_store::SharedImageRef>,
-    /// Cgroup subtree (Some if UnifiedV2 mode).
-    pub(crate) cgroup: Option<m80_cgroup::Subtree>,
     /// Per-VM rootfs clone.
     pub(crate) rootfs: Rootfs,
     /// Scratch image (Some if workspace is configured).
@@ -634,17 +649,12 @@ pub struct RunningSandbox {
     /// Signal from `stop` / `force_kill` to the watcher thread to exit.
     /// Stop paths store with `Release`; the watcher loads with `Acquire`.
     pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
-    /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
-    pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
     /// Optional diagnostics writer for `<run_dir>/diagnostics.jsonl`.
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
     /// Number of preallocated hotplug slots PUT before instance start.
     pub(crate) preallocated_drive_slots: u8,
     pub(crate) one_shot: bool,
     pub(crate) one_shot_consumed: bool,
-    /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
-    /// they perform their own teardown, so Drop is a no-op on the happy path.
-    pub(crate) kill_guard: ForceKillGuard,
     /// Whether this VM owns outbound-network residue that delete must reap.
     pub(crate) network_cleanup: bool,
 }
@@ -790,6 +800,38 @@ pub(crate) enum RealizedNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn running_sandbox_field_order_keeps_implicit_drop_fail_closed() {
+        let source = include_str!("types.rs");
+        let body = source
+            .split("pub struct RunningSandbox {")
+            .nth(1)
+            .and_then(|rest| rest.split("\n}\n\nimpl RunningSandbox").next())
+            .expect("RunningSandbox source body");
+
+        let first_field = body
+            .lines()
+            .find(|line| line.trim_start().starts_with("pub(crate)"))
+            .expect("first RunningSandbox field");
+        assert!(
+            first_field.contains("kill_guard"),
+            "kill_guard must be the first RunningSandbox field so implicit Drop force-kills before other resources"
+        );
+
+        let kill_guard = body
+            .find("pub(crate) kill_guard")
+            .expect("kill_guard field");
+        let watcher = body
+            .find("pub(crate) watcher_thread")
+            .expect("watcher_thread field");
+        let cgroup = body.find("pub(crate) cgroup").expect("cgroup field");
+        let jail = body.find("pub(crate) jail").expect("jail field");
+        assert!(
+            kill_guard < watcher && watcher < cgroup && cgroup < jail,
+            "RunningSandbox implicit Drop order must be kill_guard -> watcher_thread -> cgroup -> jail"
+        );
+    }
 
     #[test]
     fn running_sandbox_fc_metrics_path_uses_jail_root_layout() {
