@@ -10,6 +10,7 @@ from pathlib import Path
 
 from quickstart_snippets import quickstart_smoke_argv, quickstart_smoke_command
 from release_url_contract import release_asset_url
+from release_common import require
 
 
 SCHEMA_VERSION = 1
@@ -376,11 +377,6 @@ def require_positive_int(obj: dict, key: str, label: str) -> int:
     value = obj.get(key)
     require(isinstance(value, int) and value > 0, f"{label} {key} must be a positive integer")
     return value
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

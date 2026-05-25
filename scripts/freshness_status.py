@@ -14,6 +14,7 @@ from typing import Any
 from quickstart_snippets import public_command_inventory
 from release_url_contract import public_release_root
 from stable_release_channel import REQUIRED_PUBLIC_ASSETS, public_asset_role
+from release_common import require
 
 
 SCHEMA_VERSION = 1
@@ -620,11 +621,6 @@ def relative_artifact_path(root: Path, path: Path, label: str) -> str:
 
 def sha256_ref(path: Path) -> str:
     return f"{SHA256_PREFIX}{hashlib.sha256(path.read_bytes()).hexdigest()}"
-
-
-def require(condition: object, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

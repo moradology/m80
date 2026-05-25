@@ -28,6 +28,17 @@ class ReleaseLatestPromotionTest(unittest.TestCase):
             self.assertEqual(decision["highest_stable_public_tag"], "v1.2.4")
             self.assertEqual(decision["remote_inventory_digest"], digest(paths.remote_inventory))
 
+    def test_wrapped_release_list_is_accepted(self) -> None:
+        with fixture(release_tag="v1.2.4") as paths:
+            paths.release_list.write_text(json.dumps({"releases": releases("v1.2.3", "v1.2.4")}))
+
+            result = run_promotion(paths)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            decision = json.loads(paths.out.read_text())
+            self.assertEqual(decision["decision"], "approved")
+            self.assertEqual(decision["highest_stable_public_tag"], "v1.2.4")
+
     def test_lower_stable_target_is_refused_without_rollback_receipt(self) -> None:
         with fixture(release_tag="v1.2.3") as paths:
             paths.release_list.write_text(json.dumps(releases("v1.2.3", "v1.2.4")))

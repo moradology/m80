@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+from release_common import parse_timestamp, require, sha256_file
 
 
 SCHEMA_VERSION = 6
@@ -1828,30 +1829,8 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
-def parse_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require(condition: object, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

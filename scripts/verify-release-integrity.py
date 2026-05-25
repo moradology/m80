@@ -13,6 +13,7 @@ import re
 import tomllib
 
 from release_url_contract import release_asset_url, release_repository
+from release_common import require, sha256_file
 
 
 SCHEMA_VERSION = 1
@@ -981,19 +982,6 @@ def workspace_package_version(repo_root: Path) -> str:
     with (repo_root / "Cargo.toml").open("rb") as f:
         cargo = tomllib.load(f)
     return cargo["workspace"]["package"]["version"]
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

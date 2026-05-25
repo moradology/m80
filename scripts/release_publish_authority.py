@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from release_common import require
 
 
 SCHEMA_VERSION = 1
@@ -530,11 +531,6 @@ def job_has_tag_guard(lines: list[str]) -> bool:
 
 def is_write_permission(level: str) -> bool:
     return level in {"write", "write-all"}
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from release_common import parse_timestamp
 
 
 SCHEMA_VERSION = 1
@@ -626,15 +627,6 @@ def require_sha256(value: object, label: str) -> None:
 
 def require_non_negative_int(value: object, label: str) -> None:
     check(isinstance(value, int) and value >= 0, f"{label} must be a non-negative integer")
-
-
-def parse_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def utc_now() -> str:

@@ -138,7 +138,7 @@ def lint_workflow_dir(
             errors.extend(lint_release_publish_environment(path, lines))
             errors.extend(lint_release_mutation_authority(path, lines))
             errors.extend(lint_release_temp_isolation(path, text, lines))
-        if has_pull_request_event(lines) and SECRET_RE.search(text):
+        if has_event(lines, "pull_request") and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
         errors.extend(lint_configured_timeout_jobs(path, lines, timeout_budgets, seen_jobs))
     for workflow_name, job_id in sorted(set(timeout_budgets) - seen_jobs):
@@ -585,12 +585,12 @@ def lint_ci_changed_line_whitespace_check(path: Path, lines: list[str]) -> list[
     if (
         "fetch-depth: 0" not in workflow_text
         and "git diff --check" not in workflow_text
-        and not (has_event(lines, "push") and has_pull_request_event(lines))
+        and not (has_event(lines, "push") and has_event(lines, "pull_request"))
     ):
         return []
     if not has_event(lines, "push"):
         errors.append(f"{path}: CI workflow must run the whitespace check on push")
-    if not has_pull_request_event(lines):
+    if not has_event(lines, "pull_request"):
         errors.append(f"{path}: CI workflow must run the whitespace check on pull_request")
 
     diff_check_line = first_line_index_containing(lines, "git diff --check")
@@ -966,7 +966,7 @@ def lint_multiline_run_block_strictness(path: Path, lines: list[str]) -> list[st
         block_start = index + 1
         block_end = run_block_end(lines, block_start, run_indent)
         block = lines[block_start:block_end]
-        if run_block_has_exception(lines, index, block):
+        if run_block_has_exception(block):
             continue
         first_command = first_run_block_command(block)
         if first_command is None:
@@ -991,8 +991,7 @@ def run_block_end(lines: list[str], block_start: int, run_indent: int) -> int:
     return len(lines)
 
 
-def run_block_has_exception(lines: list[str], run_index: int, block: list[str]) -> bool:
-    del lines, run_index
+def run_block_has_exception(block: list[str]) -> bool:
     for line in block:
         stripped = line.strip()
         if not stripped:
@@ -1179,21 +1178,6 @@ def job_block_text(lines: list[str], job_id: str) -> list[str] | None:
         if current_job_id == job_id:
             return lines[start:end]
     return None
-
-
-def has_pull_request_event(lines: list[str]) -> bool:
-    for index, line in enumerate(lines):
-        if line.startswith("on:") and "pull_request" in line:
-            return True
-        if line.startswith("on:"):
-            for nested in lines[index + 1 :]:
-                if not nested.strip() or nested.lstrip().startswith("#"):
-                    continue
-                if not nested.startswith("  "):
-                    break
-                if nested.strip().startswith("pull_request:"):
-                    return True
-    return False
 
 
 def has_always_artifact_upload(lines: list[str]) -> bool:

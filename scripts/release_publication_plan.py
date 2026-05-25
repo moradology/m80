@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from release_common import parse_timestamp, require
 
 
 SCHEMA_VERSION = 1
@@ -375,22 +376,8 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
-def parse_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 class PlanError(Exception):

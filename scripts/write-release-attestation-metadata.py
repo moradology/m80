@@ -13,6 +13,7 @@ import subprocess
 
 from release_attestation_verifier import preflight_gh_attestation_verifier
 from release_url_contract import release_repository
+from release_common import require, sha256_file
 
 
 SCHEMA_VERSION = 1
@@ -227,19 +228,6 @@ def parse_timestamp(value: object, label: str) -> datetime:
 
 def format_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

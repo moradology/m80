@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 import urllib.error
 import urllib.request
+from release_common import sha256_file
 
 
 @dataclass(frozen=True)
@@ -192,14 +193,6 @@ def extract_actionlint_binary(archive: Path, binary: Path) -> None:
         raise ActionlintRunnerError(f"actionlint archive {archive} did not contain a file named actionlint") from err
     except tarfile.TarError as err:
         raise ActionlintRunnerError(f"failed to read verified actionlint archive {archive}: {err}") from err
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 if __name__ == "__main__":

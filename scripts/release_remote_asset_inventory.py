@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from release_common import parse_timestamp, require, sha256_file
 
 
 SCHEMA_VERSION = 1
@@ -146,7 +147,6 @@ def main() -> int:
             metadata_path=metadata_path,
             assets_metadata_path=assets_metadata_path,
         )
-        rerun_preflight_ok = False
         if args.require_rerun_preflight:
             verify_rerun_preflight(
                 inventory,
@@ -157,7 +157,6 @@ def main() -> int:
                 build_handoff_path=build_handoff_path,
                 publish_receipt_path=publish_receipt_path,
             )
-            rerun_preflight_ok = True
     except SystemExit as exc:
         if not args.require_rerun_preflight or isinstance(exc.code, int):
             raise
@@ -172,7 +171,7 @@ def main() -> int:
                 publish_receipt_path=publish_receipt_path,
             )
         ) from exc
-    if rerun_preflight_ok:
+    if args.require_rerun_preflight:
         print("rerun preflight recovery_class=safe_identical_rerun")
         print("rerun preflight recovery_command=none")
     print(f"remote release asset inventory ok: {inventory_path}")
@@ -630,15 +629,6 @@ def require_timestamp(value: object, label: str) -> str:
     return value  # type: ignore[return-value]
 
 
-def parse_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -787,19 +777,6 @@ def file_ref(path: Path) -> dict:
         "sha256": f"sha256:{sha256_file(path)}",
         "size_bytes": path.stat().st_size,
     }
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

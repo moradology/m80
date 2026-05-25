@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from release_common import parse_timestamp
 
 
 SCHEMA_VERSION = 1
@@ -528,15 +529,6 @@ def first_bool(obj: dict[str, Any], *keys: str) -> bool | None:
         if isinstance(value, bool):
             return value
     return None
-
-
-def parse_timestamp(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def file_digest(path: Path) -> str:

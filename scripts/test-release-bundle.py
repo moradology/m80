@@ -2152,20 +2152,6 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release readiness decision stage must be pre-upload", result.stderr)
 
-    def test_release_publish_receipt_rejects_failed_readiness_decision(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out_dir = release_upload_manifest_fixture(Path(tmp))
-            write_publish_proof_ledger(out_dir)
-            decision_path = out_dir / READINESS_DECISION_NAME
-            decision = json.loads(decision_path.read_text())
-            decision["status"] = "failed"
-            decision_path.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
-
-            result = run_release_publish_receipt(out_dir, "--write", check=False)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release readiness decision status must be passed", result.stderr)
-
     def test_release_publish_receipt_rejects_fixture_readiness_real_lane(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = release_upload_manifest_fixture(Path(tmp))

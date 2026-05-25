@@ -9,6 +9,7 @@ from pathlib import Path
 
 from quickstart_snippets import quickstart_smoke_argv, quickstart_smoke_command
 from release_url_contract import release_asset_url
+from release_common import require
 
 
 HOSTLESS_SUMMARY = "hostless release fixture; not a real-KVM run-smoke proof"
@@ -107,11 +108,6 @@ def read_json(path: Path, label: str) -> dict:
 def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     path.chmod(0o644)
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

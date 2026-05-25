@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+from release_common import require
 
 
 LEDGER_SCHEMA_VERSION = 2
@@ -633,11 +634,6 @@ def require_positive_int_string(value: object, label: str) -> str:
 def require_non_negative_int(value: object, label: str) -> int:
     require(isinstance(value, int) and value >= 0, f"{label} must be a nonnegative integer")
     return value
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

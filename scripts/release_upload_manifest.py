@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from release_common import require, sha256_file
 
 
 SCHEMA_VERSION = 2
@@ -465,19 +466,6 @@ def read_sha256s(path: Path) -> dict[str, str]:
         result[name] = digest
     require(result, "release upload SHA256SUMS must not be empty")
     return result
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":

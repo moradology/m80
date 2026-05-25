@@ -19,6 +19,7 @@ import tempfile
 import tomllib
 
 from release_url_contract import public_release_root, release_asset_url, release_repository
+from release_common import require
 
 
 BUNDLE_SCHEMA_VERSION = 1
@@ -1157,11 +1158,6 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise SystemExit(message)
 
 
 if __name__ == "__main__":
