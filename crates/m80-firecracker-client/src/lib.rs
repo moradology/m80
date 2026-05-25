@@ -520,6 +520,37 @@ pub struct NetworkInterfaceConfig {
     /// Optional guest MAC address.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest_mac: Option<String>,
+    /// Optional receive-side rate limiter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rx_rate_limiter: Option<RateLimiterConfig>,
+    /// Optional transmit-side rate limiter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_rate_limiter: Option<RateLimiterConfig>,
+}
+
+/// Firecracker token-bucket rate limiter config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenBucketConfig {
+    /// Total number of tokens the bucket can hold.
+    pub size: u64,
+    /// Optional initial burst budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_time_burst: Option<u64>,
+    /// Milliseconds required to refill the bucket.
+    pub refill_time: u64,
+}
+
+/// Firecracker I/O rate limiter config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimiterConfig {
+    /// Optional bytes-per-refill token bucket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth: Option<TokenBucketConfig>,
+    /// Optional operations-per-refill token bucket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ops: Option<TokenBucketConfig>,
 }
 
 /// VM running state — used with PATCH `/vm`.

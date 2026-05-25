@@ -57,6 +57,11 @@ without inheriting m80's lifecycle assumptions.
   native logger path and optional formatting/verbosity fields for `PUT /logger`.
 - `MetricsConfig` — Firecracker native JSON metrics output path for
   `PUT /metrics`.
+- `RateLimiterConfig` and `TokenBucketConfig` — Firecracker network-interface
+  RX/TX rate limiter buckets used by `NetworkInterfaceConfig`. The pinned
+  Firecracker `v1.15.1` REST schema exposes `rx_rate_limiter` and
+  `tx_rate_limiter`; it does **not** expose `rx_queue_size` or
+  `tx_queue_size`.
 - `IoEngine { Sync, Async }` — optional Firecracker block-device I/O engine
   on `DriveConfig`.
 - `CacheType { Writeback, Unsafe }` — optional Firecracker block-device host
@@ -67,8 +72,9 @@ without inheriting m80's lifecycle assumptions.
 - `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
   `DriveConfig`, `PartialDriveConfig`, `PmemConfig`, `NetworkInterfaceConfig`,
-  `VsockConfig`, `LoggerConfig`, `MetricsConfig`, `CreateSnapshotConfig`,
-  `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`,
+  `VsockConfig`, `LoggerConfig`, `MetricsConfig`, `RateLimiterConfig`,
+  `TokenBucketConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
+  `MemBackendConfig`, `VsockOverride`,
   `FirecrackerVersion` (raw
   Firecracker API response).
 - `ClientError` — typed per-resource failure plus `Connect`, `Serialize`,
@@ -130,7 +136,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 - `tests/metrics_config_round_trip.rs` — URL, JSON shape, and typed 400 error
   mapping for `PUT /metrics`.
 - `tests/network_interface_config_round_trip.rs` — URL, optional-field
-  omission, and typed 400 error mapping for `PUT /network-interfaces/{id}`.
+  omission, RX/TX rate limiter JSON, and typed 400 error mapping for
+  `PUT /network-interfaces/{id}`.
 - `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
   `put_snapshot_create`, `put_snapshot_load`, and `get_version`: URL,
   required fields, optional-field omission, `resume_vm`, `vsock_override`,

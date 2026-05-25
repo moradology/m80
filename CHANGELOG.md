@@ -18,6 +18,16 @@ All notable changes to m80 are documented here. Format roughly follows
   Firecracker's native JSON metrics sink, and expose the host path through
   `RunningSandbox::fc_metrics_path()`.
 
+### Added — Firecracker network-interface rate limiters
+
+- Added `RateLimiterConfig` and `TokenBucketConfig` to
+  `m80-firecracker-client`, and exposed `rx_rate_limiter` / `tx_rate_limiter`
+  on `NetworkInterfaceConfig` while preserving the omitted-by-default wire
+  shape used by current m80 launches.
+- Corrected the stale queue-size task assumption: Firecracker `v1.15.1`
+  exposes network-interface rate limiters, not `rx_queue_size` or
+  `tx_queue_size` REST fields.
+
 ### Documented — jailer cgroup placement deferral
 
 - Documented why m80 does not forward Firecracker jailer `--cgroup` or

@@ -303,6 +303,8 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
     assert_eq!(nic.iface_id, "eth0");
     assert_eq!(nic.host_dev_name, "tfc123456789abc");
     assert_eq!(nic.guest_mac.as_deref(), Some("02:00:00:00:00:02"));
+    assert_eq!(nic.rx_rate_limiter, None);
+    assert_eq!(nic.tx_rate_limiter, None);
 
     let PrebootPut::EntropyDevice = &puts[5] else {
         panic!("entropy device PUT must follow network interface PUT");

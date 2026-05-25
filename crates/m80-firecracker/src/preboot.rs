@@ -168,6 +168,8 @@ pub(crate) fn plan_preboot_puts(
                 iface_id: "eth0".to_owned(),
                 host_dev_name: tap_name.clone(),
                 guest_mac: Some(guest_mac.clone()),
+                rx_rate_limiter: None,
+                tx_rate_limiter: None,
             }));
         }
         RealizedNetwork::NoEgress => {}
