@@ -168,6 +168,10 @@ m80 is a v0.x internal crate set with a closed call graph — we own every consu
 - **No catch-and-rewrap of I/O errors** that already say what failed. If you do reclassify (e.g., `NotFound` → a domain variant), do it uniformly — asymmetric reclassification hides which call site lost the file.
 - **No silent recovery** — no auto-creating parent dirs, no default-fallback-on-error. Surface the failure; let the caller decide.
 - **No premature abstraction.** Three near-identical lines beat a generic helper. A `Vec::push` loop beats a builder pattern.
+- **No virtio-balloon.** Firecracker supports balloon memory reclaim, but its
+  constraints depend on a trusted guest driver. m80 is a security sandbox; the
+  guest is untrusted. Balloon is explicitly out of scope; size memory with
+  `mem_size_mib` instead.
 - **No bundling failure scenarios into one test fn.** Each scenario is its own `#[test]`; first failure must not mask the rest.
 - **No tamper-and-restore disk patterns** when clone-and-mutate-the-struct gets equal coverage without coupling test order to filesystem state.
 - Audit-sweep agents must follow the sweep-ineligible classifier in

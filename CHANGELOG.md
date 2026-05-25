@@ -47,6 +47,12 @@ All notable changes to m80 are documented here. Format roughly follows
   `ApiSocketTimeout` now maps to the same host-infrastructure CLI recovery
   class, while `GuestdReadyTimeout` maps to a distinct VM-readiness exit code.
 
+### Documented — virtio-balloon non-goal
+
+- Documented virtio-balloon as out of scope for m80's untrusted-guest security
+  model. Use explicit `mem_size_mib` sizing instead of guest-driver-mediated
+  memory reclaim.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,
