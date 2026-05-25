@@ -40,7 +40,7 @@ pub(crate) const EXIT_CONFIG: i32 = 6;
 pub(crate) const EXIT_NOT_IMPLEMENTED: i32 = 7;
 /// Warm pool had no ready slot and does not cold-boot as fallback.
 pub(crate) const EXIT_POOL_EMPTY: i32 = 8;
-/// API socket or guestd ready handshake timed out.
+/// Generic timeout.
 pub(crate) const EXIT_TIMEOUT: i32 = 9;
 /// Run-dir ownership conflict or not found.
 pub(crate) const EXIT_RUN_DIR_OWNERSHIP: i32 = 10;
@@ -52,6 +52,10 @@ pub(crate) const EXIT_LIFETIME_EXPIRED: i32 = EXIT_TIMEOUT;
 pub(crate) const EXIT_ONE_SHOT_CONSUMED: i32 = 12;
 /// Recorded Firecracker process is dead before a new request.
 pub(crate) const EXIT_SANDBOX_DEAD: i32 = 13;
+/// Host infrastructure failed before guest readiness.
+pub(crate) const EXIT_HOST_INFRASTRUCTURE: i32 = 14;
+/// VM booted far enough for Firecracker but guestd never became ready.
+pub(crate) const EXIT_GUESTD_READY: i32 = 15;
 
 /// Map an [`FcError`] to its stable CLI exit code.
 ///
@@ -66,9 +70,11 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::InvalidState { .. } => EXIT_INVALID_STATE,
         FcError::Config(_) | FcError::InvalidVmId { .. } => EXIT_CONFIG,
         FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
-        FcError::ApiSocketTimeout { .. }
-        | FcError::GuestdReadyTimeout { .. }
-        | FcError::ExecTimeoutHost { .. } => EXIT_TIMEOUT,
+        FcError::ExecTimeoutHost { .. } => EXIT_TIMEOUT,
+        FcError::ApiSocketTimeout { .. } | FcError::HostInfrastructure { .. } => {
+            EXIT_HOST_INFRASTRUCTURE
+        }
+        FcError::GuestdReadyTimeout { .. } => EXIT_GUESTD_READY,
         FcError::RunDirOwnershipAmbiguous { .. }
         | FcError::RunDirAlreadyOwned { .. }
         | FcError::RunDirNotFound { .. } => EXIT_RUN_DIR_OWNERSHIP,
@@ -258,7 +264,7 @@ pub(crate) fn render_error(err: &FcError, json: bool) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use m80_firecracker::ConfigError;
+    use m80_firecracker::{ConfigError, HostFaultKind};
 
     use super::*;
 
@@ -433,6 +439,8 @@ mod tests {
             EXIT_TIMEOUT,
             EXIT_RUN_DIR_OWNERSHIP,
             EXIT_IDLE_TIMED_OUT,
+            EXIT_HOST_INFRASTRUCTURE,
+            EXIT_GUESTD_READY,
             EXIT_ONE_SHOT_CONSUMED,
             EXIT_SANDBOX_DEAD,
         ];
@@ -443,21 +451,39 @@ mod tests {
     }
 
     #[test]
-    fn api_socket_timeout_is_9() {
+    fn host_infrastructure_is_14() {
+        let err = FcError::HostInfrastructure {
+            kind: HostFaultKind::ApiSocketTimeout,
+            detail: "api socket did not appear".into(),
+        };
+        let env = envelope(&err);
+        assert_eq!(exit_code_for(&err), EXIT_HOST_INFRASTRUCTURE);
+        assert_eq!(env.variant, "HostInfrastructure");
+        assert_eq!(env.exit_code, EXIT_HOST_INFRASTRUCTURE);
+    }
+
+    #[test]
+    fn api_socket_timeout_is_host_infrastructure() {
         let err = FcError::ApiSocketTimeout {
             path: "/run/m80/firecracker.sock".into(),
             timeout: std::time::Duration::from_secs(5),
         };
-        assert_eq!(exit_code_for(&err), EXIT_TIMEOUT);
+        let env = envelope(&err);
+        assert_eq!(exit_code_for(&err), EXIT_HOST_INFRASTRUCTURE);
+        assert_eq!(env.variant, "ApiSocketTimeout");
+        assert_eq!(env.exit_code, EXIT_HOST_INFRASTRUCTURE);
     }
 
     #[test]
-    fn guestd_ready_timeout_is_9() {
+    fn guestd_ready_timeout_is_15() {
         let err = FcError::GuestdReadyTimeout {
             path: "/run/m80/vsock.sock_9000".into(),
             timeout: std::time::Duration::from_secs(60),
         };
-        assert_eq!(exit_code_for(&err), EXIT_TIMEOUT);
+        let env = envelope(&err);
+        assert_eq!(exit_code_for(&err), EXIT_GUESTD_READY);
+        assert_eq!(env.variant, "GuestdReadyTimeout");
+        assert_eq!(env.exit_code, EXIT_GUESTD_READY);
     }
 
     #[test]

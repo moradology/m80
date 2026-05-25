@@ -334,6 +334,18 @@ impl LifecycleFailureKind {
     ];
 }
 
+/// Host infrastructure fault class for failures that are reasonable to retry
+/// on a different host without changing guest inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostFaultKind {
+    /// Firecracker process creation failed before the API socket could exist.
+    FirecrackerStartFailed,
+    /// Firecracker did not expose its REST API socket within the launch budget.
+    ApiSocketTimeout,
+    /// The official jailer failed before it could exec Firecracker.
+    JailerExec,
+}
+
 /// Coarse recovery class for [`FcError`].
 ///
 /// This is intentionally smaller than the error enum. Callers can branch on
@@ -625,6 +637,14 @@ pub enum FcError {
         /// Launch budget that expired.
         timeout: Duration,
     },
+    /// Host infrastructure failed before m80 reached guest readiness.
+    #[error("host infrastructure fault {kind:?}: {detail}")]
+    HostInfrastructure {
+        /// Host fault bucket.
+        kind: HostFaultKind,
+        /// Human-readable detail with preserved source context.
+        detail: String,
+    },
     /// m80-guestd did not connect on the inverted-readiness socket within
     /// the launch/restore budget.
     #[error(
@@ -842,6 +862,7 @@ impl FcError {
             Self::PoolEmpty { .. } => "PoolEmpty",
             Self::InvalidState { .. } => "InvalidState",
             Self::ApiSocketTimeout { .. } => "ApiSocketTimeout",
+            Self::HostInfrastructure { .. } => "HostInfrastructure",
             Self::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
             Self::RunDirOwnershipAmbiguous { .. } => "RunDirOwnershipAmbiguous",
             Self::RunDirAlreadyOwned { .. } => "RunDirAlreadyOwned",
@@ -897,7 +918,7 @@ impl FcError {
             | Self::ExecTimeoutHost { .. }
             | Self::SandboxDead { .. }
             | Self::ApiSocketTimeout { .. }
-            | Self::GuestdReadyTimeout { .. }
+            | Self::HostInfrastructure { .. }
             | Self::HostIo { .. }
             | Self::WarmPoolFillFailed { .. }
             | Self::KillFailed { .. }
@@ -910,6 +931,7 @@ impl FcError {
             | Self::PostRestoreHook(_)
             | Self::TenantIdentityMismatch { .. }
             | Self::WarmReadyProbeRejected { .. }
+            | Self::GuestdReadyTimeout { .. }
             | Self::IdleTimedOut
             | Self::LifetimeExpired { .. } => FcErrorKind::GuestOutcome,
 

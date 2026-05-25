@@ -32,7 +32,7 @@ pub use config::{
 };
 pub use error::{
     CapabilityDropError, CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError,
-    DisconnectCause, FcError, FcErrorKind, LifecycleFailureKind, NetworkHelperError,
+    DisconnectCause, FcError, FcErrorKind, HostFaultKind, LifecycleFailureKind, NetworkHelperError,
     NetworkHelperOperation, StopDisposition, WireProtocolError, CLEANUP_AUTHORITY,
     CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
 };

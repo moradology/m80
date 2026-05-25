@@ -1,6 +1,6 @@
 //! Each `FcError` variant renders via `Display` without panic.
 
-use m80_firecracker::{ConfigError, FcError, FcErrorKind};
+use m80_firecracker::{ConfigError, FcError, FcErrorKind, HostFaultKind};
 
 #[test]
 fn admission_refused_displays() {
@@ -46,6 +46,20 @@ fn guestd_ready_timeout_is_typed() {
     let s = e.to_string();
     assert!(s.contains("vsock.sock_9000"), "got: {s}");
     assert!(s.contains("60s"), "got: {s}");
+}
+
+#[test]
+fn host_infrastructure_is_typed() {
+    let e = FcError::HostInfrastructure {
+        kind: HostFaultKind::ApiSocketTimeout,
+        detail: "firecracker.sock did not appear".into(),
+    };
+    let s = e.to_string();
+    assert!(s.contains("ApiSocketTimeout"), "got: {s}");
+    assert!(s.contains("firecracker.sock"), "got: {s}");
+    assert_eq!(e.variant_name(), "HostInfrastructure");
+    assert_eq!(e.kind(), FcErrorKind::Transient);
+    assert!(e.is_retryable());
 }
 
 #[test]
@@ -187,6 +201,18 @@ fn api_socket_timeout_is_retryable_transient() {
 
     assert_eq!(e.kind(), FcErrorKind::Transient);
     assert!(e.is_retryable());
+    assert!(!e.is_user_error());
+}
+
+#[test]
+fn guestd_ready_timeout_is_guest_outcome_not_retryable() {
+    let e = FcError::GuestdReadyTimeout {
+        path: "/run/m80/vm/vsock.sock_9000".into(),
+        timeout: std::time::Duration::from_secs(60),
+    };
+
+    assert_eq!(e.kind(), FcErrorKind::GuestOutcome);
+    assert!(!e.is_retryable());
     assert!(!e.is_user_error());
 }
 

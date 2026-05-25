@@ -41,6 +41,12 @@ All notable changes to m80 are documented here. Format roughly follows
   with `FcError::LifetimeExpired { limit }`, and the CLI maps that variant to
   exit code 9.
 
+### Added — host versus VM readiness fault split
+
+- Added `FcError::HostInfrastructure { kind, detail }` and `HostFaultKind`.
+  `ApiSocketTimeout` now maps to the same host-infrastructure CLI recovery
+  class, while `GuestdReadyTimeout` maps to a distinct VM-readiness exit code.
+
 ### Documented — host network sysctl tuning posture
 
 - Added operator guidance for host network sysctls to `docs/ops/host-tuning.md`,

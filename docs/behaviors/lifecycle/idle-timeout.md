@@ -120,7 +120,7 @@ at most 30 s, but in typical usage the watcher exits well before then.
 
 `FcError::IdleTimedOut` is a new variant on the `FcError` sum type. It has a
 non-empty `Display` ("sandbox idle timeout expired"). The CLI maps it to
-`EXIT_GENERIC` (exit code 1) in `m80-cli::errors`.
+`EXIT_IDLE_TIMED_OUT` (exit code 11) in `m80-cli::errors`.
 
 **Test:** `idle_timed_out_error_displays` — unit; verifies the variant's
 `Display` is non-empty.

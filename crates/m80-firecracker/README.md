@@ -733,9 +733,14 @@ an invariant fails closed.
   `.` / `..` and reserved run-root children (`.preserved`, `warm`). Shape and
   reserved-name rejections also run before the admission permit is acquired.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
-  its REST API socket during launch.
+  its REST API socket during launch. The CLI maps this to the
+  host-infrastructure exit class because retrying another host can be a
+  reasonable recovery policy.
+- `FcError::HostInfrastructure { kind, detail }` — host placement, jailer, or
+  Firecracker-start mechanics failed before m80 reached guest readiness.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect
-  on the inverted-readiness socket during launch/restore.
+  on the inverted-readiness socket during launch/restore. The CLI maps this to
+  a VM-readiness exit class, distinct from host infrastructure.
 - `FcError::RunDirOwnershipAmbiguous`, `RunDirAlreadyOwned`, and
   `RunDirNotFound` distinguish run-root admission/walk failures.
 - `FcError::AdmissionRefused` is raised by `Backend::admit()` when the backend
