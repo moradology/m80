@@ -1,7 +1,7 @@
 # m80 stripped-kernel builder
 #
 # Builds Linux 6.1.x LTS vmlinux with the m80-stripped.config keep/drop list.
-# Pinned to ubuntu:22.04 by digest for toolchain reproducibility.
+# Pinned to ubuntu:24.04 by digest for toolchain reproducibility.
 # Kernel source pin: v6.1.134 peeled commit 420102835862f49e...
 # Change KERNEL_COMMIT and re-run to pick up a new 6.1.x point release.
 
@@ -13,10 +13,13 @@ ARG KERNEL_COMMIT=420102835862f49ec15c545594278dc5d2712f42
 # Install build toolchain. No interactive prompts (DEBIAN_FRONTEND=noninteractive).
 ENV DEBIAN_FRONTEND=noninteractive
 RUN printf '%s\n' \
-    "deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ jammy main restricted universe multiverse" \
-    "deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ jammy-updates main restricted universe multiverse" \
-    "deb [check-valid-until=no] https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ jammy-security main restricted universe multiverse" \
-    > /etc/apt/sources.list
+    "deb [check-valid-until=no] http://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ noble main restricted universe multiverse" \
+    "deb [check-valid-until=no] http://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ noble-updates main restricted universe multiverse" \
+    "deb [check-valid-until=no] http://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/ noble-security main restricted universe multiverse" \
+    > /tmp/m80-snapshot.list \
+    && rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
+    && mv /tmp/m80-snapshot.list /etc/apt/sources.list \
+    && printf '%s\n' 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99m80-snapshot-bootstrap
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     bc \
@@ -28,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     git \
+    && rm -f /etc/apt/apt.conf.d/99m80-snapshot-bootstrap \
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch only the pinned commit — shallow fetch keeps the layer small without

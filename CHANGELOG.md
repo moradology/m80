@@ -5,6 +5,16 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — stripped-kernel PVH direct boot note
+
+- Enabled `CONFIG_PVH=y` in the stripped kernel config so Firecracker can
+  auto-select x86_64 PVH direct boot from the vmlinux ELF note. No
+  `/boot-source` schema change was added; Firecracker `v1.15.1` has no
+  explicit kernel-format request field.
+- Hardened the stripped-kernel Docker builder so it removes the base image's
+  mutable apt sources and installs packages from the pinned Ubuntu Noble
+  snapshot instead of accidentally falling back to live Ubuntu mirrors.
+
 ### Added — Firecracker 2 MiB huge-page opt-in
 
 - Added `HugePageConfig::Hugetlbfs2M` to `m80-firecracker-client` and

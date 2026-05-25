@@ -297,6 +297,31 @@ Stripped snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T10:08:58
 Interpretation: the stripped kernel is now boot-correct for both minimal and
 Ubuntu images. It buys about 100 ms on both cells, not the expected 500-700 ms.
 
+### PVH direct-boot note (m80-2ggw.5.2)
+
+Run date: 2026-05-25. Same minimal/idle real-KVM bench shape, comparing the
+previous stripped kernel against a rebuilt stripped kernel with `CONFIG_PVH=y`.
+Firecracker `v1.15.1` does not expose a `/boot-source` kernel-format field; it
+auto-selects PVH when the x86_64 vmlinux ELF contains the Xen
+`XEN_ELFNOTE_PHYS32_ENTRY` note.
+
+Before:
+`crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`.
+After:
+`crates/m80-image-build/kernels/vmlinux-m80-f5b946847df00e263974e4e6de1ce9b3b45a02680284a9d04913846e6f127ea4.bin`.
+
+| metric | previous stripped | PVH-note stripped | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 1632 ms | 1630 ms | -2 ms |
+| `phase_12a_instance_start` P50 | 21.369 ms | 18.458 ms | -2.911 ms |
+| `phase_12b_ready_accept` P50 | 942.973 ms | 944.467 ms | +1.494 ms |
+| success rate | 30/30 | 30/30 | unchanged |
+
+Decision: keep `CONFIG_PVH=y` for Firecracker kernel-policy alignment and
+because the rebuilt artifact now carries the PVH ELF note. Do not add a
+runtime `KernelFormat` / `pvh_boot` API; there is no Firecracker request field
+to mirror and the measured launch delta is not a useful optimization.
+
 ## Residual cold fresh launch profile (m80-w4vc)
 
 The cold-launch exploration summary is captured in

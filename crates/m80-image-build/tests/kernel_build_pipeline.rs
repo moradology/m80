@@ -211,6 +211,19 @@ fn stripped_config_disables_smp_for_single_vcpu_shape() {
 }
 
 #[test]
+fn stripped_config_enables_pvh_direct_boot_note() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_PVH=y"),
+        "Firecracker auto-selects PVH direct boot only when vmlinux carries the PVH ELF note"
+    );
+    assert!(
+        !cfg.lines().any(|line| line == "CONFIG_PVH=m"),
+        "PVH must be built in; Firecracker loads vmlinux directly before modules exist"
+    );
+}
+
+#[test]
 fn stripped_config_uses_low_tick_idle_timer_policy() {
     let cfg = committed_config_text();
     assert!(
@@ -335,8 +348,21 @@ fn kernel_builder_uses_snapshot_apt_sources() {
         "kernel builder must pin the Ubuntu package snapshot date"
     );
     assert!(
-        dockerfile.contains("https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"),
+        dockerfile.contains("http://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"),
         "kernel builder must install packages from the pinned snapshot mirror"
+    );
+    assert!(
+        dockerfile.contains("noble main restricted universe multiverse"),
+        "kernel builder base digest is Ubuntu 24.04, so the pinned snapshot suite must be noble"
+    );
+    assert!(
+        dockerfile.contains("rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources"),
+        "kernel builder must remove the base image's mutable default apt sources before apt-get update"
+    );
+    assert!(
+        dockerfile.contains("99m80-snapshot-bootstrap")
+            && dockerfile.contains("rm -f /etc/apt/apt.conf.d/99m80-snapshot-bootstrap"),
+        "snapshot HTTPS bootstrap must be explicit and removed after ca-certificates is installed"
     );
     assert!(
         !dockerfile.contains("archive.ubuntu.com"),

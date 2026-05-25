@@ -41,6 +41,7 @@ below is `=y`, not `=m`, absent, or explicitly disabled.
 | `CONFIG_RANDOM_TRUST_CPU` | present | Firecracker guest RNG item for supported Linux 5.10+ kernels. |
 | `CONFIG_HYPERVISOR_GUEST` | present | KVM guest support dependency group for x86_64. |
 | `CONFIG_KVM_GUEST` | present | x86_64 timekeeping and minimal boot requirement. |
+| `CONFIG_PVH` | present | Emits the x86 `XEN_ELFNOTE_PHYS32_ENTRY` note; Firecracker `v1.12+` auto-selects PVH direct boot when this note is present. |
 | `CONFIG_SERIAL_8250` | present | m80 uses `console=ttyS0` and early serial diagnostics. |
 | `CONFIG_SERIAL_8250_CONSOLE` | present | Firecracker boot-log option; m80 depends on serial visibility for debugging. |
 | `CONFIG_PRINTK` | present | Firecracker boot-log option; m80 depends on serial diagnostics. |

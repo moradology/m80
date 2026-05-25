@@ -227,13 +227,16 @@ The file is written in IMPL leaf `m80-ci9i.2`.
 
 ### Container spec
 
-- **Base:** `ubuntu:22.04` pinned by digest (not tag), so
+- **Base:** Ubuntu 24.04 pinned by digest (not tag), so
   `FROM ubuntu@sha256:<digest>` — resolved once at Dockerfile authoring time
   and recorded in the file. Prevents silent toolchain drift.
 - **Packages:** `build-essential bc flex bison libelf-dev libssl-dev
-  libncurses-dev wget ca-certificates`
-- **No network access at build time**: the kernel source tarball and config
-  are COPY'd into the container; the container performs only the build step.
+  libncurses-dev wget ca-certificates` from a pinned Noble snapshot. The
+  Dockerfile removes the base image's mutable apt sources before `apt-get
+  update`.
+- **Network access is pinned:** package install uses the pinned Noble snapshot,
+  and kernel source fetches only the immutable Linux commit named by
+  `KERNEL_COMMIT`.
 - **Determinism pins:**
   - `KBUILD_BUILD_TIMESTAMP=0` — strips timestamps from the vmlinux ELF.
   - `SOURCE_DATE_EPOCH=0` — aligns any date-embedding in helper tools.
@@ -373,7 +376,7 @@ Distilled from `docs/planning/perf-roadmap-extended.md §2.1`.
 | R2 | A stripped CONFIG drops a feature guestd depends on (e.g. AES-NI path through kernel crypto, HW-RNG starvation) | guestd panics or hangs on first crypto op | Smoke checkpoint (`m80-ci9i.3b`) runs `sha256sum /etc/os-release` inside guest and asserts correct output. `CONFIG_HW_RANDOM_VIRTIO=y` is in the keep-list. |
 | R3 | Boot latency save is less than expected (saves 200 ms instead of 500-700 ms) | BENCH (`m80-ci9i.4`) shows < 500 ms improvement | No mitigation — accept the data. The cumulative chain (storage pivot + snapshot/restore) still reaches sub-200 ms warm-pool target even with conservative kernel save. Document the actual number. |
 | R4 | Stripped kernel boots fine on test host (x86_64 Ryzen) but flakes on production host (AWS c5.metal) | Out-of-tree user report or CI on a different instance type | Document the test platform in this DESIGN. Commit to "boot-tested on x86_64 with KVM". Multi-arch and multi-platform support is a v0.3 concern per existing non-goals. |
-| R5 | Build environment drifts; vmlinux sha changes across builds without code changes | Manifest sha mismatch surprises developer | `m80-ci9i.2` build is deterministic: Ubuntu 22.04 pinned by digest, `KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`, fixed `KBUILD_BUILD_USER`/`HOST`. Same input twice must produce byte-identical vmlinux. |
+| R5 | Build environment drifts; vmlinux sha changes across builds without code changes | Manifest sha mismatch surprises developer | `m80-ci9i.2` build is deterministic: Ubuntu 24.04 pinned by digest, build tools from a pinned Noble snapshot, `KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`, fixed `KBUILD_BUILD_USER`/`HOST`. Same input twice must produce byte-identical vmlinux. |
 | R6 | Custom kernel receives a security CVE and the tree falls behind upstream LTS | Slow-burn CVE accumulation | Out of scope for v0.2. `m80-ci9i.5` DOCS records this explicit deferral: "kernel security hardening (CVE tracking, config audit) is deferred to v0.3." The 6.1 LTS track receives upstream security fixes; consuming them requires re-running the build pipeline, which is the operator's responsibility. |
 | R7 | `8250.nr_uarts=0` would suppress console and destroy boot-stage diagnostics | When anything fails post-strip, no output on ttyS0 | **Decided:** pin `nr_uarts=1` (see §6). The 50 ms saving from `=0` is not worth the diagnostic loss. This is a locked decision; not a mitigation. |
 

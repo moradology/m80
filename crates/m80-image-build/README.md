@@ -166,15 +166,17 @@ Linux 6.1.x LTS kernel via Docker:
 (build inputs, not vmlinux output — same config always produces same name).
 
 Files:
-- `kernel-builder/Dockerfile` — ubuntu:22.04 base pinned by digest; build
-  tools installed from a pinned Ubuntu snapshot; kernel source fetched by
-  immutable commit; determinism pins (`KBUILD_BUILD_TIMESTAMP=0`,
-  `SOURCE_DATE_EPOCH=0`).
+- `kernel-builder/Dockerfile` — Ubuntu 24.04 base pinned by digest; build
+  tools installed from a pinned Noble snapshot after removing the base image's
+  mutable apt sources; kernel source fetched by immutable commit; determinism
+  pins (`KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`).
 - `kernel-builder/m80-stripped.config` — canonical keep/drop config per
   `docs/design/stripped-kernel.md`, audited against Firecracker
   `v1.15.1` `docs/kernel-policy.md` in
   `docs/behaviors/kernel/config-completeness.md`. Contains Firecracker's
   required x86_64 legacy-MMIO built-ins for m80's selected boot shape,
+  `CONFIG_PVH=y` so Firecracker can auto-select x86_64 PVH direct boot from
+  the vmlinux ELF note,
   `CONFIG_OVERLAY_FS=y` and `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by
   m80-f2zc.5), built-in erofs support for `minimal-erofs`, built-in
   virtio-pmem / libnvdimm / filesystem DAX support for pmem-backed erofs
