@@ -11,7 +11,8 @@ use m80_firecracker::{
 
 use crate::args::{
     BugReportArgs, EgressMode, ImageAction, InstallArgs, InstallCleanupArgs, InstallStatusArgs,
-    OverlayCloneModeArg, QuickstartArgs, TemplateAction, UpdateArgs, WarmAction, WritebackMode,
+    NetAction, OverlayCloneModeArg, QuickstartArgs, TemplateAction, UpdateArgs, WarmAction,
+    WritebackMode,
 };
 use crate::config;
 use crate::errors;
@@ -529,6 +530,10 @@ pub(crate) fn cmd_template(action: TemplateAction, json: bool) -> anyhow::Result
     template::cmd_template(action, json)
 }
 
+pub(crate) fn cmd_net(action: NetAction, json: bool) -> anyhow::Result<i32> {
+    net::cmd_net(action, json)
+}
+
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json: bool) -> anyhow::Result<i32> {
     quickstart::cmd_quickstart(args, json)
 }
@@ -642,6 +647,7 @@ mod image;
 mod install;
 mod install_cleanup;
 mod install_status;
+mod net;
 mod preflight;
 mod proto_json;
 mod pty;

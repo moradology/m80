@@ -127,6 +127,30 @@ fn help_cleanup() {
 }
 
 #[test]
+fn help_net() {
+    let output = m80().args(["net", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Inspect or clean m80-owned host network residue"),
+        "net help should frame network residue cleanup, got: {stdout}"
+    );
+}
+
+#[test]
+fn help_net_cleanup() {
+    let output = m80().args(["net", "cleanup", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("m80-tagged iptables rules")
+            && stdout.contains("tfc* TAPs")
+            && stdout.contains("--dry-run"),
+        "net cleanup help should expose tag-scan cleanup and dry-run, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_install_cleanup() {
     m80().args(["install-cleanup", "--help"]).assert().success();
 }

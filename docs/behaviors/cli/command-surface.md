@@ -31,6 +31,7 @@ install packages implicitly.
 - `m80 list`
 - `m80 inspect <vm-id>`
 - `m80 cleanup [--force]`
+- `m80 net cleanup [--dry-run]`
 - `m80 image build/list/show/rm/verify`
 - `m80 template build/list/show/prune/rm`
 - `m80 warm enable/status/drain/disable`
@@ -55,6 +56,8 @@ The landed snapshot-template command contract is captured in
 `docs/behaviors/cli/template-commands.md`. Its destructive prune path is scoped
 to the selected BootSpec family so one store can safely hold multiple template
 families.
+The network orphan recovery command is captured in
+`docs/behaviors/network/orphan-cleanup.md`.
 
 The old VM-front-door commands are removed, not compatibility aliases:
 

@@ -166,6 +166,9 @@ binaries, pull OCI images, or install packages implicitly.
   versioned envelope.
 - `m80 cleanup [--force]` - recovers stale run-root state and removes orphaned
   host resources where the lower crates expose cleanup.
+- `m80 net cleanup [--dry-run]` - scans m80-tagged iptables rules and `tfc*`
+  TAP links for host network residue without `network-state.json` ownership
+  evidence; `--dry-run` reports the same rows without deleting.
 - `m80 image build/gc/list/show/rm/verify` - manages content-addressed
   `m80-image-store` artifacts. The CLI can import a pre-built artifact file or
   build a small local-dev image from a directory, list and show records in human
@@ -235,6 +238,8 @@ Image-store command behavior is captured in
 `docs/behaviors/cli/image-commands.md`.
 Snapshot-template command behavior is captured in
 `docs/behaviors/cli/template-commands.md`.
+Network orphan cleanup behavior is captured in
+`docs/behaviors/network/orphan-cleanup.md`.
 Installer input behavior is captured in
 `docs/behaviors/release/installer-input-contract.md`.
 Release asset-index selection and diagnostics are captured in

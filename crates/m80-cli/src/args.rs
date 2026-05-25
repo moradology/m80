@@ -204,6 +204,13 @@ pub enum Cmd {
         force: bool,
     },
 
+    /// Inspect or clean m80-owned host network residue.
+    Net {
+        /// Network maintenance action.
+        #[command(subcommand)]
+        action: NetAction,
+    },
+
     /// Print the merged effective configuration with each field's source.
     #[command(name = "config")]
     Config {
@@ -244,6 +251,21 @@ pub enum EgressMode {
     None,
     /// NAT-backed outbound network where host preflight can support it.
     Outbound,
+}
+
+/// `m80 net` sub-actions.
+#[derive(Debug, Subcommand)]
+pub enum NetAction {
+    /// Scan m80-tagged iptables rules and tfc* TAPs; remove orphaned residue.
+    Cleanup(NetCleanupArgs),
+}
+
+/// Arguments for `m80 net cleanup`.
+#[derive(Debug, Args)]
+pub struct NetCleanupArgs {
+    /// Report orphaned host network residue without deleting it.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 /// CLI overlay template clone policy selected by `m80 run --overlay-clone-mode`.

@@ -81,6 +81,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::Cleanup { force } => cmds::cmd_cleanup(force, json),
 
+        Cmd::Net { action } => cmds::cmd_net(action, json),
+
         Cmd::Config {
             action: ConfigAction::Show,
         } => cmds::cmd_config_show(json),

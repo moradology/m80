@@ -13,9 +13,12 @@ operational-debt magnet, and the largest single LOC contributor in
 the upstream predecessor implementation (`network.rs` is 3,669 lines).
 Sequestering it has three benefits:
 
-1. **The rest of the codebase never touches `iptables`.** Anyone reading
-   `m80-firecracker` or `m80-storage` doesn't need to know the rule
-   ordering, the comment-tagging convention, or the chain naming scheme.
+1. **Normal lifecycle code outside this crate never touches `iptables`.** Anyone
+   reading `m80-firecracker` or `m80-storage` doesn't need to know the rule
+   ordering, the comment-tagging convention, or the chain naming scheme. The
+   operator recovery command `m80 net cleanup` is the only exception: it scans
+   the same comment tags after per-VM state has already gone missing, so it
+   cannot call the normal state-backed teardown path.
 2. **The privilege surface is contained.** Only this crate shells out to
    `iptables`/`sysctl` for network policy. Bridge, address, link, and
    delete operations use rtnetlink directly; TAP creation goes through the
