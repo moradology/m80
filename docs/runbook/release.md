@@ -289,6 +289,51 @@ bytes with `sudo`. It prints the release tag, source commit,
 handoff. See
 `docs/behaviors/release/verified-install-handoff.md`.
 
+## Isolated Release Validation
+
+Use `scripts/validate-release.sh` when the question is whether a published
+release can be fetched, verified, installed, and smoked without relying on the
+developer checkout:
+
+```sh
+scripts/validate-release.sh --level a-c --tag latest
+```
+
+Levels A-C run on the current host:
+
+- A downloads a real published release and runs
+  `verify-release-integrity.py`, `verify-release-bundle.py`, and
+  `verify-install-handoff.py`.
+- B resolves public latest and runs the bounded freshness verifier against the
+  documented public install commands.
+- C runs the real `install.sh` into a temporary install root. It first tries
+  the no-sudo path. If the published installer rejects that attempt at the live
+  preflight privilege gate, the harness reruns the same temporary install-root
+  fixture with `sudo -n` and records the fallback in `level-c.json`; it still
+  avoids the default `/opt/m80` install root.
+
+The real nested-KVM smoke uses an ephemeral L1 runner:
+
+```sh
+scripts/validate-release.sh \
+  --level e \
+  --tag latest \
+  --spawn-l1 \
+  --proof-out docs/proofs/release/<tag>-nested-kvm-release-smoke.json
+```
+
+Level E provisions the L1 through
+[`docs/operations/e2e-privileged-runner.md`](../operations/e2e-privileged-runner.md),
+downloads public `install.sh` inside that L1, installs into a temporary root,
+runs `m80 run -- echo hello` through the documented `M80_DEFAULT_PROFILE=env`
+fixture profile, records Firecracker/jailer versions and `install-status`, then
+removes the temporary install root. Local harness state stays under the host work
+root; remote level-E scratch state defaults to `/tmp` inside the L1 and can be
+changed with `--l1-remote-base`. A proof is green
+only when `process_result.exit_status == 0`,
+`process_result.stdout == "hello\n"`, `cleanup.post_run_firecracker_processes`
+is empty, and `cleanup.install_root_removed` is true.
+
 ## Existing Config And Profile Cutover
 
 `m80 install` owns the generated default selector files for the installed

@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — nested-KVM release validation runner
+
+- Added idempotent L0 setup, ephemeral libvirt L1 runner provisioning, and a
+  release validation harness for the A-E public-release proof ladder. The
+  level-E lane installs a real public release inside the nested-KVM L1 and
+  records the `m80 run -- echo hello` proof artifact.
+
 ### Added — stripped-kernel PVH direct boot note
 
 - Enabled `CONFIG_PVH=y` in the stripped kernel config so Firecracker can

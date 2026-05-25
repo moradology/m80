@@ -1,0 +1,231 @@
+{
+  "cleanup": {
+    "install_root_removed": true,
+    "post_run_firecracker_processes": []
+  },
+  "generated_at": "2026-05-25T23:20:25Z",
+  "install_status": {
+    "data": {
+      "active": {
+        "install_dir": "/tmp/e1779751200-23152/install-root/versions/v0.2.20",
+        "pointer_path": "/tmp/e1779751200-23152/install-root/active",
+        "pointer_target": "/tmp/e1779751200-23152/install-root/versions/v0.2.20",
+        "release_tag": "v0.2.20",
+        "status": "live"
+      },
+      "diagnostics": [],
+      "install_root": "/tmp/e1779751200-23152/install-root",
+      "last_attempt": {
+        "attempt_type": "successful_upgrade",
+        "failure_stage": null,
+        "path": "/tmp/e1779751200-23152/install-root/last-install-attempt.json",
+        "repair_command": "m80 run -- echo hello",
+        "status": "present",
+        "target_tag": "v0.2.20"
+      },
+      "metadata": {
+        "bundle_metadata": {
+          "path": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/bundle.json",
+          "sha256": "da082414e090cd80d12f3d2365a806aef43cbdd93340a2d3ed8356f3a7ae4b2f",
+          "status": "present"
+        },
+        "host_binaries_manifest": {
+          "path": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts/host-binaries.manifest.json",
+          "sha256": "6c1431aa49a81f2a3f149bb4610e6aaef4edc5f8cd339a6e6b17349986151895",
+          "status": "present"
+        },
+        "install_provenance": {
+          "path": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts/install-provenance.json",
+          "sha256": "373f271d178d2aa1f41c3eaa915822c3672d4915d1b98ce4f4da1a07068298a9",
+          "status": "present"
+        },
+        "proof_cache_manifest": {
+          "path": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts/release-proof-cache/manifest.json",
+          "sha256": "472ca694583c1aca755835c2bd53f7cc3936e3b6d942121d79419b13270537c5",
+          "status": "present"
+        }
+      },
+      "mismatches": [
+        {
+          "code": "install_root_override",
+          "expected_path": "/opt/m80",
+          "expected_source": null,
+          "expected_tag": null,
+          "expected_value": "default install root",
+          "message": "inspecting explicit install root /tmp/e1779751200-23152/install-root; default status uses /opt/m80",
+          "observed_path": "/tmp/e1779751200-23152/install-root",
+          "observed_source": null,
+          "observed_tag": "v0.2.20",
+          "observed_value": "explicit install root"
+        }
+      ],
+      "next_action": {
+        "command": "m80 run -- echo hello",
+        "kind": "ready",
+        "message": "installed release is ready"
+      },
+      "proof_cache": {
+        "cache_age_seconds": 1,
+        "cache_dir": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts/release-proof-cache",
+        "diagnostics": [],
+        "manifest_digest": "dd56c7eeb5e867411b5bb4348972a254f3ffa7ad8aabb861b59f096df5918055",
+        "manifest_modified_unix_seconds": 1779751219,
+        "manifest_path": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts/release-proof-cache/manifest.json",
+        "manifest_sha256": "472ca694583c1aca755835c2bd53f7cc3936e3b6d942121d79419b13270537c5",
+        "materials": [
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-integrity.json",
+            "role": "integrity_predicate",
+            "sha256": "7225110ae38f96a0e166709f0cff91931c77ec8d2628007cbbf2731e1ebf3444",
+            "size_bytes": 3014,
+            "subject": null
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-integrity.attestation.jsonl",
+            "role": "attestation_bundle",
+            "sha256": "6c7418207ae011aad5ea586558f4eade8347823660cb45436f358e8efb70fad9",
+            "size_bytes": 10309,
+            "subject": null
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-attestation.json",
+            "role": "attestation_metadata",
+            "sha256": "1261481836a36163ae4c966124eb40bf995109dc0c5031df7b06dd8daa8ce164",
+            "size_bytes": 518,
+            "subject": null
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-assets.json",
+            "role": "asset_index",
+            "sha256": "b4f28af62774b0351169ec0ac31e8f387a8156f2378e3e6213bc18b9fe9a38e6",
+            "size_bytes": 935,
+            "subject": null
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "SHA256SUMS",
+            "role": "public_sha256s",
+            "sha256": "d7716ab0a7fbf39580df7a4008b084be3b81f4b23221d8b780923c4ed9ca1cc0",
+            "size_bytes": 1110,
+            "subject": null
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-linux-x86_64.tar.gz.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "c6128da5d75e56d38188bb129b716f848064e1553c00a99434d0a9fce2d3f7e7",
+            "size_bytes": null,
+            "subject": "m80-linux-x86_64.tar.gz"
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-linux-x86_64.bundle.json.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "ba058a4249829b5238446b1f5b4293358733a7dc8e937890044bff7e6b7250ff",
+            "size_bytes": null,
+            "subject": "m80-linux-x86_64.bundle.json"
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-assets.json.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "9cba81613a865181f85e3b0813e2a26f80ed10230a06874af3730bab6140c45c",
+            "size_bytes": null,
+            "subject": "m80-release-assets.json"
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "install.sh.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "909767fc7d03dd528b3da2b326b365d00baefaf8595677552c7dc5547115b2dc",
+            "size_bytes": null,
+            "subject": "install.sh"
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-bootstrap-selector.tsv.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "3a25a8f34e085cf36e4dd4611de40ad918ee38752db5349d3c2e3e064dc47569",
+            "size_bytes": null,
+            "subject": "m80-bootstrap-selector.tsv"
+          },
+          {
+            "modified_unix_seconds": 1779751219,
+            "path": "m80-release-build.json.sha256",
+            "role": "checksum_sidecar",
+            "sha256": "1b4d221f0cffabca1bc4bf322fdfbd67660e8fc273d6dd037bed20433862128d",
+            "size_bytes": null,
+            "subject": "m80-release-build.json"
+          }
+        ],
+        "message": "cached proof material is available from the installed release tree",
+        "release_tag": "v0.2.20",
+        "repair_command": null,
+        "repository": "moradology/m80",
+        "status": "available",
+        "target": "linux-x86_64",
+        "trust_policy": {
+          "identity": "repository=moradology/m80 signer=moradology/m80/.github/workflows/release-artifacts.yml issuer=https://token.actions.githubusercontent.com keyset_id=github-actions-oidc:m80-release-v1",
+          "modified_unix_seconds": 1779751219,
+          "path": "m80-release-trust-policy.json",
+          "sha256": "7db08a17f4356ee7ffc502d48adf303ece128946e2124f74b1737913d2da6f99"
+        },
+        "verifier_versions": {
+          "asset_index_schema_version": 1,
+          "attestation_verifier": "m80 native release-attestation verifier v1",
+          "m80_version": "v0.2.20",
+          "release_integrity_schema_version": 1
+        }
+      },
+      "schema_version": 1,
+      "selected_config": {
+        "default_profile": "default",
+        "default_profile_source": "system_file",
+        "explicit_override": false,
+        "system_drop_in_dir": "/tmp/e1779751200-23152/install-root/config.d",
+        "system_path": "/tmp/e1779751200-23152/install-root/config.toml",
+        "user_drop_in_dir": null,
+        "user_path": null
+      },
+      "selected_profile": {
+        "artifact_dir": "/tmp/e1779751200-23152/install-root/versions/v0.2.20/artifacts",
+        "body_source": "system_file",
+        "file_path": "/tmp/e1779751200-23152/install-root/profiles/default.toml",
+        "install_dir": "/tmp/e1779751200-23152/install-root/versions/v0.2.20",
+        "m80_version": "v0.2.20",
+        "name": "default",
+        "release_tag": "v0.2.20",
+        "selection_source": "system_file"
+      },
+      "status": "healthy_active_release"
+    },
+    "version": 1
+  },
+  "process_result": {
+    "command": "M80_DEFAULT_PROFILE=env M80_ARTIFACT_DIR=<installed-artifacts> M80_KERNEL_IMAGE=<installed-kernel> M80_ROOTFS_IMAGE=<installed-rootfs> M80_RUN_ROOT=<remote-run-root> m80 run -- echo hello",
+    "exit_status": 0,
+    "stderr": "",
+    "stdout": "hello\n"
+  },
+  "proof_kind": "nested-kvm-public-release-smoke",
+  "release": {
+    "install_url": "https://github.com/moradology/m80/releases/download/v0.2.20/install.sh",
+    "repository": "moradology/m80",
+    "requested": "v0.2.20",
+    "resolved_tag": "v0.2.20"
+  },
+  "schema_version": 1,
+  "substrate": {
+    "cpu_nested_flag_present": true,
+    "dev_kvm_rw": true,
+    "firecracker_version": "Firecracker v1.15.1\n\n2026-05-25T23:20:01.174083394 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+    "jailer_version": "Jailer v1.15.1",
+    "kind": "nested-kvm-l1",
+    "remote_root": "/tmp/e1779751200-23152",
+    "ssh_target": "m80@192.168.122.58"
+  }
+}

@@ -56,29 +56,25 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-o4z82` — Real-KVM regression cluster** (open until privileged
-   battery confirms). The diagnostic + structural fix is in
-   (`ConfigError::VmIdPathBudgetExceeded` admission check, vm_id helpers
-   trimmed, fake-firecracker now writes pid, log assertion scoped to
-   diagnostics phase). Verifying the 6 affected tests pass on the
-   privileged runner is the close gate.
-2. **`m80-16hx7` — E2E operationalization.** Stable privileged runner +
+1. **`m80-16hx7` — E2E operationalization.** Stable privileged runner +
    pre-test reaper + ignored-test taxonomy. Without these, the privileged
    battery is "manually-provable" not "routinely-enforced", which means
-   gate (2) above is hard to verify in practice. Children `.1` (runner),
-   `.3` (taxonomy), `.4` (reaper) are the unblocking subset; `.2` (cache)
-   and `.6` (reporting) and `.7` (CI) can lag.
-3. **`m80-2ggw` — FC best-practices alignment, P1 children only:**
-   - `m80-2ggw.1` host preflight enforcement (KSM / SMT / swap / nested-virt
-     checks) — multi-tenant safety claim depends on this.
-   - `m80-2ggw.4` snapshot correctness (FC version validation on restore;
-     post-restore CSPRNG re-seed in m80-guestd) — warm-pool integrity.
-   - `m80-2ggw.6` IMDS link-local block regression pin — already-present
-     security boundary, just needs the test to pin it.
+   gate (2) above is hard to verify in practice.
+2. **`m80-16hx7.9` → `m80-16hx7.10` → `m80-16hx7.11` — public-release
+   proof chain.** First provision a nested-virt L1 runner on the bare-metal
+   AMD host, then land the isolated release-validation harness, then produce
+   the verified nested-KVM public-install smoke artifact. This is the shortest
+   path from "release scripts exist" to "a public user can install and run it".
+3. **`m80-16hx7.3` + `m80-16hx7.4` — privileged-test operability.** The
+   ignored-test taxonomy and pre-test reaper make real-KVM runs repeatable
+   enough to trust. Keep them near the front of the queue while the runner
+   path lands.
 
-The P2/P3 children inside `m80-2ggw` (FC API surface like put_logger /
-put_metrics, kernel feature evaluation, operator runbook) wait until the
-P1 children land and the ship bar is green.
+`m80-16hx7.1` overlaps the nested-runner work; re-triage it after
+`m80-16hx7.9` lands rather than building two runner stories. Children `.2`
+(artifact cache), `.5` (post-test cleanup verification), `.6` (structured
+reporting), and `.7` (CI workflow) can lag until the public-release proof
+chain is green.
 
 ## Deferred (not v0.1, no calendar)
 
@@ -92,9 +88,9 @@ Not abandoned — just not blocking the v0.1 bar.
   in-depth security verification. Real value but the existing isolation
   claim from FC + the jailer + m80's preflight is sufficient for v0.1; the
   adversarial battery hardens the claim, doesn't establish it.
-- **`m80-2ggw` P3 children.** Operator runbook docs, runtime feature
-  evaluation (PVH, hugepages, virtio-rng). Documentation polish + perf
-  options that don't gate the bar.
+- **Completed top-of-stack epics (`m80-o4z82`, `m80-2ggw`).** These no longer
+  drive active sequencing. Reopen only if a new regression or release-proof
+  gap points back to them.
 - **`m80-3xwa` — parity with FC defaults beyond what the bar already
   exercises.** Hardening surface that the L11 work would cover anyway.
 - **Future direction items in `docs/future-directions/`.** Multi-tenant pool
