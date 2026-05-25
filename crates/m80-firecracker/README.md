@@ -22,14 +22,21 @@ Created → Running → Stopped → (Deleted | preserved-for-triage)
 
 Each state is a distinct Rust type (`Sandbox`, `RunningSandbox`,
 `StoppedSandbox`); transitions consume the prior handle so callers can't
-double-stop or exec on a stopped VM. `force_kill` collapses Running →
+double-stop or exec on a stopped VM. Cold boot can either run directly through
+`Sandbox::launch()` or pause at `Sandbox::prepare()` and then enter the VM with
+`PreparedSandbox::start()`. `force_kill` collapses Running →
 Stopped while preserving the run-dir for offline inspection. If the host cannot
 prove the forced kill completed, `force_kill` returns the kill error, records
 `CleanupReleaseBlocker::ForcedKillAmbiguous`, and does not release the
 admission permit.
 
 The Created → Running transition runs the strict 12-phase preboot pipeline
-internally (via `Sandbox::launch`). Phases are sub-steps, not states —
+internally (via `Sandbox::launch`, or `Sandbox::prepare` followed by
+`PreparedSandbox::start`). `PreparedSandbox` represents phases 1-11 complete:
+the run directory, jail, Firecracker process, API socket, REST preboot
+configuration, ready listener, admission permit, and cleanup guards are live,
+but `InstanceStart` has not been sent. `PreparedSandbox::abort()` tears that
+state down and deletes the run directory. Phases are sub-steps, not states —
 failures at any phase return a typed `FcError` and drop the admission permit.
 When `SandboxConfig::request_id` is set, launch, request, stop, and delete
 events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
@@ -189,6 +196,10 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 
 | Method | Signature | Description |
 |---|---|---|
+| `Sandbox::prepare` | `(self) -> Result<PreparedSandbox, FcError>` | Run cold preboot through REST/device configuration and stop before `InstanceStart`. |
+| `Sandbox::launch` | `(self) -> Result<RunningSandbox, FcError>` | Convenience path equivalent to `prepare()?.start()`. |
+| `PreparedSandbox::start` | `(self) -> Result<RunningSandbox, FcError>` | Send `InstanceStart`, wait for guest readiness, mount pmem layers, and return a running VM. |
+| `PreparedSandbox::abort` | `(self) -> Result<(), FcError>` | Kill the pre-start Firecracker process, release host resources, delete the run directory, and return the admission permit. |
 | `RunningSandbox::exec` | `(&mut self, ExecRequest) -> Result<ExecResponse, FcError>` | Run one command and return buffered stdout/stderr/exit. |
 | `RunningSandbox::exec_with_max_duration` | `(&mut self, ExecRequest, u64) -> Result<ExecResponse, FcError>` | Run one buffered command with an envelope call deadline. |
 | `RunningSandbox::exec_with_cancel` | `(&mut self, ExecRequest, std::sync::mpsc::Receiver<()>) -> Result<ExecResponse, FcError>` | Run one buffered command and send guest cancellation when the receiver fires. |
@@ -599,10 +610,18 @@ PUT drive, not a create-then-attach operation. Firecracker versions that do
 not support drive `PATCH` fail through the `m80-firecracker-client`
 `DriveWriteFailed` path.
 
-### Start and readiness
+### Prepare, start, and readiness
 
-Cold launch starts Firecracker with `InstanceAction::InstanceStart` and waits
-for guestd readiness through an inverted host listener at
+`Sandbox::prepare()` runs cold phases 1-11 and returns `PreparedSandbox` before
+`InstanceAction::InstanceStart`. This lets callers measure or gate the host
+preparation window separately from guest boot. `Sandbox::launch()` remains the
+one-call path and is equivalent to `prepare()?.start()`. The Firecracker API
+socket wait and REST PUT budget are part of `prepare()`; the guest boot and
+guest-readiness wait start in `PreparedSandbox::start()`.
+
+`PreparedSandbox::start()` starts Firecracker with
+`InstanceAction::InstanceStart` and waits for guestd readiness through an
+inverted host listener at
 `<vsock.sock>_<READY_PORT_DEFAULT>`, not by tailing the serial console. Guestd
 connects to that listener and writes the m80 protocol-version byte; the host
 accepts that connection through `poll(2)` readiness instead of a host-side
@@ -611,6 +630,7 @@ sends `PmemMountRequest` and waits for all guest erofs+DAX mounts to succeed.
 Only after that does launch return `RunningSandbox`; the caller's first
 operation opens the normal exec channel on guest port 9001. Timeout maps to
 `FcError::GuestdReadyTimeout`. See
+`docs/behaviors/lifecycle/prepare-start-split.md` and
 `docs/behaviors/lifecycle/start-and-ready.md`.
 
 ### Stop
@@ -829,6 +849,9 @@ Core types:
   Failed launches preserve their run directory under `.preserved/` by default
   after writing `failure_summary.json`; call
   `delete_run_dir_on_launch_error()` before launch to opt into deletion.
+- `PreparedSandbox` — cold preboot complete, `InstanceStart` not yet sent;
+  `start()` advances to `RunningSandbox`, and `abort()` deletes the prepared
+  run directory and releases the admission permit.
 - `RunningSandbox` — live VM handle; all exec/file-op/PTY methods live here.
 - `StoppedSandbox` — post-stop handle; carries `delete()` and `preserve_for_triage()`.
 - `Backend` — orchestration root: `new(BackendConfig)`,

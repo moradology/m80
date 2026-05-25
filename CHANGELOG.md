@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — prepare/start lifecycle split
+
+- Added `Sandbox::prepare()` and `PreparedSandbox::{start,abort}` so callers
+  can complete cold host/VMM preboot setup separately from `InstanceStart`.
+  `Sandbox::launch()` remains the convenience path and now delegates to
+  `prepare()?.start()`.
+
 ### Added — Firecracker native logger
 
 - Added `Client::put_logger` for `PUT /logger` and wired cold/restore launches

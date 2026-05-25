@@ -37,6 +37,7 @@ pub use error::{
     CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
 };
 pub use hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
+pub use launch::PreparedSandbox;
 pub use layout::{
     boot_identity_path, console_log_path, fc_log_path, fc_metrics_path,
     firecracker_api_socket_path, rootfs_overlay_path, run_dir_path, scratch_image_path,

@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_cgroup::{Limits, Subtree};
-use m80_firecracker_client::{Client, InstanceAction, LoggerConfig, MetricsConfig};
+use m80_firecracker_client::{Client, LoggerConfig, MetricsConfig};
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
@@ -47,9 +47,8 @@ use crate::layout::{
     preallocated_drive_slot_filename, run_dir_path, vsock_socket_path,
 };
 use crate::lifecycle::{
-    monotonic_ns, phase_13_pmem_guest_mount, phase_restore_post_restore_hooks,
-    prepare_snapshot_paths, prepare_template_snapshot_paths, snapshot_stage_parent,
-    spawn_idle_watcher, SNAPSHOT_BIND_DEST,
+    monotonic_ns, phase_restore_post_restore_hooks, prepare_snapshot_paths,
+    prepare_template_snapshot_paths, snapshot_stage_parent, spawn_idle_watcher, SNAPSHOT_BIND_DEST,
 };
 use crate::pmem::{validate_pmem_layers, PmemSharing};
 use crate::preboot::{apply_preboot_puts, plan_preboot_puts};
@@ -61,8 +60,11 @@ use crate::types::{
 use crate::warm_pool::HookSpecSet;
 
 mod failure_cleanup;
+mod prepared;
 mod ready;
 mod snapshot_prime;
+
+pub use prepared::PreparedSandbox;
 
 use failure_cleanup::{
     LaunchNetworkCleanupGuard, LaunchProcessCleanupGuard, LaunchRunDirCleanupGuard,
@@ -133,6 +135,18 @@ impl Sandbox {
     /// Consumes `self` so a failed launch cannot be retried — the admission
     /// permit is dropped on any error path.
     pub fn launch(self) -> Result<RunningSandbox, FcError> {
+        self.prepare()?.start()
+    }
+
+    /// Run cold preboot through REST/device configuration, stopping before
+    /// `InstanceStart`.
+    ///
+    /// The returned [`PreparedSandbox`] owns the live Firecracker process,
+    /// admission permit, run directory, cgroup, network residue, and cleanup
+    /// guards. Call [`PreparedSandbox::start`] to enter `Running`, or
+    /// [`PreparedSandbox::abort`] to tear the prepared VM down before the guest
+    /// is started.
+    pub fn prepare(self) -> Result<PreparedSandbox, FcError> {
         let vm_id = self.resolve_vm_id();
         let backend = Arc::clone(&self.backend);
         let backend_for_running = Arc::clone(&backend);
@@ -147,7 +161,7 @@ impl Sandbox {
             self.config.request_id.as_deref(),
             self.delete_run_dir_on_launch_error,
         )?;
-        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(
+        let run_dir_cleanup = LaunchRunDirCleanupGuard::new(
             &vm_id,
             run_dir.clone(),
             self.delete_run_dir_on_launch_error,
@@ -158,7 +172,7 @@ impl Sandbox {
         let summary_vm_id = vm_id.clone();
         let summary_request_id = request_id.clone();
         let mut current_phase: &'static str = "phase_2_lease";
-        let result = (|| -> Result<RunningSandbox, FcError> {
+        let result = (|| -> Result<PreparedSandbox, FcError> {
             // Phase 2: lease acquisition. Keep the guard inside RunningSandbox so
             // ownership.lock covers the whole VM lifetime, not just launch.
             let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
@@ -250,7 +264,7 @@ impl Sandbox {
                     )
                 }
             )?;
-            let mut network_cleanup = match &net {
+            let network_cleanup = match &net {
                 RealizedNetwork::OutboundNat { .. } => Some(LaunchNetworkCleanupGuard::new(
                     &backend.network_helper,
                     &vm_id,
@@ -329,7 +343,7 @@ impl Sandbox {
                     )
                 }
             )?;
-            let mut process_cleanup = early_process_cleanup
+            let process_cleanup = early_process_cleanup
                 .take()
                 .expect("launch process cleanup guard must exist after firecracker spawn");
 
@@ -416,148 +430,26 @@ impl Sandbox {
                 { crate::boot_identity::record(&run_dir, &backend_config.discovery) }
             )?;
 
-            // Phase 12a: InstanceStart.
-            diag_phase!(
-                current_phase,
-                &mut diagnostics,
-                &vm_id,
-                request_id.as_deref(),
-                Phase::Boot,
-                "phase_12a_instance_start",
-                {
-                    client
-                        .instance_action(InstanceAction::InstanceStart)
-                        .map_err(FcError::Client)
-                }
-            )?;
-            crate::diagnostics::record_owned(
-                &mut diagnostics,
-                Phase::Boot,
-                &vm_id,
-                request_id.as_deref(),
-                "instance started",
-            );
-
-            // Phase 12b: accept the inverted-readiness signal from m80-guestd.
-            // The signal is emitted after guestd has bound the exec listener, so
-            // launch does not consume a dummy exec-channel connection before the
-            // caller's first real request.
-            diag_phase!(
-                current_phase,
-                &mut diagnostics,
-                &vm_id,
-                request_id.as_deref(),
-                Phase::Ready,
-                "phase_12b_ready_accept",
-                {
-                    phase_12b_ready_accept(
-                        &ready_listener,
-                        &ready_uds,
-                        &vsock_uds,
-                        &console_log_path(&run_dir),
-                        &vm_id,
-                    )
-                }
-            )?;
-            diag_phase!(
-                current_phase,
-                &mut diagnostics,
-                &vm_id,
-                request_id.as_deref(),
-                Phase::Ready,
-                "phase_13_pmem_guest_mount",
-                {
-                    phase_13_pmem_guest_mount(
-                        &vsock_uds,
-                        &vm_id,
-                        request_id.as_deref(),
-                        firecracker.firecracker_pid(),
-                        &self.config.pmem_layers,
-                    )
-                }
-            )?;
-            record_post_launch_resource_snapshot(
-                &mut diagnostics,
-                &vm_id,
-                request_id.as_deref(),
-                firecracker.firecracker_pid(),
-                cgroup.is_some(),
-            );
-            crate::diagnostics::record_owned(
-                &mut diagnostics,
-                Phase::Ready,
-                &vm_id,
-                request_id.as_deref(),
-                "guestd ready",
-            );
-
-            let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
-            let active_execs = Arc::new(AtomicUsize::new(0));
-            let idle_timed_out = Arc::new(AtomicBool::new(false));
-            let lifetime_expired = Arc::new(AtomicBool::new(false));
-            let watcher_stop = Arc::new(AtomicBool::new(false));
-            let born_at = Instant::now();
-            let born_at_ns = monotonic_ns();
-            let max_lifetime = self.config.max_lifetime;
-            let watcher_thread = (self.config.idle_timeout.is_some() || max_lifetime.is_some())
-                .then(|| {
-                    spawn_idle_watcher(
-                        self.config.idle_timeout,
-                        max_lifetime,
-                        born_at_ns,
-                        vsock_uds.clone(),
-                        firecracker.firecracker_pid(),
-                        Arc::clone(&last_activity_ns),
-                        Arc::clone(&active_execs),
-                        Arc::clone(&idle_timed_out),
-                        Arc::clone(&lifetime_expired),
-                        Arc::clone(&watcher_stop),
-                        vm_id.clone(),
-                    )
-                });
-
-            let kill_guard = crate::types::ForceKillGuard::new(
-                vm_id.clone(),
-                firecracker.firecracker_pid(),
-                firecracker.jailer_pid(),
-                Arc::clone(&watcher_stop),
-                None,
-            );
-            process_cleanup.disarm();
-            let network_cleanup_enabled = network_cleanup.is_some();
-            if let Some(guard) = &mut network_cleanup {
-                guard.disarm();
-            }
-            run_dir_cleanup.disarm();
-            Ok(RunningSandbox {
+            Ok(PreparedSandbox {
                 vm_id,
                 request_id,
                 run_dir,
                 jail,
-                shared_pmem_refs: storage.shared_pmem_refs,
+                storage,
                 cgroup,
-                rootfs: storage.rootfs,
-                scratch: storage.scratch,
-                snapshot_mount: None,
                 client,
                 firecracker,
                 permit: self.permit,
                 lease_guard,
                 backend: backend_for_running,
-                born_at,
-                max_lifetime,
-                last_activity_ns,
-                active_execs,
-                idle_timed_out,
-                lifetime_expired,
-                watcher_stop,
-                watcher_thread,
                 diagnostics,
-                preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
-                one_shot: self.config.one_shot,
-                one_shot_consumed: false,
-                kill_guard,
-                network_cleanup: network_cleanup_enabled,
+                ready_listener,
+                ready_uds,
+                vsock_uds,
+                config: self.config,
+                process_cleanup,
+                run_dir_cleanup,
+                network_cleanup,
             })
         })();
         if let Err(err) = &result {
