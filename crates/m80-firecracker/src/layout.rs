@@ -29,6 +29,9 @@ pub const CONSOLE_LOG: &str = "console.log";
 /// Firecracker native structured logger filename inside the jail root.
 pub const FIRECRACKER_LOG: &str = "firecracker.log";
 
+/// Firecracker native JSON metrics filename inside the jail root.
+pub const FIRECRACKER_METRICS: &str = "firecracker-metrics.jsonl";
+
 /// Boot artifact identity filename in the run directory.
 pub const BOOT_IDENTITY_FILE: &str = "boot-identity.json";
 
@@ -136,6 +139,22 @@ pub fn fc_log_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
 #[must_use]
 pub(crate) fn fc_log_jail_path() -> PathBuf {
     PathBuf::from(format!("/{FIRECRACKER_LOG}"))
+}
+
+/// Compute the host-side path for Firecracker's native JSON metrics.
+#[must_use]
+pub fn fc_metrics_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+    fc_metrics_path_from_jail_root(&m80_jailer::jail_root_path(run_dir, firecracker_bin))
+}
+
+pub(crate) fn fc_metrics_path_from_jail_root(jail_root: &Path) -> PathBuf {
+    jail_root.join(FIRECRACKER_METRICS)
+}
+
+/// Compute the jail-visible path for Firecracker's native JSON metrics.
+#[must_use]
+pub(crate) fn fc_metrics_jail_path() -> PathBuf {
+    PathBuf::from(format!("/{FIRECRACKER_METRICS}"))
 }
 
 /// Compute the boot identity record path for the VM.

@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
@@ -23,6 +23,75 @@ fn write_executable(path: &Path, content: &str) {
     let mut perms = std::fs::metadata(path).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).unwrap();
+}
+
+struct PersistentFixtureServer {
+    socket_path: PathBuf,
+    _dir: tempfile::TempDir,
+    handle: std::thread::JoinHandle<Vec<String>>,
+}
+
+impl PersistentFixtureServer {
+    fn join(self) -> Vec<String> {
+        self.handle.join().expect("fixture server panicked")
+    }
+}
+
+fn spawn_persistent_fixture(responses: Vec<Vec<u8>>) -> PersistentFixtureServer {
+    let dir = tempfile::tempdir().unwrap();
+    let socket_path = dir.path().join("fc.sock");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut conn, _) = listener.accept().expect("accept");
+        let mut requests = Vec::with_capacity(responses.len());
+        for response in responses {
+            requests.push(read_one_http_request(&mut conn));
+            conn.write_all(&response).expect("write response");
+        }
+        requests
+    });
+    PersistentFixtureServer {
+        socket_path,
+        _dir: dir,
+        handle,
+    }
+}
+
+fn read_one_http_request(stream: &mut UnixStream) -> String {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 1024];
+    let mut expected_total = None;
+    loop {
+        let n = stream.read(&mut tmp).expect("read request");
+        assert!(n > 0, "unexpected EOF while reading request");
+        buf.extend_from_slice(&tmp[..n]);
+        if let Some(total) = expected_total {
+            if buf.len() >= total {
+                break;
+            }
+            continue;
+        }
+        if let Some(header_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let header_len = header_end + 4;
+            let header_text = String::from_utf8_lossy(&buf[..header_end]);
+            let content_length = header_text
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            let total = header_len + content_length;
+            expected_total = Some(total);
+            if buf.len() >= total {
+                break;
+            }
+        }
+    }
+    String::from_utf8_lossy(&buf).to_string()
 }
 
 fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
@@ -568,6 +637,68 @@ fn phase_10b_fc_logger_truncates_existing_jail_file() {
         server.join().request.contains("\"level\":\"Warning\""),
         "missing default Warning logger level"
     );
+}
+
+#[test]
+fn phase_10b_fc_metrics_creates_jail_file_and_puts_metrics_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-metrics");
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let host_metrics_path = fc_metrics_path(&run_dir, &firecracker_bin);
+    std::fs::create_dir_all(host_metrics_path.parent().unwrap()).unwrap();
+    let server = m80_test_helpers::fixture_server::SingleFixtureServer::spawn(
+        m80_test_helpers::fixture_server::resp_204(),
+    )
+    .unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+
+    phase_10b_fc_metrics(
+        &client,
+        &run_dir,
+        &firecracker_bin,
+        nix::unistd::Uid::effective().as_raw(),
+        nix::unistd::Gid::effective().as_raw(),
+    )
+    .unwrap();
+
+    let metadata = std::fs::metadata(&host_metrics_path).unwrap();
+    assert!(metadata.is_file());
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    let request = server.join().request;
+    assert!(request.starts_with("PUT /metrics HTTP/1.1\r\n"));
+    assert!(request.contains("\"metrics_path\":\"/firecracker-metrics.jsonl\""));
+}
+
+#[test]
+fn phase_10b_fc_diagnostics_puts_logger_then_metrics() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-diagnostics");
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let log_path = fc_log_path(&run_dir, &firecracker_bin);
+    std::fs::create_dir_all(log_path.parent().unwrap()).unwrap();
+    let server = spawn_persistent_fixture(vec![
+        m80_test_helpers::fixture_server::resp_204(),
+        m80_test_helpers::fixture_server::resp_204(),
+    ]);
+    let client = Client::new(&server.socket_path).unwrap();
+
+    phase_10b_fc_diagnostics(
+        &client,
+        &run_dir,
+        &firecracker_bin,
+        nix::unistd::Uid::effective().as_raw(),
+        nix::unistd::Gid::effective().as_raw(),
+        Some(crate::FcLogLevel::Debug),
+    )
+    .unwrap();
+
+    let requests = server.join();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("PUT /logger HTTP/1.1\r\n"));
+    assert!(requests[0].contains("\"level\":\"Debug\""));
+    assert!(requests[1].starts_with("PUT /metrics HTTP/1.1\r\n"));
+    assert!(fc_log_path(&run_dir, &firecracker_bin).is_file());
+    assert!(fc_metrics_path(&run_dir, &firecracker_bin).is_file());
 }
 
 #[cfg(target_os = "linux")]

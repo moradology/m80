@@ -6,7 +6,7 @@ use fixture_server::{resp_204, FixtureServer};
 
 use m80_firecracker_client::{
     BootSourceConfig, CacheType, Client, CpuTemplate, DriveConfig, IoEngine, MachineConfig,
-    PartialDriveConfig, PmemConfig, VsockConfig,
+    MetricsConfig, PartialDriveConfig, PmemConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -56,6 +56,22 @@ fn put_machine_config_sends_correct_json() {
     assert!(result.request.contains("\"mem_size_mib\":512"));
     assert!(result.request.contains("\"cpu_template\":\"T2\""));
     assert!(result.request.contains("\"track_dirty_pages\":true"));
+}
+
+#[test]
+fn put_metrics_sends_correct_json() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client
+        .put_metrics(&MetricsConfig {
+            metrics_path: PathBuf::from("/firecracker-metrics.jsonl"),
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(result.request.starts_with("PUT /metrics HTTP/1.1\r\n"));
+    assert!(result
+        .request
+        .contains("\"metrics_path\":\"/firecracker-metrics.jsonl\""));
 }
 
 #[test]

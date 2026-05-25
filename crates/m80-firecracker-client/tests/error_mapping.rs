@@ -6,7 +6,7 @@ use fixture_server::{resp_400, FixtureServer};
 
 use m80_firecracker_client::{
     BootSourceConfig, Client, ClientError, CpuTemplate, DriveConfig, InstanceAction, MachineConfig,
-    PartialDriveConfig, PmemConfig, VsockConfig,
+    MetricsConfig, PartialDriveConfig, PmemConfig, VsockConfig,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -60,6 +60,19 @@ fn machine_config_400_returns_machine_config_write_failed() {
             })
         },
         |e| matches!(e, ClientError::MachineConfigWriteFailed { fault } if fault.contains("invalid vcpu_count")),
+    );
+}
+
+#[test]
+fn metrics_400_returns_metrics_write_failed() {
+    assert_error(
+        "metrics path rejected",
+        |c| {
+            c.put_metrics(&MetricsConfig {
+                metrics_path: PathBuf::from("/bad/metrics"),
+            })
+        },
+        |e| matches!(e, ClientError::MetricsWriteFailed { fault } if fault.contains("metrics path rejected")),
     );
 }
 

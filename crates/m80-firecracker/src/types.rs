@@ -622,6 +622,15 @@ impl RunningSandbox {
     pub fn run_dir(&self) -> &Path {
         &self.run_dir
     }
+
+    /// Return the host-visible Firecracker native metrics file path.
+    pub fn fc_metrics_path(&self) -> PathBuf {
+        Self::fc_metrics_path_for_jail_root(self.jail.jail_root())
+    }
+
+    fn fc_metrics_path_for_jail_root(jail_root: &Path) -> PathBuf {
+        crate::layout::fc_metrics_path_from_jail_root(jail_root)
+    }
 }
 
 impl std::fmt::Debug for RunningSandbox {
@@ -744,4 +753,19 @@ pub(crate) enum RealizedNetwork {
         /// DNS resolvers written by PID 1.
         dns_resolvers: Vec<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_sandbox_fc_metrics_path_uses_jail_root_layout() {
+        let jail_root = Path::new("/tmp/m80-run/vm/firecracker/vm/root");
+
+        assert_eq!(
+            RunningSandbox::fc_metrics_path_for_jail_root(jail_root),
+            jail_root.join(crate::layout::FIRECRACKER_METRICS)
+        );
+    }
 }

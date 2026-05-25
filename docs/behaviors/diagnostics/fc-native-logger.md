@@ -5,7 +5,7 @@
 m80 configures Firecracker's native structured logger for every cold launch and
 snapshot-restore launch before the VM is started or restored.
 
-After the Firecracker API socket opens, `m80-firecracker` creates
+After the Firecracker API socket opens, `phase_10b_fc_diagnostics` creates
 `firecracker.log` inside the jail root with mode `0600`, assigns it to the
 jailed Firecracker uid/gid, and sends `PUT /logger` with the jail-visible path
 `/firecracker.log`. The default level is `Warning`; callers can override it
@@ -33,6 +33,9 @@ because Firecracker is already chrooted when it opens the path supplied to
   `LoggerWriteFailed` error mapping.
 - `crates/m80-firecracker/src/launch/tests.rs::phase_10b_fc_logger_creates_jail_file_and_puts_logger_config`
   pins the host file creation and logger PUT wiring without KVM.
+- `crates/m80-firecracker/src/launch/tests.rs::phase_10b_fc_diagnostics_puts_logger_then_metrics`
+  pins that the shared preboot diagnostics phase configures logger before
+  metrics.
 - The ignored real-KVM smoke test
   `crates/m80-firecracker/tests/fc_native_logger_real_kvm.rs::fc_native_logger_file_exists_after_launch`
   verifies a real launched VM has the jail-root log file.

@@ -34,9 +34,11 @@ failures at any phase return a typed `FcError` and drop the admission permit.
 When `SandboxConfig::request_id` is set, launch, request, stop, and delete
 events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
 After the Firecracker API socket opens, cold and restored launches configure
-Firecracker's native logger at `/firecracker.log` inside the jail root. The
-host-visible path is `fc_log_path(run_dir, firecracker_bin)`, and
-`SandboxConfig::fc_log_level` overrides the default `Warning` threshold.
+Firecracker's native logger at `/firecracker.log` and native metrics at
+`/firecracker-metrics.jsonl` inside the jail root. The host-visible paths are
+`fc_log_path(run_dir, firecracker_bin)` and
+`fc_metrics_path(run_dir, firecracker_bin)`, and `SandboxConfig::fc_log_level`
+overrides the default logger `Warning` threshold.
 
 `Sandbox::launch_from_snapshot` is an alternative Created → Running
 transition for the warm-pool restore path. It skips the full cold-boot
@@ -176,6 +178,9 @@ transport setup failures remain `FcError::Vsock`.
 `RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to
 m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
 snapshot without spawning a guest process.
+`RunningSandbox::fc_metrics_path()` returns the host-visible path where
+Firecracker writes its native JSON metrics file; m80 does not parse or ingest
+that file automatically.
 
 `RunningSandbox::ping_guest()` sends a direct `PingRequest` to m80-guestd and
 returns `PongResponse { guest_unix_ms }` without spawning a guest process.
@@ -201,6 +206,7 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `RunningSandbox::attach_drive_verified` | `(self, HotplugDriveAttach) -> Result<RunningSandbox, FcError>` | Retarget one preallocated drive slot, wait for guest mount ACK, verify opaque identity bytes, and discard the VM on failure. |
 | `RunningSandbox::detach_drive` | `(self, HotplugDriveDetach) -> Result<RunningSandbox, FcError>` | Ask guestd to unmount a preallocated slot, then retarget the slot to its placeholder backing file. |
 | `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
+| `RunningSandbox::fc_metrics_path` | `(&self) -> PathBuf` | Return the host-visible Firecracker native JSON metrics file path. |
 | `RunningSandbox::ping_guest` | `(&mut self) -> Result<PongResponse, FcError>` | Round-trip a guest health probe and return the guest handling timestamp. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox after the baseline post-restore reseed gate. |
 | `Sandbox::launch_from_snapshot_with_hooks` | `(self, snapshot: SnapshotPaths, discovery: &Discovery, hooks: HookSpecSet) -> Result<RunningSandbox, FcError>` | Restore a snapshot, run the baseline reseed gate plus supplied post-restore hooks under the fixed aggregate response deadline, then return the Running sandbox. |
@@ -222,6 +228,9 @@ wire-frame pairing only, not an agent semantic identifier.
 `SandboxConfig::fc_log_level` is optional; `None` still enables the native
 Firecracker logger at `Warning` level. The log is preserved with the run
 directory for triage and deleted with normal run-dir cleanup.
+Firecracker native metrics are always configured into the run directory; callers
+that want the raw JSON can read `RunningSandbox::fc_metrics_path()` while the VM
+is running or preserve the run directory for offline inspection.
 `WireProtocolError` is re-exported for callers that need to distinguish broken
 peer bytes from transport failures.
 
@@ -386,8 +395,8 @@ so host-local users outside the m80 owner cannot read guest console output,
 artifact paths, or lifecycle diagnostics by default.
 The public pure helpers `run_dir_path`, `firecracker_api_socket_path`,
 `vsock_socket_path`, `rootfs_overlay_path`, `scratch_image_path`,
-`console_log_path`, `fc_log_path`, and `boot_identity_path` expose this layout
-for callers and regression tests.
+`console_log_path`, `fc_log_path`, `fc_metrics_path`, and
+`boot_identity_path` expose this layout for callers and regression tests.
 The Firecracker API socket and vsock muxer socket are inside the jailer
 chroot, not directly in `<run_root>/<vm_id>/`.
 The Firecracker advanced seccomp filter discovered by `m80-preflight` is bound
@@ -401,6 +410,10 @@ should read `docs/ops/logging.md` before shipping it outside the host.
 Firecracker's native structured logger writes to `firecracker.log` inside the
 jailer chroot. Use `fc_log_path(run_dir, firecracker_bin)` to locate it from
 the host.
+Firecracker's native JSON metrics sink writes to `firecracker-metrics.jsonl`
+inside the jailer chroot. Use `RunningSandbox::fc_metrics_path()` on a running
+VM or `fc_metrics_path(run_dir, firecracker_bin)` when only the run directory
+and Firecracker binary path are available.
 Host lifecycle diagnostics are appended to `<run_root>/<vm_id>/diagnostics.jsonl`
 with schema version 2. The diagnostics writer is optional: if opening or
 writing it fails, boot and teardown continue and the failure is logged through
@@ -945,6 +958,12 @@ Usage rules (identical in both crates):
   and network-interface placement.
 - `src/launch/tests.rs::phase_10b_fc_logger_creates_jail_file_and_puts_logger_config`
   — host file creation plus `PUT /logger` wiring before boot.
+- `src/launch/tests.rs::phase_10b_fc_metrics_creates_jail_file_and_puts_metrics_config`
+  — host file creation plus `PUT /metrics` wiring before boot.
+- `src/launch/tests.rs::phase_10b_fc_diagnostics_puts_logger_then_metrics`
+  — the shared native diagnostics phase configures logger before metrics.
+- `src/types.rs::tests::running_sandbox_fc_metrics_path_uses_jail_root_layout`
+  — `RunningSandbox::fc_metrics_path()` follows the jail-root layout.
 - `tests/config_loading.rs` — precedence chain, drop-in ordering, unknown-key rejection, and env-override isolation using `load_config_from_paths` and in-memory fixtures.
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.
@@ -952,6 +971,7 @@ Usage rules (identical in both crates):
 - KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`,
   `tests/warm_pool.rs`, and related lifecycle files; they require a real
   Firecracker binary and KVM device. The native logger file is pinned by
-  `tests/fc_native_logger_real_kvm.rs`, the Bestiary stand-in proof is
+  `tests/fc_native_logger_real_kvm.rs`, the native metrics file is pinned by
+  `tests/fc_native_metrics_real_kvm.rs`, the Bestiary stand-in proof is
   `tests/bestiary_stand_in_real_kvm.rs`, and cgroup memory enforcement is
   pinned by `tests/cgroup_memory_oom_real_kvm.rs`.

@@ -11,6 +11,13 @@ All notable changes to m80 are documented here. Format roughly follows
   to create `<jail>/firecracker.log` and configure Firecracker's native
   structured logger before preboot resources or snapshot load.
 
+### Added — Firecracker native metrics
+
+- Added `Client::put_metrics` for `PUT /metrics` and wired cold/restore
+  launches to create `<jail>/firecracker-metrics.jsonl`, configure
+  Firecracker's native JSON metrics sink, and expose the host path through
+  `RunningSandbox::fc_metrics_path()`.
+
 ### Documented — jailer cgroup placement deferral
 
 - Documented why m80 does not forward Firecracker jailer `--cgroup` or

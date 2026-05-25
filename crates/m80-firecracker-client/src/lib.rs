@@ -71,6 +71,18 @@ impl Client {
         })
     }
 
+    /// PUT `/metrics`.
+    pub fn put_metrics(&self, config: &MetricsConfig) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(config)?;
+        let resp = self.put("/metrics", &body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::MetricsWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PUT `/drives/{drive_id}`. The `drive_id` is taken from the config.
     pub fn put_drive(&self, config: &DriveConfig) -> Result<(), ClientError> {
         let path = format!("/drives/{}", config.drive_id);
@@ -412,6 +424,14 @@ pub struct LoggerConfig {
     pub show_log_origin: Option<bool>,
 }
 
+/// Firecracker metrics output config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetricsConfig {
+    /// Absolute path visible to the Firecracker process for JSON metrics.
+    pub metrics_path: PathBuf,
+}
+
 /// Firecracker block-device I/O engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -647,6 +667,12 @@ pub enum ClientError {
     /// `PUT /logger` failed.
     #[error("logger write failed: {fault}")]
     LoggerWriteFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /metrics` failed.
+    #[error("metrics write failed: {fault}")]
+    MetricsWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

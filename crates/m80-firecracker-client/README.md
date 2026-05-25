@@ -25,9 +25,9 @@ without inheriting m80's lifecycle assumptions.
 - Every API method maps 1:1 to a Firecracker REST resource:
   `put_boot_source`, `put_machine_config`, `put_drive`, `put_pmem`,
   `put_network_interface`, `put_vsock`, `put_entropy_device`, `put_logger`,
-  `patch_drive`, `instance_action`, `patch_vm_state`, `put_snapshot_create`,
-  `put_snapshot_load`, `get_version`. The method signature mirrors the Firecracker schema
-  exactly.
+  `put_metrics`, `patch_drive`, `instance_action`, `patch_vm_state`,
+  `put_snapshot_create`, `put_snapshot_load`, `get_version`. The method
+  signature mirrors the Firecracker schema exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
   the same UDS, but the caller is responsible for serializing concurrent
@@ -35,8 +35,8 @@ without inheriting m80's lifecycle assumptions.
   cleanly).
 - HTTP errors translate to typed `ClientError` variants per resource:
   `BootSourceWriteFailed`, `MachineConfigWriteFailed`,
-  `LoggerWriteFailed`, `DriveWriteFailed`, `PmemWriteFailed`,
-  `NetworkInterfaceWriteFailed`, `VsockWriteFailed`,
+  `LoggerWriteFailed`, `MetricsWriteFailed`, `DriveWriteFailed`,
+  `PmemWriteFailed`, `NetworkInterfaceWriteFailed`, `VsockWriteFailed`,
   `EntropyDeviceWriteFailed`, `InstanceActionFailed`, `VmStateWriteFailed`,
   `SnapshotCreateFailed`, `SnapshotLoadFailed`. `VersionReadFailed` covers
   `GET /version` errors or invalid version response bodies.
@@ -55,6 +55,8 @@ without inheriting m80's lifecycle assumptions.
   tracking switch for future diff snapshots; omitted when `None`.
 - `LoggerConfig` and `LogLevel { Error, Warning, Info, Debug }` — Firecracker
   native logger path and optional formatting/verbosity fields for `PUT /logger`.
+- `MetricsConfig` — Firecracker native JSON metrics output path for
+  `PUT /metrics`.
 - `IoEngine { Sync, Async }` — optional Firecracker block-device I/O engine
   on `DriveConfig`.
 - `CacheType { Writeback, Unsafe }` — optional Firecracker block-device host
@@ -65,8 +67,9 @@ without inheriting m80's lifecycle assumptions.
 - `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
   `DriveConfig`, `PartialDriveConfig`, `PmemConfig`, `NetworkInterfaceConfig`,
-  `VsockConfig`, `LoggerConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
-  `MemBackendConfig`, `VsockOverride`, `FirecrackerVersion` (raw
+  `VsockConfig`, `LoggerConfig`, `MetricsConfig`, `CreateSnapshotConfig`,
+  `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`,
+  `FirecrackerVersion` (raw
   Firecracker API response).
 - `ClientError` — typed per-resource failure plus `Connect`, `Serialize`,
   and socket-path-carrying `Io`.
@@ -78,8 +81,9 @@ without inheriting m80's lifecycle assumptions.
 - **No async runtime.** Wrap the calls in `spawn_blocking` if you need
   async; the crate itself stays runtime-agnostic.
 - **No retry policy.** Errors propagate immediately.
-- **No metrics endpoint scraping.** Reading Firecracker's metrics fifo is
-  a separate concern handled in `m80-observability`.
+- **No metrics ingestion.** This crate configures Firecracker's metrics sink
+  with `PUT /metrics`; reading, parsing, or exporting the resulting metrics is
+  a separate concern handled above this client.
 
 ## Dependencies
 
@@ -123,6 +127,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   serializes to the expected `{"action_type": "InstanceStart"}` body.
 - `tests/logger_config_round_trip.rs` — URL, JSON shape, optional-field
   omission, and typed 400 error mapping for `PUT /logger`.
+- `tests/metrics_config_round_trip.rs` — URL, JSON shape, and typed 400 error
+  mapping for `PUT /metrics`.
 - `tests/network_interface_config_round_trip.rs` — URL, optional-field
   omission, and typed 400 error mapping for `PUT /network-interfaces/{id}`.
 - `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
