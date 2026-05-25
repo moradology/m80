@@ -325,6 +325,10 @@ frame; JSON warm runs intentionally keep the buffered response shape. System
 service packaging follows once that contract is proven; user-service ownership
 is deferred.
 
+The foreground owner handles SIGINT, SIGTERM, and SIGHUP by leaving the accept
+loop and running normal warm cleanup. Clean signal shutdown removes
+`owner.sock`, `owner.json`, and the warm snapshot directory.
+
 ### Image Store Commands
 
 Current image-store shape:

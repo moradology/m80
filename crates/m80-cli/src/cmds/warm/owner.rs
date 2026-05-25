@@ -3,7 +3,9 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
@@ -12,6 +14,8 @@ use m80_firecracker::{
 };
 use m80_proto::ExecRequest;
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
+use signal_hook::iterator::{Handle, Signals};
 
 use crate::args::EgressMode;
 use crate::errors;
@@ -23,6 +27,7 @@ use super::status::{self, WarmOwnerIdentity};
 
 const OWNER_SOCKET_MODE: u32 = 0o600;
 const OWNER_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const OWNER_ACCEPT_POLL: Duration = Duration::from_millis(100);
 const WARM_SNAPSHOT_FILE_MODE: u32 = 0o444;
 
 pub(super) fn run_foreground(
@@ -96,6 +101,10 @@ fn run_foreground_inner(
         path: socket_path.clone(),
         source,
     })?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|source| errors::host_io("set warm owner listener nonblocking", source))?;
+    let signal_guard = WarmOwnerSignalGuard::install()?;
     let mut owner_state_guard = WarmOwnerStateGuard::new(socket_path.clone(), identity_path);
     restrict_owner_socket(&socket_path)?;
     let identity = WarmOwnerIdentity {
@@ -124,9 +133,19 @@ fn run_foreground_inner(
     let mut draining = false;
     let mut shutdown = false;
 
-    for incoming in listener.incoming() {
-        let mut stream =
-            incoming.map_err(|source| errors::host_io("accept warm owner connection", source))?;
+    loop {
+        if let Some(signal) = signal_guard.observed_signal() {
+            tracing::info!(signal, "warm owner shutdown signal received");
+            break;
+        }
+        let (mut stream, _) = match listener.accept() {
+            Ok(accepted) => accepted,
+            Err(source) if source.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(OWNER_ACCEPT_POLL);
+                continue;
+            }
+            Err(source) => return Err(errors::host_io("accept warm owner connection", source)),
+        };
         let request =
             prepare_owner_stream(&stream).and_then(|()| control::read_request(&mut stream));
         let response = match request {
@@ -214,6 +233,59 @@ fn run_foreground_inner(
     owner_state_guard.disarm();
     let _ = fs::remove_dir_all(status::snapshot_dir()?);
     Ok(())
+}
+
+struct WarmOwnerSignalGuard {
+    first_signal: Arc<AtomicI32>,
+    handle: Handle,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl WarmOwnerSignalGuard {
+    fn install() -> Result<Self, FcError> {
+        Self::install_for([SIGINT, SIGTERM, SIGHUP])
+    }
+
+    fn install_for(signals: impl IntoIterator<Item = i32>) -> Result<Self, FcError> {
+        let mut signals = Signals::new(signals)
+            .map_err(|source| errors::host_io("install warm owner signal handler", source))?;
+        let handle = signals.handle();
+        let first_signal = Arc::new(AtomicI32::new(0));
+        let first_signal_for_thread = Arc::clone(&first_signal);
+        let thread = std::thread::spawn(move || {
+            for signal in signals.forever() {
+                if first_signal_for_thread
+                    .compare_exchange(0, signal, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    break;
+                }
+            }
+        });
+        Ok(Self {
+            first_signal,
+            handle,
+            thread: Some(thread),
+        })
+    }
+
+    fn observed_signal(&self) -> Option<i32> {
+        match self.first_signal.load(Ordering::SeqCst) {
+            0 => None,
+            signal => Some(signal),
+        }
+    }
+}
+
+impl Drop for WarmOwnerSignalGuard {
+    fn drop(&mut self) {
+        self.handle.close();
+        if let Some(thread) = self.thread.take() {
+            if thread.join().is_err() {
+                tracing::warn!("warm owner signal thread panicked during shutdown");
+            }
+        }
+    }
 }
 
 fn restrict_owner_socket(socket_path: &Path) -> Result<(), FcError> {
@@ -483,6 +555,27 @@ mod tests {
 
         assert!(!socket_path.exists());
         assert!(!identity_path.exists());
+    }
+
+    #[test]
+    fn warm_owner_signal_guard_records_first_signal() {
+        let guard = WarmOwnerSignalGuard::install_for([signal_hook::consts::signal::SIGUSR1])
+            .expect("install test signal guard");
+
+        nix::sys::signal::kill(nix::unistd::Pid::this(), nix::sys::signal::Signal::SIGUSR1)
+            .expect("send SIGUSR1 to process");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if guard.observed_signal() == Some(signal_hook::consts::signal::SIGUSR1) {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "signal guard did not observe SIGUSR1"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn file_mode(path: &Path) -> u32 {

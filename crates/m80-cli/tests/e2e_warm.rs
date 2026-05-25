@@ -22,6 +22,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use assert_cmd::Command;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 use tempfile::TempDir;
 
 struct KvmFixture {
@@ -193,6 +195,63 @@ fn foreground_warm_owner_serves_run_and_drains_without_cold_fallback() {
 
     let status = owner.wait().expect("wait warm owner");
     assert_eq!(status.code(), Some(0));
+    assert_no_run_dirs_with_prefix(fixture.run_root(), "warm-slot");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+fn foreground_warm_owner_sigterm_removes_owner_state() {
+    let fixture = KvmFixture::new();
+    let mut owner = ChildGuard::new(
+        fixture
+            .std_m80()
+            .args(["warm", "enable", "--size", "1", "--egress", "none"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn warm owner"),
+    );
+
+    wait_for_status(&fixture, "ready=1", Duration::from_secs(90));
+
+    let warm_root = fixture.run_root().join("warm");
+    assert!(warm_root.join("owner.sock").exists(), "owner socket exists");
+    assert!(
+        warm_root.join("owner.json").exists(),
+        "owner identity exists"
+    );
+    assert!(
+        warm_root.join("snapshot").exists(),
+        "warm snapshot dir exists"
+    );
+
+    kill(
+        Pid::from_raw(owner.child_mut().id() as i32),
+        Signal::SIGTERM,
+    )
+    .expect("send SIGTERM to warm owner");
+
+    let status = owner.wait().expect("wait warm owner");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "warm owner should exit through the cleanup path after SIGTERM"
+    );
+    assert!(
+        !warm_root.join("owner.sock").exists(),
+        "SIGTERM cleanup should remove owner socket\n{}",
+        dump_run_root(fixture.run_root())
+    );
+    assert!(
+        !warm_root.join("owner.json").exists(),
+        "SIGTERM cleanup should remove owner identity\n{}",
+        dump_run_root(fixture.run_root())
+    );
+    assert!(
+        !warm_root.join("snapshot").exists(),
+        "SIGTERM cleanup should remove warm snapshot dir\n{}",
+        dump_run_root(fixture.run_root())
+    );
     assert_no_run_dirs_with_prefix(fixture.run_root(), "warm-slot");
 }
 

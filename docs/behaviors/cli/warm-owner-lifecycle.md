@@ -160,6 +160,23 @@ Drain transitions:
 Disable has the same cleanup requirement but also stops the owner process or
 service. It is not a softer drain alias.
 
+## Foreground Signals
+
+The foreground owner installs handlers for SIGINT, SIGTERM, and SIGHUP before
+entering the control-socket accept loop. Those signals do not terminate the
+process through the kernel default action. They set the owner shutdown flag,
+the nonblocking accept loop observes it, and the process exits through the same
+cleanup path used by drain/disable:
+
+- drop the warm pool and its ready slots
+- remove `owner.sock`
+- remove `owner.json`
+- remove the warm snapshot directory
+
+The signal path is best-effort graceful cleanup. SIGKILL, host OOM kill, and
+machine reboot are crash cases and remain recovery/doctor concerns, not signal
+handling guarantees.
+
 ## Non-Goals
 
 - No `m80 pool` command.
@@ -179,12 +196,14 @@ Current fixture tests live under `crates/m80-cli/src/cmds/warm/`:
 - `status::tests::incompatible_profile_status_fails_closed`
 - `status::tests::drain_and_disable_transitions_are_distinct`
 - `run::tests::run_request_empty_pool_returns_pool_empty_without_cold_boot`
+- `owner::tests::warm_owner_signal_guard_records_first_signal`
 
 Command-level coverage:
 
 - `crates/m80-cli/tests/feature_gap_smoke.rs::warm_status_without_owner_is_unavailable_without_preflight`
 - `crates/m80-cli/tests/feature_gap_smoke.rs::run_warm_without_owner_fails_without_cold_booting`
 - `crates/m80-cli/tests/e2e_warm.rs::foreground_warm_owner_serves_run_and_drains_without_cold_fallback` (ignored real-KVM integration, including warm streaming)
+- `crates/m80-cli/tests/e2e_warm.rs::foreground_warm_owner_sigterm_removes_owner_state` (ignored real-KVM integration)
 
 System service/unit fixture validation remains future work because system mode
 is still explicitly reserved.
