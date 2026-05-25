@@ -82,6 +82,10 @@ pub enum Cmd {
         #[arg(long, value_name = "MIB")]
         mem_size_mib: Option<u32>,
 
+        /// Back cold-booted guest memory with 2 MiB hugetlbfs pages.
+        #[arg(long)]
+        huge_pages_2m: bool,
+
         /// Workspace writeback policy.
         #[arg(long, value_enum, default_value = "never")]
         writeback: WritebackMode,

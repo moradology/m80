@@ -363,6 +363,7 @@ pub(crate) fn sandbox_config(vm_id: impl Into<String>, boot_args: Option<String>
         vm_id: Some(vm_id.into()),
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        huge_pages_2m: false,
         boot_args,
         ..common::sandbox_config()
     }

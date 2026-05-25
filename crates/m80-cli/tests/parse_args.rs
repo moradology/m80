@@ -29,6 +29,7 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             overlay_clone_mode,
             vcpu_count,
             mem_size_mib,
+            huge_pages_2m,
             writeback,
             tty,
             interactive,
@@ -46,6 +47,7 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             assert_eq!(overlay_clone_mode, OverlayCloneModeArg::ByteCopy);
             assert!(vcpu_count.is_none());
             assert!(mem_size_mib.is_none());
+            assert!(!huge_pages_2m);
             assert_eq!(writeback, WritebackMode::Never);
             assert!(!tty);
             assert!(!interactive);
@@ -82,6 +84,7 @@ fn parse_run_visibility_and_exec_options() {
         "2",
         "--mem-size-mib",
         "512",
+        "--huge-pages-2m",
         "--",
         "/usr/bin/env",
     ])
@@ -98,6 +101,7 @@ fn parse_run_visibility_and_exec_options() {
             overlay_clone_mode,
             vcpu_count,
             mem_size_mib,
+            huge_pages_2m,
             argv,
             ..
         } => {
@@ -111,6 +115,7 @@ fn parse_run_visibility_and_exec_options() {
             assert_eq!(overlay_clone_mode, OverlayCloneModeArg::Reflink);
             assert_eq!(vcpu_count, Some(2));
             assert_eq!(mem_size_mib, Some(512));
+            assert!(huge_pages_2m);
             assert_eq!(argv, vec!["/usr/bin/env"]);
         }
         _ => panic!("expected Run"),

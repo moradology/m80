@@ -43,6 +43,7 @@ fn machine_config_put_before_boot() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,
@@ -71,6 +72,7 @@ fn machine_config_put_before_boot() {
     assert!(!machine.smt);
     assert_eq!(machine.cpu_template, None);
     assert_eq!(machine.track_dirty_pages, None);
+    assert_eq!(machine.huge_pages, None);
 }
 
 #[test]
@@ -82,6 +84,7 @@ fn layer_1_machine_config_omits_optional_fields_by_default() {
     };
     assert_eq!(machine.cpu_template, None);
     assert_eq!(machine.track_dirty_pages, None);
+    assert_eq!(machine.huge_pages, None);
     assert!(!machine.smt);
 }
 
@@ -92,6 +95,7 @@ fn default_machine_config_serialization_omits_optional_fields() {
 
     assert_eq!(json.get("cpu_template"), None);
     assert_eq!(json.get("track_dirty_pages"), None);
+    assert_eq!(json.get("huge_pages"), None);
 }
 
 #[test]
@@ -108,6 +112,26 @@ fn machine_config_honors_explicit_cpu_template() {
     assert_eq!(
         json.get("cpu_template").and_then(|value| value.as_str()),
         Some("T2")
+    );
+}
+
+#[test]
+fn machine_config_honors_explicit_huge_pages_2m() {
+    let config = SandboxConfig {
+        huge_pages_2m: true,
+        ..SandboxConfig::default()
+    };
+
+    let machine = machine_config_for(&config);
+    let json = serde_json::to_value(&machine).expect("machine config serializes");
+
+    assert_eq!(
+        machine.huge_pages,
+        Some(m80_firecracker_client::HugePageConfig::Hugetlbfs2M)
+    );
+    assert_eq!(
+        json.get("huge_pages").and_then(|value| value.as_str()),
+        Some("2M")
     );
 }
 
@@ -591,6 +615,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
     let config = SandboxConfig {
         vcpu_count: None,
         mem_size_mib: None,
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,
@@ -611,6 +636,7 @@ fn machine_config_honors_caller_sizing() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,

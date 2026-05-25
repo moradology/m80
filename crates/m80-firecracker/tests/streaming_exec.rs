@@ -41,6 +41,7 @@ fn sandbox_config(vm_id: &str) -> SandboxConfig {
     SandboxConfig {
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,

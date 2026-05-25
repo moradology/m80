@@ -373,8 +373,16 @@ pub enum CpuTemplate {
     C3,
 }
 
-/// `MachineConfig` — vCPU count, memory size, SMT flag, CPU template, and
-/// optional dirty-page tracking.
+/// Firecracker guest-memory huge-page backing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum HugePageConfig {
+    /// Back guest memory with 2 MiB hugetlbfs pages.
+    #[serde(rename = "2M")]
+    Hugetlbfs2M,
+}
+
+/// `MachineConfig` — vCPU count, memory size, SMT flag, CPU template,
+/// optional dirty-page tracking, and optional huge-page backing.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineConfig {
@@ -391,6 +399,9 @@ pub struct MachineConfig {
     /// Enable Firecracker dirty-page tracking for future diff snapshots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track_dirty_pages: Option<bool>,
+    /// Back guest memory with huge pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub huge_pages: Option<HugePageConfig>,
 }
 
 /// Firecracker logger verbosity.

@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Firecracker 2 MiB huge-page opt-in
+
+- Added `HugePageConfig::Hugetlbfs2M` to `m80-firecracker-client` and
+  `SandboxConfig::huge_pages_2m` / `m80 run --huge-pages-2m` in the
+  orchestrator/CLI. The field maps to Firecracker `huge_pages: "2M"` and
+  stays omitted/default-off unless explicitly requested.
+
 ### Added — prepare/start lifecycle split
 
 - Added `Sandbox::prepare()` and `PreparedSandbox::{start,abort}` so callers

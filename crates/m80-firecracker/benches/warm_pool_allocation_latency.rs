@@ -170,6 +170,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         network: NetworkPolicy::NoEgress,
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,

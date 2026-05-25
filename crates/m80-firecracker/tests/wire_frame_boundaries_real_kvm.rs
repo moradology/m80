@@ -47,6 +47,7 @@ fn launch_vm(discovery: &m80_preflight::Discovery) -> (m80_firecracker::RunningS
             network: m80_firecracker::NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
+            huge_pages_2m: false,
             cpuset_cpus: None,
             cpu_template: None,
             fc_log_level: None,

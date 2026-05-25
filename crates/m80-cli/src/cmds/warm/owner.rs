@@ -339,6 +339,7 @@ fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxC
         },
         vcpu_count: None,
         mem_size_mib: None,
+        huge_pages_2m: false,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,

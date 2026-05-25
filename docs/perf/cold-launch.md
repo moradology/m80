@@ -720,3 +720,23 @@ covered by the ignored real-KVM integration test above.
 **Bench numbers:** captured in `docs/behaviors/snapshot/restore-latency.md`.
 Idle restore-ready N=50 is 274.204 ms p50 / 280.132 ms p95. Loaded restore
 N=50 is 444.972 ms p50 / 588.221 ms p95.
+
+---
+
+## Hugepages 2M opt-in (m80-2ggw.5.3)
+
+Firecracker `huge_pages: "2M"` is now wired as an explicit opt-in through
+`SandboxConfig::huge_pages_2m` and `m80 run --huge-pages-2m`. The standard
+512 MiB minimal/idle cell was measured with N=30 before and after enabling it,
+using a temporary host pool of 300 reserved 2 MiB hugepages.
+
+| metric | baseline | hugepages 2M | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 1630 ms | 1631 ms | +1 ms |
+| `phase_12b_ready_accept` P50 | 943.470 ms | 926.905 ms | -16.565 ms |
+| `phase_12a_instance_start` P50 | 21.038 ms | 8.715 ms | -12.323 ms |
+
+Decision: keep hugepages default-off. The measured `phase_12b_ready_accept`
+improvement is below the 50 ms default-switch threshold and wallclock P50 did
+not improve. Full artifact paths and hashes are recorded in
+`docs/behaviors/kernel/hugepages.md`.

@@ -100,6 +100,7 @@ fn recovery_during_launch_preserves_fresh_vms() {
                     network: NetworkPolicy::NoEgress,
                     vcpu_count: Some(1),
                     mem_size_mib: Some(512),
+                    huge_pages_2m: false,
                     cpuset_cpus: None,
                     cpu_template: None,
                     fc_log_level: None,

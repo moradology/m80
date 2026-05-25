@@ -426,6 +426,7 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
         OverlayCloneModeArg::Reflink,
         Some(2),
         Some(768),
+        true,
         "req-test".to_owned(),
     );
 
@@ -441,6 +442,7 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
     );
     assert_eq!(config.vcpu_count, Some(2));
     assert_eq!(config.mem_size_mib, Some(768));
+    assert!(config.huge_pages_2m);
     assert!(config.idle_timeout.is_none());
     assert_eq!(config.request_id.as_deref(), Some("req-test"));
 }
@@ -454,6 +456,7 @@ fn run_defaults_to_no_workspace_and_default_overlay_size() {
         OverlayCloneModeArg::ByteCopy,
         None,
         None,
+        false,
         "req-default".to_owned(),
     );
 
@@ -469,12 +472,13 @@ fn run_defaults_to_no_workspace_and_default_overlay_size() {
     );
     assert!(config.vcpu_count.is_none());
     assert!(config.mem_size_mib.is_none());
+    assert!(!config.huge_pages_2m);
     assert_eq!(config.request_id.as_deref(), Some("req-default"));
 }
 
 #[test]
 fn warm_run_rejects_cold_boot_resource_sizing_flags() {
-    let vcpu_err = validate_run_flags(false, false, false, true, false, true, false, false)
+    let vcpu_err = validate_run_flags(false, false, false, true, false, true, false, false, false)
         .expect_err("--warm --vcpu-count must fail");
     assert!(
         vcpu_err
@@ -483,13 +487,23 @@ fn warm_run_rejects_cold_boot_resource_sizing_flags() {
         "unexpected error: {vcpu_err}"
     );
 
-    let mem_err = validate_run_flags(false, false, false, true, false, false, true, false)
+    let mem_err = validate_run_flags(false, false, false, true, false, false, true, false, false)
         .expect_err("--warm --mem-size-mib must fail");
     assert!(
         mem_err
             .to_string()
             .contains("--warm is incompatible with --mem-size-mib"),
         "unexpected error: {mem_err}"
+    );
+
+    let huge_pages_err =
+        validate_run_flags(false, false, false, true, false, false, false, true, false)
+            .expect_err("--warm --huge-pages-2m must fail");
+    assert!(
+        huge_pages_err
+            .to_string()
+            .contains("--warm is incompatible with --huge-pages-2m"),
+        "unexpected error: {huge_pages_err}"
     );
 }
 

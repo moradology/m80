@@ -20,7 +20,7 @@ use crate::preboot::validate_caller_boot_args_if_present;
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
     AdmissionPermit, Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig,
-    EffectiveField, Sandbox, SandboxConfig,
+    EffectiveField, Sandbox, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB,
 };
 
 impl Backend {
@@ -100,6 +100,7 @@ impl Backend {
         if let Some(workspace) = config.workspace.as_ref() {
             config.workspace = Some(canonicalize_workspace_root(workspace)?);
         }
+        validate_huge_pages_memory(&config)?;
         validate_network_policy(&config.network)?;
 
         let vm_id = config.vm_id.get_or_insert_with(auto_vm_id);
@@ -313,6 +314,22 @@ fn auto_vm_id() -> String {
     let pid = std::process::id();
     let ts = crate::runroot::unix_ms_now();
     format!("vm-{pid}-{ts}")
+}
+
+fn validate_huge_pages_memory(config: &SandboxConfig) -> Result<(), FcError> {
+    if !config.huge_pages_2m {
+        return Ok(());
+    }
+    let mem_size_mib = config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB);
+    if mem_size_mib % 2 != 0 {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "huge_pages_2m",
+            reason: format!(
+                "2 MiB huge pages require mem_size_mib to be a multiple of 2, got {mem_size_mib}"
+            ),
+        }));
+    }
+    Ok(())
 }
 
 /// Reject a selected `vm_id` whose constructed AF_UNIX socket path would
@@ -717,6 +734,32 @@ done
         config.network = join_netns_policy(std::net::Ipv4Addr::new(1, 1, 1, 1));
 
         backend.admit(config).expect("admitted resolver");
+    }
+
+    #[test]
+    fn admit_rejects_odd_mem_size_with_huge_pages() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let backend = test_backend(run_root.path());
+        let config = SandboxConfig {
+            mem_size_mib: Some(513),
+            huge_pages_2m: true,
+            ..SandboxConfig::default()
+        };
+
+        let err = backend
+            .admit(config)
+            .expect_err("hugetlbfs memory must be 2 MiB aligned");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "huge_pages_2m",
+                    ..
+                })
+            ),
+            "expected huge_pages_2m config rejection, got {err:?}"
+        );
     }
 
     #[test]

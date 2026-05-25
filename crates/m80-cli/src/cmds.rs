@@ -34,6 +34,7 @@ pub(crate) fn cmd_run(
     overlay_clone_mode: OverlayCloneModeArg,
     vcpu_count: Option<u32>,
     mem_size_mib: Option<u32>,
+    huge_pages_2m: bool,
     writeback: WritebackMode,
     tty: bool,
     interactive: bool,
@@ -52,6 +53,7 @@ pub(crate) fn cmd_run(
         workspace.is_some(),
         vcpu_count.is_some(),
         mem_size_mib.is_some(),
+        huge_pages_2m,
         json,
     ) {
         return Ok(errors::render_error(&e, json));
@@ -140,6 +142,7 @@ pub(crate) fn cmd_run(
         overlay_clone_mode,
         vcpu_count,
         mem_size_mib,
+        huge_pages_2m,
         request_id,
     );
 
@@ -311,6 +314,7 @@ fn validate_run_flags(
     has_workspace: bool,
     has_vcpu_count: bool,
     has_mem_size_mib: bool,
+    has_huge_pages_2m: bool,
     json: bool,
 ) -> Result<(), FcError> {
     if interactive && !tty {
@@ -359,6 +363,14 @@ fn validate_run_flags(
                     .into(),
         }));
     }
+    if warm && has_huge_pages_2m {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "huge_pages_2m",
+            reason:
+                "--warm is incompatible with --huge-pages-2m; warm slot memory backing is fixed by the owner"
+                    .into(),
+        }));
+    }
     Ok(())
 }
 
@@ -392,6 +404,7 @@ fn sandbox_config_for_run(
     overlay_clone_mode: OverlayCloneModeArg,
     vcpu_count: Option<u32>,
     mem_size_mib: Option<u32>,
+    huge_pages_2m: bool,
     request_id: String,
 ) -> SandboxConfig {
     SandboxConfig {
@@ -400,6 +413,7 @@ fn sandbox_config_for_run(
         network: network_policy_for_egress(egress),
         vcpu_count,
         mem_size_mib,
+        huge_pages_2m,
         cpuset_cpus: None,
         cpu_template: None,
         fc_log_level: None,

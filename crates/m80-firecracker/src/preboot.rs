@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_firecracker_client::{
-    BootSourceConfig, CacheType, Client, DriveConfig, IoEngine, MachineConfig,
+    BootSourceConfig, CacheType, Client, DriveConfig, HugePageConfig, IoEngine, MachineConfig,
     NetworkInterfaceConfig, PmemConfig, VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind, RootfsFormat};
@@ -220,6 +220,7 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         smt: false,
         cpu_template: config.cpu_template,
         track_dirty_pages: None,
+        huge_pages: config.huge_pages_2m.then_some(HugePageConfig::Hugetlbfs2M),
     }
 }
 

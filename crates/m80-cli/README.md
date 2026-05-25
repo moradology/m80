@@ -280,6 +280,10 @@ Read-only update status behavior is captured in
 - `--mem-size-mib <mib>` - overrides the cold-booted VM memory size in MiB.
   Zero is rejected. This is incompatible with `--warm` because warm slot sizing
   is fixed by the owner.
+- `--huge-pages-2m` - backs cold-booted guest memory with Firecracker
+  `huge_pages: "2M"`. The host must have enough free 2 MiB hugetlbfs pages
+  reserved for the VM memory size. This is incompatible with `--warm` because
+  warm slot memory backing is fixed by the owner.
 - `--writeback never|on-success|always` - controls workspace writeback.
   `never` is the default. `on-success` extracts workspace changes only after a
   zero guest exit; `always` extracts after zero or non-zero guest exits while

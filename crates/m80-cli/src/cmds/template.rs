@@ -251,6 +251,7 @@ fn sandbox_config_for_boot_spec(spec: &BootSpec, request_id: String) -> SandboxC
         network: spec.sandbox.network.clone(),
         vcpu_count: Some(spec.sandbox.vcpu_count),
         mem_size_mib: Some(spec.sandbox.mem_size_mib),
+        huge_pages_2m: false,
         boot_args: (!spec.sandbox.boot_args.is_empty()).then(|| spec.sandbox.boot_args.join(" ")),
         overlay_size_bytes: spec.sandbox.overlay_size_bytes,
         overlay_clone_mode: spec.sandbox.overlay_clone_mode,

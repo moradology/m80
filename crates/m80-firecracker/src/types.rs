@@ -338,6 +338,11 @@ pub struct SandboxConfig {
     pub vcpu_count: Option<u32>,
     /// Memory in MiB (default: 512).
     pub mem_size_mib: Option<u32>,
+    /// Back guest memory with Firecracker 2 MiB hugetlbfs pages.
+    ///
+    /// Default: false. Enabling this requires a host pool of reserved 2 MiB
+    /// hugepages large enough for the configured guest memory.
+    pub huge_pages_2m: bool,
     /// Optional cgroup v2 CPU set for this VM, e.g. `0-3` or `0,2`.
     ///
     /// `None` inherits the parent cgroup's effective CPU set. When set and
@@ -438,6 +443,7 @@ impl Default for SandboxConfig {
             network: NetworkPolicy::NoEgress,
             vcpu_count: None,
             mem_size_mib: None,
+            huge_pages_2m: false,
             cpuset_cpus: None,
             cpu_template: None,
             fc_log_level: None,

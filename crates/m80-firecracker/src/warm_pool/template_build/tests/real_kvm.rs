@@ -127,6 +127,7 @@ fn real_kvm_sandbox_config(vm_id: &str) -> SandboxConfig {
     SandboxConfig {
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        huge_pages_2m: false,
         ..sandbox_config(vm_id)
     }
 }

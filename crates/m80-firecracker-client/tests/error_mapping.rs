@@ -57,6 +57,7 @@ fn machine_config_400_returns_machine_config_write_failed() {
                 smt: false,
                 cpu_template: Some(CpuTemplate::T2),
                 track_dirty_pages: None,
+                huge_pages: None,
             })
         },
         |e| matches!(e, ClientError::MachineConfigWriteFailed { fault } if fault.contains("invalid vcpu_count")),

@@ -46,6 +46,7 @@ fn put_machine_config_sends_correct_json() {
             smt: false,
             cpu_template: Some(CpuTemplate::T2),
             track_dirty_pages: Some(true),
+            huge_pages: None,
         })
         .unwrap();
     let result = server.join();
@@ -56,6 +57,28 @@ fn put_machine_config_sends_correct_json() {
     assert!(result.request.contains("\"mem_size_mib\":512"));
     assert!(result.request.contains("\"cpu_template\":\"T2\""));
     assert!(result.request.contains("\"track_dirty_pages\":true"));
+    assert!(
+        !result.request.contains("\"huge_pages\""),
+        "None huge_pages must be omitted"
+    );
+}
+
+#[test]
+fn put_machine_config_sends_huge_pages_2m() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client
+        .put_machine_config(&MachineConfig {
+            vcpu_count: 2,
+            mem_size_mib: 512,
+            smt: false,
+            cpu_template: None,
+            track_dirty_pages: None,
+            huge_pages: Some(m80_firecracker_client::HugePageConfig::Hugetlbfs2M),
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(result.request.contains("\"huge_pages\":\"2M\""));
 }
 
 #[test]

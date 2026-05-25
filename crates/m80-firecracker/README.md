@@ -291,6 +291,10 @@ Preboot machine config also sets `smt = false` and omits `cpu_template` by
 default. This is the latency-first same-host shape. Callers that need an AWS
 template-masked CPU surface for snapshot portability can set
 `SandboxConfig::cpu_template` to `CpuTemplate::T2` or `CpuTemplate::C3`.
+`SandboxConfig::huge_pages_2m = true` maps to Firecracker's
+`huge_pages: "2M"` machine-config value and requires a host hugetlbfs pool
+large enough for the VM memory size. The default is false; m80 does not enable
+huge pages automatically from the host THP posture.
 Callers may still supply explicit sizing for ordinary launches.
 `SandboxConfig::cpuset_cpus` optionally writes the VM cgroup leaf
 `cpuset.cpus` during unified-v2 launch; `None` inherits the parent effective
@@ -567,6 +571,12 @@ does not retry another mode.
 policy. `None` uses the m80 default, `CacheType::Unsafe`, for the ephemeral
 overlay and workspace drives. Set `Some(CacheType::Writeback)` when a caller
 needs Firecracker's conservative host sync behavior.
+
+`SandboxConfig::huge_pages_2m` opts a cold launch into Firecracker hugetlbfs
+guest-memory backing. When true, `mem_size_mib` must be a multiple of 2 and the
+host must have enough free 2 MiB hugepages reserved before launch. Snapshot
+restore does not switch page size; restore inherits the snapshot's memory
+backing.
 
 `SandboxConfig::idle_timeout` controls the idle-shutdown timer (default:
 `Some(300s)`). See "Idle timeout" below.

@@ -18,11 +18,9 @@ The selected policy is wrapped in brackets, for example:
 always [madvise] never
 ```
 
-Firecracker guest RAM is anonymous memory in the Firecracker child process.
-m80 cannot call `madvise(MADV_HUGEPAGE)` inside that child process. In
-`madvise` mode, guest RAM therefore does not receive THP unless Firecracker
-itself requests it. In `always` mode, the kernel may back that anonymous memory
-with transparent hugepages without reserving explicit hugepages ahead of time.
+Firecracker v1.15.1 does not expose a transparent-hugepage switch for guest
+memory. Its `huge_pages` machine-config field is hugetlbfs-backed and uses
+reserved 2 MiB hugepages; it is not a `MADV_HUGEPAGE` request.
 
 Latency-priority hosts should evaluate:
 
@@ -35,11 +33,11 @@ tail jitter under load. Treat this as an operator policy, not an m80 launch
 precondition.
 
 Transparent hugepages and explicit hugepages are different operator choices.
-THP `always` mode is best-effort and needs no reservation: the kernel may
-promote Firecracker's anonymous guest-memory pages when conditions allow it.
-Explicit Firecracker `huge_pages` is the guaranteed path: it requires reserving
-host hugepages with settings such as `vm.nr_hugepages=N`, and that reservation
-reduces the flexibility of host memory allocation.
+THP `always` mode can affect other anonymous host memory, but it is not how m80
+requests Firecracker hugepage backing. `m80 run --huge-pages-2m` maps to
+Firecracker `huge_pages: "2M"` and requires reserving host hugepages with
+settings such as `vm.nr_hugepages=N`; that reservation reduces the flexibility
+of host memory allocation.
 
 ## KVM Halt Polling
 

@@ -53,6 +53,8 @@ without inheriting m80's lifecycle assumptions.
 - `CpuTemplate { T2, C3 }` — optional CPU template on `MachineConfig`.
 - `MachineConfig::track_dirty_pages` — optional Firecracker dirty-page
   tracking switch for future diff snapshots; omitted when `None`.
+- `HugePageConfig::Hugetlbfs2M` — optional Firecracker `huge_pages: "2M"`
+  machine-config value; omitted when `MachineConfig::huge_pages` is `None`.
 - `LoggerConfig` and `LogLevel { Error, Warning, Info, Debug }` — Firecracker
   native logger path and optional formatting/verbosity fields for `PUT /logger`.
 - `MetricsConfig` — Firecracker native JSON metrics output path for
@@ -73,8 +75,8 @@ without inheriting m80's lifecycle assumptions.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
   `DriveConfig`, `PartialDriveConfig`, `PmemConfig`, `NetworkInterfaceConfig`,
   `VsockConfig`, `LoggerConfig`, `MetricsConfig`, `RateLimiterConfig`,
-  `TokenBucketConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
-  `MemBackendConfig`, `VsockOverride`,
+  `TokenBucketConfig`, `HugePageConfig`, `CreateSnapshotConfig`,
+  `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`,
   `FirecrackerVersion` (raw
   Firecracker API response).
 - `ClientError` — typed per-resource failure plus `Connect`, `Serialize`,
