@@ -66,7 +66,9 @@ In priority order. Update freely as work lands.
    2026-05-26; run
    `https://github.com/moradology/m80/actions/runs/26447668914` is queued
    against commit `2d12982d86c433c04eb92392aeb23760f1e7e43b` for the external
-   network proof.
+   network proof. A local focused attempt on this host is not closure evidence:
+   m80 preflight rejects the host with `NestedVirtEnabled { vendor: "amd" }`
+   even though `/dev/kvm` exists.
 2. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
