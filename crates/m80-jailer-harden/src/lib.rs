@@ -409,6 +409,8 @@ pub fn exec_jailer(args: HardenArgs) -> Result<(), HardenError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+    use std::os::fd::AsRawFd;
 
     #[test]
     fn parse_requires_separator() {
@@ -606,6 +608,89 @@ mod tests {
         ] {
             assert!(!allowed.contains(&cap), "{cap} must be pruned");
         }
+    }
+
+    #[test]
+    fn close_inherited_fds_preserves_stdio_and_closes_extra_fd() {
+        let inherited = tempfile::NamedTempFile::new().expect("inherited fd");
+        clear_cloexec(inherited.as_file());
+
+        let output = run_close_inherited_fds_child(Some(inherited.as_file().as_raw_fd()));
+
+        assert!(
+            output.status.success(),
+            "status={} stdout=\n{}\nstderr=\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn close_inherited_fds_succeeds_without_extra_fd() {
+        let output = run_close_inherited_fds_child(None);
+
+        assert!(
+            output.status.success(),
+            "status={} stdout=\n{}\nstderr=\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn close_inherited_fds_child_entry() {
+        if std::env::var_os("M80_TEST_CLOSE_INHERITED_FDS_CHILD").is_none() {
+            return;
+        }
+        std::process::exit(close_inherited_fds_child_status());
+    }
+
+    fn run_close_inherited_fds_child(inherited_fd: Option<i32>) -> std::process::Output {
+        let mut command = std::process::Command::new(std::env::current_exe().expect("current exe"));
+        command
+            .env("M80_TEST_CLOSE_INHERITED_FDS_CHILD", "1")
+            .env(
+                "M80_TEST_INHERITED_FD",
+                inherited_fd.map_or_else(|| "-1".to_owned(), |fd| fd.to_string()),
+            )
+            .arg("--exact")
+            .arg("tests::close_inherited_fds_child_entry")
+            .arg("--nocapture");
+        command.output().expect("run close_inherited_fds child")
+    }
+
+    fn clear_cloexec(file: &std::fs::File) {
+        let fd = file.as_raw_fd();
+        let flags = FdFlag::from_bits_truncate(fcntl(fd, FcntlArg::F_GETFD).expect("get flags"));
+        fcntl(fd, FcntlArg::F_SETFD(flags - FdFlag::FD_CLOEXEC)).expect("clear cloexec");
+    }
+
+    fn close_inherited_fds_child_status() -> i32 {
+        let inherited_fd = std::env::var("M80_TEST_INHERITED_FD")
+            .expect("inherited fd env")
+            .parse::<i32>()
+            .expect("inherited fd number");
+        if let Err(err) = close_inherited_fds() {
+            eprintln!("close_inherited_fds failed: {err}");
+            return 10;
+        }
+        for fd in [0, 1, 2] {
+            if !fd_is_open(fd) {
+                eprintln!("stdio fd {fd} was closed");
+                return 11;
+            }
+        }
+        if inherited_fd >= 3 && fd_is_open(inherited_fd) {
+            eprintln!("inherited fd {inherited_fd} stayed open");
+            return 12;
+        }
+        0
+    }
+
+    fn fd_is_open(fd: i32) -> bool {
+        fcntl(fd, FcntlArg::F_GETFD).is_ok()
     }
 
     #[test]

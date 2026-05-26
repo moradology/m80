@@ -56,10 +56,10 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-vpw49.{2,6,8}` — no-KVM coverage for recently touched behavior.**
+1. **`m80-vpw49.{6,8}` — no-KVM coverage for recently touched behavior.**
    These are the best next long-run lane because they harden launch,
    jailer/capability, storage, and outbound-network behavior before the next
-   broad refactor. `m80-vpw49.1` is already closed.
+   broad refactor. `m80-vpw49.1` and `.2` are already closed.
 2. **`m80-9jfaz.2`, then `m80-mrjqs.{3,4}` — production observability.** Add
    VM correlation to existing events before adding larger metrics and
    Firecracker `/logger` capture, so failures from future long runs are easier
@@ -97,6 +97,9 @@ as part of the v0.1 ship bar unless rerun friction becomes material.
 `m80-vpw49.1` is closed as of 2026-05-26: no-KVM tests now pin restore-probe
 request-id handling, restore-probe retry/timeout behavior, join-netns PID-1
 network tokens, cgroup probe error mapping, and snapshot path staging.
+`m80-vpw49.2` is closed as of 2026-05-26: no-root tests now pin inherited-fd
+closure while preserving stdio, and existing root/plan/recover tests cover the
+capability and m80-jailer absorbed sub-gaps.
 
 ## Long-run order
 
@@ -109,8 +112,8 @@ root causes.
    and validate the JSON report, then fix or file only report-proven root
    causes.
 2. **Close no-KVM coverage gaps before refactors.** Continue with
-   `m80-vpw49.2`, then `m80-vpw49.6`, then `m80-vpw49.8` unless live source
-   review shows a bead is stale or sweep-ineligible.
+   `m80-vpw49.6`, then `m80-vpw49.8` unless live source review shows a bead is
+   stale or sweep-ineligible.
 3. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
    `m80-243wj.17`, and adjacent failure-path cleanup beads forward if the
    real-KVM reports keep showing leaked processes, swallowed thread panics, or
