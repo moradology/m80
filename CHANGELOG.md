@@ -35,8 +35,9 @@ All notable changes to m80 are documented here. Format roughly follows
   host-binaries manifest, and pass those paths into preflight and ignored E2E
   tests.
 - Made privileged smoke relocate staged guest artifact manifest/build-receipt
-  paths to the selected artifact directory and require the matching `m80-guestd`
-  artifact before preflight.
+  paths to the selected artifact directory, emit the matching
+  `install-provenance.json`, and require the matching `m80-guestd` artifact
+  before preflight.
 
 ### Added — stripped-kernel PVH direct boot note
 

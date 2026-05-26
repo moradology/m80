@@ -268,11 +268,13 @@ if [[ ! -f "$GUESTD_ARTIFACT" ]]; then
 fi
 relocated_manifest_tmp="$(mktemp)"
 relocated_receipt_tmp="$(mktemp)"
+install_provenance_tmp="$(mktemp)"
 python3 - \
     "${ROOTFS_IMAGE}.manifest.json" \
     "${ROOTFS_IMAGE}.build-receipt.json" \
     "$relocated_manifest_tmp" \
     "$relocated_receipt_tmp" \
+    "$install_provenance_tmp" \
     "$KERNEL_IMAGE" \
     "$ROOTFS_IMAGE" \
     "$GUESTD_ARTIFACT" \
@@ -286,7 +288,8 @@ manifest_path = pathlib.Path(sys.argv[1])
 receipt_path = pathlib.Path(sys.argv[2])
 manifest_out = pathlib.Path(sys.argv[3])
 receipt_out = pathlib.Path(sys.argv[4])
-kernel_image, rootfs_image, guestd_artifact, source_rootfs = sys.argv[5:]
+provenance_out = pathlib.Path(sys.argv[5])
+kernel_image, rootfs_image, guestd_artifact, source_rootfs = sys.argv[6:]
 
 def sha256(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
@@ -294,6 +297,9 @@ def sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+source_manifest_sha256 = sha256(manifest_path)
+source_receipt_sha256 = sha256(receipt_path)
 
 manifest = json.loads(manifest_path.read_text())
 manifest["kernel_image"] = kernel_image
@@ -322,10 +328,36 @@ for artifact in receipt["artifacts"]:
     if path_and_sha is not None:
         artifact["path"], artifact["sha256"] = path_and_sha
 receipt_out.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+receipt_sha256 = sha256(receipt_out)
+
+provenance = {
+    "release_tag": None,
+    "schema_version": 1,
+    "transforms": [
+        {
+            "artifact": "guest_manifest",
+            "source_path": manifest_path.name,
+            "source_sha256": source_manifest_sha256,
+            "installed_path": str(manifest_path),
+            "installed_sha256": manifest_sha256,
+            "rewrite": "install_path_rewrite",
+        },
+        {
+            "artifact": "build_receipt",
+            "source_path": receipt_path.name,
+            "source_sha256": source_receipt_sha256,
+            "installed_path": str(receipt_path),
+            "installed_sha256": receipt_sha256,
+            "rewrite": "install_path_rewrite",
+        },
+    ],
+}
+provenance_out.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
 PY
 sudo install -o root -g root -m 0644 "$relocated_manifest_tmp" "${ROOTFS_IMAGE}.manifest.json"
 sudo install -o root -g root -m 0644 "$relocated_receipt_tmp" "${ROOTFS_IMAGE}.build-receipt.json"
-rm -f "$relocated_manifest_tmp" "$relocated_receipt_tmp"
+sudo install -o root -g root -m 0644 "$install_provenance_tmp" "$ARTIFACT_DIR/install-provenance.json"
+rm -f "$relocated_manifest_tmp" "$relocated_receipt_tmp" "$install_provenance_tmp"
 
 # --- install host-side TCB binaries and write matching manifest ---
 echo "=== install host binaries ==="

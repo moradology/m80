@@ -111,8 +111,9 @@ m80-guestd
 ```
 
 `scripts/smoke.sh` rewrites the manifest and build receipt paths to the selected
-artifact directory before preflight; it does not invent or rebuild the
-`m80-guestd` artifact because that hash must match the rootfs manifest.
+artifact directory and emits `install-provenance.json` before preflight; it does
+not invent or rebuild the `m80-guestd` artifact because that hash must match the
+rootfs manifest.
 
 Run a command inside the L1:
 
