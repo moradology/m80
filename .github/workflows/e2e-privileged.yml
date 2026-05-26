@@ -68,9 +68,17 @@ jobs:
       )
 
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+      - name: Checkout public repository
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
+            '+refs/heads/*:refs/remotes/origin/*' \
+            '+refs/tags/*:refs/tags/*' \
+            "+$GITHUB_REF:refs/remotes/origin/event"
+          git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Validate operator inputs
         run: |
