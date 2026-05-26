@@ -76,7 +76,15 @@ Privileged E2E run
 ignored privileged battery, report validation, and artifact upload. Validated
 report:
 `/tank/tmp/m80-e2e-gh-run-26443657120/m80-e2e-privileged-26443657120-1/m80-e2e-report.json`
-with `pass=111 fail=0 skip=33 total=144`.
+with `pass=111 fail=0 skip=33 total=144`. Current runner proof:
+`m80-l1-runner` is registered as a repo self-hosted runner with labels
+`self-hosted,Linux,X64,kvm`; Privileged E2E run
+`https://github.com/moradology/m80/actions/runs/26450809508` on commit
+`185d88e9af22a3e6ec543ef6dccac3f540e98946` passed anonymous checkout,
+substrate checks, `scripts/smoke.sh`, external-network ignored tests, report
+validation, diagnostics capture, and artifact upload. Validated report:
+`/tank/tmp/m80-e2e-gh-run-26450809508/m80-e2e-privileged-26450809508-1/m80-e2e-report.json`
+with `pass=117 fail=0 skip=28 total=145`.
 `m80-p4i52.1` and `m80-ij49d.{1,2,3}` are closed as of 2026-05-26 by
 `dcbea1b0`: the workspace is non-publishable, manifest metadata proves all 24
 packages have publishing disabled, and the firecracker/cgroup/CLI README drift
@@ -120,7 +128,8 @@ including external DNS/HTTP, HTTP by IP, ICMP default-deny, peer-guest isolation
 private Firecracker netns, and post-drop CAP_NET_ADMIN behavior. Proof artifacts:
 `/tank/tmp/m80-vpw49-8-proof/m80-vpw49-8-egress.log`,
 `/tank/tmp/m80-vpw49-8-proof/m80-cap-net-admin-drop.log`, and
-`/tank/tmp/m80-vpw49-8-proof/m80-cap-drop-smoke.log`.
+`/tank/tmp/m80-vpw49-8-proof/m80-cap-drop-smoke.log`. The full GitHub
+Privileged E2E proof above also ran with `external_network=true`.
 
 ## Long-run order
 
@@ -131,9 +140,8 @@ root causes.
 1. **Keep the privileged battery green.** The self-hosted workflow is now the
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
-   causes. Current state: GitHub workflow dispatch works, but repo-visible
-   self-hosted runners are absent; use the L1 KVM runner for proof until a
-   `self-hosted,kvm` runner is registered again.
+   causes. Current state: `m80-l1-runner` is online as a repo
+   `self-hosted,kvm` runner and run `26450809508` is green on current main.
 2. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
    external consumer integration has a concrete m80 gap.** The observability
    batch that was gating long-run diagnosis is complete enough for the next
