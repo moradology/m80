@@ -89,6 +89,12 @@ jobs:
       - name: ignored-test taxonomy
         run: python3 scripts/test-ignored-taxonomy.py
 
+      - name: e2e report schema
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/validate-e2e-report.py scripts/test-run-e2e-report.py
+          python3 scripts/test-run-e2e-report.py
+
       - name: Install Rust toolchain
         run: rustup toolchain install 1.82 --profile minimal --component rustfmt --component clippy
 

@@ -385,11 +385,22 @@ skip_reason_for() {
 emit_report() {
     local exit_code="$1"
     if [[ "$json" -eq 1 ]]; then
-        python3 - "$results" "$exit_code" "$package" "$run_root" "$kernel_image" "$rootfs_image" "$jailer_harden_bin" <<'PY'
+        python3 - \
+            "$results" "$exit_code" "$package" "$run_root" \
+            "$kernel_image" "$rootfs_image" "$jailer_harden_bin" \
+            "$list_only" "$timeout_s" "$have_sudo" "$have_kvm" "$have_artifacts" \
+            "$have_harden" "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
+            "$have_debugfs" "$have_docker" "$measurement_enabled" \
+            "$pmem_artifacts" "$external_network_enabled" "$malicious_artifacts" \
+            "$minimal_artifacts" "$ubuntu_artifacts" <<'PY'
+import datetime
 import json
 import pathlib
 import sys
 from collections import Counter
+
+def flag(index):
+    return bool(int(sys.argv[index]))
 
 path = pathlib.Path(sys.argv[1])
 results = []
@@ -398,8 +409,28 @@ if path.exists():
 counts = Counter(item["status"] for item in results)
 report = {
     "schema_version": 1,
+    "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     "package": sys.argv[3],
     "run_root": sys.argv[4],
+    "list_only": flag(8),
+    "timeout_seconds": int(sys.argv[9]),
+    "environment": {
+        "sudo_available": flag(10),
+        "kvm_available": flag(11),
+        "artifacts_available": flag(12),
+        "jailer_harden_available": flag(13),
+        "iproute2_available": flag(14),
+        "cgroup_v2_available": flag(15),
+        "loop_device_available": flag(16),
+        "debugfs_available": flag(17),
+        "docker_available": flag(18),
+        "measurement_enabled": flag(19),
+        "pmem_artifacts_available": flag(20),
+        "external_network_enabled": flag(21),
+        "malicious_artifacts_available": flag(22),
+        "minimal_artifacts_available": flag(23),
+        "ubuntu_artifacts_available": flag(24),
+    },
     "artifacts": {
         "kernel": sys.argv[5],
         "rootfs": sys.argv[6],

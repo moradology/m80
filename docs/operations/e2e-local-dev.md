@@ -79,6 +79,14 @@ Emit machine-readable output:
 scripts/run-e2e.sh --json | jq '.summary, .results[] | {status,test,reason}'
 ```
 
+The JSON contract is documented and validated in
+[`e2e-reporting.md`](e2e-reporting.md):
+
+```sh
+scripts/run-e2e.sh --list --json > /tank/tmp/m80-e2e-report.json
+python3 scripts/validate-e2e-report.py /tank/tmp/m80-e2e-report.json
+```
+
 The wrapper detects missing `sudo`, `/dev/kvm`, kernel/rootfs artifacts,
 `m80-jailer-harden`, optional malicious-guestd artifacts, and optional external
 network opt-in. It reports skipped tests with explicit reason strings instead

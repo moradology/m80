@@ -39,6 +39,13 @@ List the selected package's ignored tests and why they would skip:
 scripts/run-e2e.sh --list --json | jq '.results[] | {status,test,reason}'
 ```
 
+Validate the machine-readable report contract:
+
+```sh
+scripts/run-e2e.sh --list --json > /tank/tmp/m80-e2e-report.json
+python3 scripts/validate-e2e-report.py /tank/tmp/m80-e2e-report.json
+```
+
 Run the default privileged battery one test at a time:
 
 ```sh
@@ -61,3 +68,5 @@ M80_RUN_MEASUREMENT_E2E=1 scripts/run-e2e.sh --package m80-storage
 Before a real run, the wrapper invokes `scripts/e2e-reap.sh` to remove stale
 m80-owned residue from previous failed runs. Set `M80_E2E_SKIP_REAPER=1` only
 when debugging the reaper itself.
+
+The JSON schema is documented in [`e2e-reporting.md`](e2e-reporting.md).

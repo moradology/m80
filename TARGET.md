@@ -56,25 +56,23 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-16hx7.2` — artifact build/cache.** The runner can now decide what to
-   run, but it still depends on pre-existing kernel/rootfs artifacts. Make the
-   artifact cache reproducible so a clean runner can populate and reuse the
-   battery inputs without hand setup.
-2. **`m80-16hx7.6` — structured report contract.** `scripts/run-e2e.sh --json`
-   already emits pass/fail/skip data; formalize the schema, validate it, and
-   document how operators consume it.
-3. **`m80-16hx7.5` — post-test leak checks.** The pre-run reaper catches stale
+1. **`m80-16hx7.5` — post-test leak checks.** The pre-run reaper catches stale
    residue from failed sessions. The next reliability gap is proving a passing
    privileged test leaves no tap, bridge, iptables, run-dir, or cgroup residue.
-4. **`m80-16hx7.7` — self-hosted CI workflow.** Wire the now-documented runner,
-   artifact cache, cleanup, and JSON report into an operator-triggered CI lane.
+2. **`m80-16hx7.7` + `m80-s3r28.2` — self-hosted CI workflow.** Wire the
+   now-documented runner, cleanup, and JSON report into an operator-triggered
+   privileged CI lane; close only after a verified self-hosted runner run.
+3. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
+   runtime improvement unless repeated real-KVM battery runs are too slow or
+   too hand-wired to use without a reproducible cache.
 
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
 produced the nested-KVM public-install smoke artifact for `v0.2.20`.
 `m80-16hx7.1`, `.3`, and `.4` are now closed as of 2026-05-25: runner setup is
 documented/idempotent, ignored tests have enforced structured reasons, no-KVM
 and privileged selector proofs are green, and the pre-test reaper has seeded
-real-host residue coverage.
+real-host residue coverage. `m80-16hx7.6` now has a documented/validated JSON
+report schema for the wrapper output.
 
 ## Deferred (not v0.1, no calendar)
 
