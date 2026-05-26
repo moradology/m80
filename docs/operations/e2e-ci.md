@@ -56,8 +56,8 @@ Repository or organization variables can override:
 
 The job checks the substrate first: `/dev/kvm`, `sudo -n`, `ip`, `iptables`,
 `cargo`, `rustc`, `rg`, `unsquashfs`, KSM disabled, kernel/rootfs/seccomp
-artifact paths, and the m80 host-binary paths. It then runs `scripts/smoke.sh`,
-followed by:
+artifact paths, the matching `m80-guestd` artifact, and the m80 host-binary
+paths. It then runs `scripts/smoke.sh`, followed by:
 
 ```sh
 scripts/run-e2e.sh --package "$M80_E2E_PACKAGE" --timeout "$M80_E2E_TIMEOUT_SECONDS" --json

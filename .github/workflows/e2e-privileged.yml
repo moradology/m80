@@ -108,6 +108,7 @@ jobs:
             fi
             test -f "$M80_KERNEL_IMAGE"
             test -f "$M80_ROOTFS_IMAGE"
+            test -f "$M80_ARTIFACT_DIR/m80-guestd"
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"

@@ -161,6 +161,7 @@ else
     esac
 fi
 ARTIFACT_DIR="${M80_ARTIFACT_DIR:-$(dirname "$ROOTFS_IMAGE")}"
+GUESTD_ARTIFACT="${M80_GUESTD_ARTIFACT:-$ARTIFACT_DIR/m80-guestd}"
 
 echo "=== smoke config ==="
 echo "  image-kind:  $IMAGE_KIND"
@@ -175,6 +176,7 @@ echo "  harden:      $JAILER_HARDEN_BIN"
 echo "  net-helper:  $NET_HELPER_BIN"
 echo "  kernel:      $KERNEL_IMAGE"
 echo "  rootfs:      $ROOTFS_IMAGE"
+echo "  guestd-artifact: $GUESTD_ARTIFACT"
 echo "  jail uid/gid: $JAIL_UID/$JAIL_GID"
 echo "  pmem-layers: $PMEM_LAYERS"
 echo
@@ -256,6 +258,74 @@ EOF
         echo "=== guest image already built at $IMAGE_BUILD_DIR ==="
     fi
 fi
+
+# --- normalize staged artifact manifests to this runner's paths ---
+echo "=== relocate artifact manifest ==="
+if [[ ! -f "$GUESTD_ARTIFACT" ]]; then
+    echo "missing guestd artifact: $GUESTD_ARTIFACT" >&2
+    echo "stage the m80-guestd binary that matches ${ROOTFS_IMAGE}.manifest.json" >&2
+    exit 1
+fi
+relocated_manifest_tmp="$(mktemp)"
+relocated_receipt_tmp="$(mktemp)"
+python3 - \
+    "${ROOTFS_IMAGE}.manifest.json" \
+    "${ROOTFS_IMAGE}.build-receipt.json" \
+    "$relocated_manifest_tmp" \
+    "$relocated_receipt_tmp" \
+    "$KERNEL_IMAGE" \
+    "$ROOTFS_IMAGE" \
+    "$GUESTD_ARTIFACT" \
+    "$ARTIFACT_DIR/source.ext4" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1])
+receipt_path = pathlib.Path(sys.argv[2])
+manifest_out = pathlib.Path(sys.argv[3])
+receipt_out = pathlib.Path(sys.argv[4])
+kernel_image, rootfs_image, guestd_artifact, source_rootfs = sys.argv[5:]
+
+def sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+manifest = json.loads(manifest_path.read_text())
+manifest["kernel_image"] = kernel_image
+manifest["output_rootfs_image"] = rootfs_image
+manifest["daemon_binary_path"] = guestd_artifact
+if manifest.get("source_rootfs_image") is not None:
+    manifest["source_rootfs_image"] = source_rootfs
+manifest_out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+manifest_sha256 = sha256(manifest_out)
+
+receipt = json.loads(receipt_path.read_text())
+receipt["manifest_path"] = str(manifest_path)
+receipt["manifest_sha256"] = manifest_sha256
+paths_by_kind = {
+    "kernel_image": (kernel_image, manifest["kernel_image_sha256"]),
+    "output_rootfs_image": (rootfs_image, manifest["output_rootfs_sha256"]),
+    "daemon_binary_path": (guestd_artifact, manifest["daemon_binary_sha256"]),
+}
+if manifest.get("source_rootfs_image") is not None:
+    paths_by_kind["source_rootfs_image"] = (
+        manifest["source_rootfs_image"],
+        manifest["source_rootfs_sha256"],
+    )
+for artifact in receipt["artifacts"]:
+    path_and_sha = paths_by_kind.get(artifact["kind"])
+    if path_and_sha is not None:
+        artifact["path"], artifact["sha256"] = path_and_sha
+receipt_out.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+PY
+sudo install -o root -g root -m 0644 "$relocated_manifest_tmp" "${ROOTFS_IMAGE}.manifest.json"
+sudo install -o root -g root -m 0644 "$relocated_receipt_tmp" "${ROOTFS_IMAGE}.build-receipt.json"
+rm -f "$relocated_manifest_tmp" "$relocated_receipt_tmp"
 
 # --- install host-side TCB binaries and write matching manifest ---
 echo "=== install host binaries ==="

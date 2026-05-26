@@ -99,6 +99,21 @@ M80_L1_SSH_TARGET=...
 M80_L1_SSH_OPTS=...
 ```
 
+Stage a coherent artifact set into the L1 before dispatching the workflow. The
+default workflow paths expect all of these under `/tmp/m80-build-current/artifacts`:
+
+```sh
+vmlinux
+output.ext4
+output.ext4.manifest.json
+output.ext4.build-receipt.json
+m80-guestd
+```
+
+`scripts/smoke.sh` rewrites the manifest and build receipt paths to the selected
+artifact directory before preflight; it does not invent or rebuild the
+`m80-guestd` artifact because that hash must match the rootfs manifest.
+
 Run a command inside the L1:
 
 ```sh
