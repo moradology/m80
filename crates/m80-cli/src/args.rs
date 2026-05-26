@@ -197,6 +197,9 @@ pub enum Cmd {
     /// Print host capabilities, effective config, versions, and runtime paths.
     Env,
 
+    /// Render m80 operational metrics in Prometheus exposition format.
+    Metrics(MetricsArgs),
+
     /// Recover stale run-roots and clean up orphan bridges.
     Cleanup {
         /// Force cleanup even when state is ambiguous.
@@ -258,6 +261,14 @@ pub enum EgressMode {
 pub enum NetAction {
     /// Scan m80-tagged iptables rules and tfc* TAPs; remove orphaned residue.
     Cleanup(NetCleanupArgs),
+}
+
+/// `m80 metrics` options.
+#[derive(Debug, Args)]
+pub struct MetricsArgs {
+    /// Write metrics to this node-exporter textfile path instead of stdout.
+    #[arg(long, value_name = "PATH")]
+    pub textfile: Option<PathBuf>,
 }
 
 /// Arguments for `m80 net cleanup`.

@@ -164,6 +164,16 @@ binaries, pull OCI images, or install packages implicitly.
   paths, active install pointer status, missing profile paths, Firecracker
   version, and run-root state. `m80 --json env` emits the same data in a
   versioned envelope.
+- `m80 metrics [--textfile <path>]` - renders Prometheus exposition text for
+  run-root health, active warm-owner slot metrics when a warm owner is running,
+  and this process's VM mechanics counters. A standalone invocation sees
+  current run-root and warm-owner health plus counters from the `m80 metrics`
+  process itself; embedders that keep m80 in-process should call the
+  `m80-firecracker` metrics snapshot API before rendering. Without `--textfile`
+  it writes the scrape text to stdout. With `--textfile`, it atomically replaces
+  the supplied node-exporter textfile path; the parent collector directory must
+  already exist. Global `--json` is rejected because Prometheus exposition text
+  is the command's wire format.
 - `m80 cleanup [--force]` - recovers stale run-root state and removes orphaned
   host resources where the lower crates expose cleanup.
 - `m80 net cleanup [--dry-run]` - scans m80-tagged iptables rules and `tfc*`
@@ -234,6 +244,8 @@ Out-of-band diagnostics tailing is captured in
 `docs/behaviors/cli/diagnostic-logs.md`.
 The diagnostic environment dump is captured in
 `docs/behaviors/cli/env-dump.md`.
+Production metrics behavior is captured in
+`docs/behaviors/observability/production-metrics-surface.md`.
 Image-store command behavior is captured in
 `docs/behaviors/cli/image-commands.md`.
 Snapshot-template command behavior is captured in

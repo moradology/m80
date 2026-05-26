@@ -859,6 +859,7 @@ impl Sandbox {
             );
             process_cleanup.disarm();
             run_dir_cleanup.disarm();
+            crate::ops_metrics::record_launch();
             Ok(RunningSandbox {
                 vm_id,
                 request_id,

@@ -102,6 +102,7 @@ fn observed_disconnect_cause(firecracker_pid: u32, live_cause: DisconnectCause) 
 }
 
 fn disconnect_before_terminal(context: &'static str, cause: DisconnectCause) -> FcError {
+    crate::ops_metrics::record_vsock_disconnect();
     FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal { context, cause })
 }
 

@@ -133,8 +133,8 @@ jobs:
       - name: cargo test m80-guestd-malicious malicious artifact
         run: cargo test -p m80-guestd-malicious --features malicious-artifact -- --test-threads=2
 
-      - name: cargo test m80-observability internal surface
-        run: cargo test -p m80-observability --features _test_internal -- --test-threads=2
+      - name: cargo test m80-observability
+        run: cargo test -p m80-observability -- --test-threads=2
 
       - name: cargo clippy --workspace --all-targets
         env:

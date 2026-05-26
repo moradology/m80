@@ -68,6 +68,19 @@ adapter, not below.
   renders the standard exposition format with one `# HELP`, one `# TYPE`,
   and one sample line per emitted metric. **Rendering only** — no embedded HTTP
   server. Hosting the `/metrics` endpoint is the deployer's job.
+- `OpsMetrics` includes process-local VM mechanics counters:
+  `m80_launches_total`, `m80_errors_total{variant=...}`,
+  `m80_phase_failures_total{phase=...}`, `m80_vsock_disconnects_total`, and
+  `m80_idle_timeout_total`.
+- `WarmPoolMetrics` renders warm-pool depth gauges and lifecycle counters:
+  `m80_warm_pool_target_ready`, `m80_warm_pool_ready`,
+  `m80_warm_pool_filling`, `m80_warm_pool_leased`,
+  `m80_warm_pool_discarded_total`,
+  `m80_warm_pool_consecutive_fill_errors`,
+  `m80_warm_pool_fill_attempts_total`,
+  `m80_warm_pool_fill_failures_total`,
+  `m80_warm_pool_lease_acquired_total`, and
+  `m80_warm_pool_lease_returned_total`.
 - `OpsMetrics::guest` optionally carries one `m80_proto::MetricsResponse`
   sampled from a running VM. When present, `render_prometheus` emits
   `m80_guest_cpu_*`, `m80_guest_mem_*`, `m80_guest_requests_total`, and
@@ -112,24 +125,18 @@ events. See `docs/behaviors/observability/spans.md`.
 - `VmEvent::phase_completed(phase, message, request_id, context,
   duration_us, outcome)`.
 - `VmEvent::with_exit_reason(reason)`.
-- `ObservabilityError` — public because diagnostics writer and
-  `_test_internal` probe/health helpers return it directly.
+- `ObservabilityError` — public because diagnostics writer, probe, and health
+  helpers return it directly.
+- `probe(...)`, `VmProbeRecord`, `VmHealth`.
+- `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics`,
+  `WarmPoolMetrics`, `ErrorCount`, `PhaseFailureCount`.
+- Layered-rootfs metric support types such as `DurationHistogram`,
+  `PmemLayerCountBySharing`, `TemplateCountByFreshness`,
+  `PostRestoreHookDuration`, `LeaseAttribution`, and their closed label enums.
+- `render_prometheus(...)`, `render_health_json(...)`.
 - `spans::{ALL_SPANS, M80_SPAN_*}` — canonical tracing span names and field
   schema for image build, pmem attach, guest DAX mount, template build,
   template restore, and post-restore hook execution.
-
-The following symbols have no production consumer in this workspace and are
-gated behind the `_test_internal` cargo feature. Integration tests enable the
-feature explicitly via `--features _test_internal`. They are not part of the
-stable default public surface.
-
-- `probe(...)`, `VmProbeRecord`, `VmHealth` (`_test_internal` only).
-- `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics` (`_test_internal` only).
-- Layered-rootfs metric support types such as `DurationHistogram`,
-  `PmemLayerCountBySharing`, `TemplateCountByFreshness`,
-  `PostRestoreHookDuration`, `LeaseAttribution`, and their closed label enums
-  (`_test_internal` only).
-- `render_prometheus(...)`, `render_health_json(...)` (`_test_internal` only).
 
 ## Non-goals
 

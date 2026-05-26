@@ -212,6 +212,21 @@ fn parse_run_rejects_removed_noegress_spelling() {
 }
 
 #[test]
+fn parse_metrics_textfile_shape() {
+    let cli =
+        Cli::try_parse_from(["m80", "metrics", "--textfile", "/var/lib/node/m80.prom"]).unwrap();
+    match cli.subcommand {
+        Cmd::Metrics(args) => {
+            assert_eq!(
+                args.textfile,
+                Some(std::path::PathBuf::from("/var/lib/node/m80.prom"))
+            );
+        }
+        _ => panic!("expected Metrics"),
+    }
+}
+
+#[test]
 fn parse_rejects_unimplemented_run_flag_shapes() {
     for args in [
         ["m80", "run", "--allow-host", "example.com", "--", "true"].as_slice(),

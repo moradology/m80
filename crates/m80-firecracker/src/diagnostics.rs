@@ -265,11 +265,14 @@ where
     phase_event(phase_name, vm_id, elapsed);
     let outcome = match &result {
         Ok(_) => PhaseOutcome::Ok,
-        Err(err) => PhaseOutcome::Err {
-            class: err.phase_error_class(),
-            variant: err.phase_error_variant().map(str::to_owned),
-            display: err.to_string(),
-        },
+        Err(err) => {
+            crate::ops_metrics::record_phase_failure(phase_name, err.phase_error_variant());
+            PhaseOutcome::Err {
+                class: err.phase_error_class(),
+                variant: err.phase_error_variant().map(str::to_owned),
+                display: err.to_string(),
+            }
+        }
     };
     record_phase_completed(
         diagnostics.as_mut(),
@@ -430,38 +433,52 @@ mod tests {
 
     #[test]
     fn phase_result_records_fc_error_variant_and_display() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut diagnostics = Some(Diagnostics::open(dir.path()).unwrap());
+        crate::ops_metrics::with_ops_metrics_test_lock(|| {
+            crate::ops_metrics::reset_ops_metrics_for_test();
+            let dir = tempfile::tempdir().unwrap();
+            let mut diagnostics = Some(Diagnostics::open(dir.path()).unwrap());
 
-        let result: Result<(), FcError> = phase_result(
-            &mut diagnostics,
-            Phase::Boot,
-            "phase_test_fail",
-            "vm-test",
-            Some("req-test"),
-            || Err(FcError::AdmissionRefused { limit: 1 }),
-        );
-        assert!(matches!(result, Err(FcError::AdmissionRefused { .. })));
+            let result: Result<(), FcError> = phase_result(
+                &mut diagnostics,
+                Phase::Boot,
+                "phase_test_fail",
+                "vm-test",
+                Some("req-test"),
+                || Err(FcError::AdmissionRefused { limit: 1 }),
+            );
+            assert!(matches!(result, Err(FcError::AdmissionRefused { .. })));
 
-        drop(diagnostics);
-        let text =
-            std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
-                .unwrap();
-        let events: Vec<serde_json::Value> = text
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        let outcome = &events[1]["outcome"];
-        assert_eq!(outcome["status"], "err");
-        assert_eq!(outcome["class"], "m80_firecracker::FcError");
-        assert_eq!(outcome["variant"], "AdmissionRefused");
-        assert!(
-            outcome["display"]
-                .as_str()
-                .unwrap()
-                .contains("admission refused"),
-            "got outcome {outcome}"
-        );
+            drop(diagnostics);
+            let text =
+                std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
+                    .unwrap();
+            let events: Vec<serde_json::Value> = text
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let outcome = &events[1]["outcome"];
+            assert_eq!(outcome["status"], "err");
+            assert_eq!(outcome["class"], "m80_firecracker::FcError");
+            assert_eq!(outcome["variant"], "AdmissionRefused");
+            assert!(
+                outcome["display"]
+                    .as_str()
+                    .unwrap()
+                    .contains("admission refused"),
+                "got outcome {outcome}"
+            );
+            let metrics = crate::ops_metrics::ops_metrics_snapshot();
+            assert_eq!(metrics.errors_total.len(), 1);
+            assert_eq!(metrics.errors_total[0].variant.as_str(), "AdmissionRefused");
+            assert_eq!(metrics.errors_total[0].total, 1);
+            assert_eq!(metrics.phase_failures_total.len(), 1);
+            assert_eq!(
+                metrics.phase_failures_total[0].phase.as_str(),
+                "phase_test_fail"
+            );
+            assert_eq!(metrics.phase_failures_total[0].total, 1);
+            crate::ops_metrics::reset_ops_metrics_for_test();
+        });
     }
 
     #[test]

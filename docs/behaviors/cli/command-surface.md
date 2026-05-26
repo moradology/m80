@@ -30,6 +30,7 @@ install packages implicitly.
 - `m80 config show`
 - `m80 list`
 - `m80 inspect <vm-id>`
+- `m80 metrics [--textfile <path>]`
 - `m80 cleanup [--force]`
 - `m80 net cleanup [--dry-run]`
 - `m80 image build/list/show/rm/verify`
@@ -178,6 +179,17 @@ Output is copied as chunks arrive rather than after guest process exit; see
 With global `--json`, `m80 run` emits the serialized exec response instead of
 transparent pipe output. The response is wrapped in the versioned JSON envelope
 described by `docs/behaviors/cli/json-output-envelope.md`.
+
+`m80 metrics` is intentionally Prometheus text only. It reports run-root health
+from disk, active warm-owner slot metrics when a warm owner is running, and
+counters visible in the current process. Standalone CLI invocations do not
+recover historical counters from prior `m80 run` processes; long-running
+embedders use the `m80-firecracker` snapshot API and the `m80-observability`
+renderer in-process. The command writes exposition text to stdout by default,
+or atomically replaces the supplied `--textfile` path for node-exporter textfile
+collection. The textfile parent directory must already exist; missing collector
+directories fail closed instead of being created by m80. Global `--json` is
+invalid for this command.
 
 ## Tests
 

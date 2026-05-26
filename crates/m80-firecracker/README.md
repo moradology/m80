@@ -188,6 +188,12 @@ snapshot without spawning a guest process.
 `RunningSandbox::fc_metrics_path()` returns the host-visible path where
 Firecracker writes its native JSON metrics file; m80 does not parse or ingest
 that file automatically.
+`ops_metrics_snapshot()` returns process-local VM mechanics counters for the
+embedding process. The counters include successful launches, phase failures by
+finite `FcError` variant and phase name, vsock disconnects before terminal
+frames, and idle-timeout expirations. They reset when the process exits.
+`warm_pool_metrics(snapshot)` converts a `WarmPoolSnapshot` into the
+`m80-observability` warm-pool metrics DTO used by Prometheus rendering.
 
 `RunningSandbox::ping_guest()` sends a direct `PingRequest` to m80-guestd and
 returns `PongResponse { guest_unix_ms }` without spawning a guest process.
@@ -246,6 +252,9 @@ directory for triage and deleted with normal run-dir cleanup.
 Firecracker native metrics are always configured into the run directory; callers
 that want the raw JSON can read `RunningSandbox::fc_metrics_path()` while the VM
 is running or preserve the run directory for offline inspection.
+Process-local operational counters are available through
+`ops_metrics_snapshot()`, and `warm_pool_metrics(WarmPoolSnapshot)` converts the
+warm-pool status DTO into the metrics DTO consumed by `m80-observability`.
 `WireProtocolError` is re-exported for callers that need to distinguish broken
 peer bytes from transport failures.
 

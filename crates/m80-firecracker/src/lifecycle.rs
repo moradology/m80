@@ -762,6 +762,7 @@ fn duration_ns(duration: Duration) -> u64 {
 }
 
 fn expire_idle_timeout(context: IdleWatcherContext<'_>) {
+    crate::ops_metrics::record_idle_timeout();
     tracing::info!(
         vm_id = context.vm_id,
         "idle timeout expired; issuing graceful shutdown"

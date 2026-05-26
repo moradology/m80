@@ -29,6 +29,18 @@ pub struct HealthSnapshot {
 pub struct OpsMetrics {
     /// Number of VMs the metrics span.
     pub vm_count: u32,
+    /// Successful VM launches observed by this process.
+    pub launches_total: u64,
+    /// Errors observed by finite `FcError` variant name.
+    pub errors_total: Vec<ErrorCount>,
+    /// Failed launch phases observed by phase name.
+    pub phase_failures_total: Vec<PhaseFailureCount>,
+    /// Warm-pool depth and lifecycle counters.
+    pub warm_pool: Option<WarmPoolMetrics>,
+    /// Vsock disconnects before a required terminal frame.
+    pub vsock_disconnects_total: u64,
+    /// Idle-timeout expirations observed by the lifecycle watcher.
+    pub idle_timeout_total: u64,
     /// Guest metrics sampled from one running VM at scrape time.
     pub guest: Option<MetricsResponse>,
     /// Pmem layer count by declared sharing mode.
@@ -45,6 +57,49 @@ pub struct OpsMetrics {
     pub template_store_bytes: u64,
     /// Info-style attribution records for active leases.
     pub lease_attribution: Vec<LeaseAttribution>,
+}
+
+/// Count for one finite error variant label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorCount {
+    /// `FcError::variant_name()` label.
+    pub variant: MetricLabelValue,
+    /// Observed count.
+    pub total: u64,
+}
+
+/// Count for one failed launch phase label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhaseFailureCount {
+    /// Launch phase name.
+    pub phase: MetricLabelValue,
+    /// Observed count.
+    pub total: u64,
+}
+
+/// Warm-pool depth gauges and lifecycle counters.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WarmPoolMetrics {
+    /// Configured ready-slot target.
+    pub target_ready: u64,
+    /// Slots ready to lease now.
+    pub ready: u64,
+    /// Restore operations currently filling a slot.
+    pub filling: u64,
+    /// Slots currently handed to callers.
+    pub leased: u64,
+    /// Slots discarded since pool creation.
+    pub discarded_total: u64,
+    /// Consecutive slot-launch failures since the last successful fill.
+    pub consecutive_fill_errors: u64,
+    /// Slot-fill attempts since pool creation.
+    pub fill_attempts_total: u64,
+    /// Slot-fill failures since pool creation.
+    pub fill_failures_total: u64,
+    /// Leases handed to callers since pool creation.
+    pub lease_acquired_total: u64,
+    /// Leases released back to the pool since pool creation.
+    pub lease_returned_total: u64,
 }
 
 /// Pmem layer counts split by `PmemSharing` mode.

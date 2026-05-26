@@ -5,7 +5,7 @@ mod status;
 
 use std::io::{stdout, Write as _};
 
-use m80_firecracker::{ConfigError, ExecChunk, FcError};
+use m80_firecracker::{ConfigError, ExecChunk, FcError, WarmPoolSnapshot};
 use m80_proto::{ExecExit, ExecRequest, ExecResponse};
 
 use crate::args::{EgressMode, WarmAction};
@@ -143,6 +143,32 @@ fn render_status(profile: Option<String>, json_mode: bool) -> i32 {
     0
 }
 
+pub(super) fn current_warm_pool_snapshot() -> Option<WarmPoolSnapshot> {
+    let response = control::send_to_owner(WarmControlRequest::Status { profile: None }).ok()?;
+    let WarmControlResponse::Status(status) = response else {
+        return None;
+    };
+    status_to_warm_pool_snapshot(&status)
+}
+
+fn status_to_warm_pool_snapshot(status: &status::WarmStatus) -> Option<WarmPoolSnapshot> {
+    if !matches!(status.owner.state.as_str(), "available" | "draining") {
+        return None;
+    }
+    Some(WarmPoolSnapshot {
+        target_ready: status.slots.target_ready,
+        ready: status.slots.ready,
+        filling: status.slots.filling,
+        leased: status.slots.leased,
+        discarded: status.slots.discarded,
+        consecutive_fill_errors: status.slots.consecutive_fill_errors,
+        fill_attempts_total: status.slots.fill_attempts_total,
+        fill_failures_total: status.slots.fill_failures_total,
+        lease_acquired_total: status.slots.lease_acquired_total,
+        lease_returned_total: status.slots.lease_returned_total,
+    })
+}
+
 fn send_owner_lifecycle_request(req: WarmControlRequest, json_mode: bool) -> i32 {
     match control::send_to_owner(req) {
         Ok(WarmControlResponse::Status(status)) => {
@@ -251,4 +277,60 @@ fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {
         eprintln!("error: {}", err.detail);
     }
     exit_code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity() -> status::WarmOwnerIdentity {
+        status::WarmOwnerIdentity {
+            binary_version: "0.0.0-test".to_owned(),
+            profile: "default".to_owned(),
+            egress: "none".to_owned(),
+            target_ready: 2,
+            pid: 123,
+            mode: "direct_snapshot".to_owned(),
+            socket_path: "/run/m80/warm/owner.sock".to_owned(),
+            started_at_unix_ms: 1,
+        }
+    }
+
+    #[test]
+    fn metrics_snapshot_uses_active_warm_status_slots() {
+        let status = status::available(
+            &identity(),
+            None,
+            WarmPoolSnapshot {
+                target_ready: 2,
+                ready: 1,
+                filling: 1,
+                leased: 3,
+                discarded: 4,
+                consecutive_fill_errors: 5,
+                fill_attempts_total: 6,
+                fill_failures_total: 7,
+                lease_acquired_total: 8,
+                lease_returned_total: 9,
+            },
+            true,
+            false,
+            None,
+        );
+
+        let snapshot = status_to_warm_pool_snapshot(&status).unwrap();
+
+        assert_eq!(snapshot.target_ready, 2);
+        assert_eq!(snapshot.ready, 1);
+        assert_eq!(snapshot.leased, 3);
+        assert_eq!(snapshot.consecutive_fill_errors, 5);
+        assert_eq!(snapshot.lease_returned_total, 9);
+    }
+
+    #[test]
+    fn metrics_snapshot_omits_unavailable_warm_status() {
+        let status = status::unavailable(None);
+
+        assert_eq!(status_to_warm_pool_snapshot(&status), None);
+    }
 }

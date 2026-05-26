@@ -2,6 +2,7 @@ use std::fmt::Write as _;
 
 use crate::health::{
     HealthSnapshot, OpsMetrics, PmemSharingLabel, PostRestoreHookDuration, TemplateFreshnessLabel,
+    WarmPoolMetrics,
 };
 
 const RESTORE_LATENCY_BUCKETS: &[HistogramBucket] = &[
@@ -83,6 +84,32 @@ pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> Strin
         u64::from(metrics.vm_count),
         "gauge",
     );
+    render_metric(
+        &mut out,
+        "m80_launches_total",
+        "Successful VM launches observed by this process.",
+        metrics.launches_total,
+        "counter",
+    );
+    render_error_counts(&mut out, metrics);
+    render_phase_failure_counts(&mut out, metrics);
+    render_metric(
+        &mut out,
+        "m80_vsock_disconnects_total",
+        "Vsock disconnects before a required terminal frame.",
+        metrics.vsock_disconnects_total,
+        "counter",
+    );
+    render_metric(
+        &mut out,
+        "m80_idle_timeout_total",
+        "Idle-timeout expirations observed by the lifecycle watcher.",
+        metrics.idle_timeout_total,
+        "counter",
+    );
+    if let Some(warm_pool) = metrics.warm_pool {
+        render_warm_pool_metrics(&mut out, warm_pool);
+    }
     render_pmem_layer_count_by_sharing(&mut out, metrics);
     render_template_count_by_freshness(&mut out, metrics);
     render_histogram(
@@ -323,6 +350,110 @@ fn render_template_count_by_freshness(out: &mut String, metrics: &OpsMetrics) {
     );
 }
 
+fn render_error_counts(out: &mut String, metrics: &OpsMetrics) {
+    let name = "m80_errors_total";
+    render_family_header(
+        out,
+        name,
+        "Errors observed by finite FcError variant name.",
+        "counter",
+    );
+    for count in &metrics.errors_total {
+        render_labeled_sample(
+            out,
+            name,
+            &[("variant", count.variant.as_str())],
+            count.total,
+        );
+    }
+}
+
+fn render_phase_failure_counts(out: &mut String, metrics: &OpsMetrics) {
+    let name = "m80_phase_failures_total";
+    render_family_header(
+        out,
+        name,
+        "Failed launch phases observed by phase name.",
+        "counter",
+    );
+    for count in &metrics.phase_failures_total {
+        render_labeled_sample(out, name, &[("phase", count.phase.as_str())], count.total);
+    }
+}
+
+fn render_warm_pool_metrics(out: &mut String, metrics: WarmPoolMetrics) {
+    render_metric(
+        out,
+        "m80_warm_pool_target_ready",
+        "Configured warm-pool ready-slot target.",
+        metrics.target_ready,
+        "gauge",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_ready",
+        "Warm-pool slots ready to lease now.",
+        metrics.ready,
+        "gauge",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_filling",
+        "Warm-pool slots currently being filled.",
+        metrics.filling,
+        "gauge",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_leased",
+        "Warm-pool slots currently leased to callers.",
+        metrics.leased,
+        "gauge",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_discarded_total",
+        "Warm-pool slots discarded since pool creation.",
+        metrics.discarded_total,
+        "counter",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_consecutive_fill_errors",
+        "Consecutive warm-pool fill errors since the last successful fill.",
+        metrics.consecutive_fill_errors,
+        "gauge",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_fill_attempts_total",
+        "Warm-pool slot-fill attempts since pool creation.",
+        metrics.fill_attempts_total,
+        "counter",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_fill_failures_total",
+        "Warm-pool slot-fill failures since pool creation.",
+        metrics.fill_failures_total,
+        "counter",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_lease_acquired_total",
+        "Warm-pool leases handed to callers since pool creation.",
+        metrics.lease_acquired_total,
+        "counter",
+    );
+    render_metric(
+        out,
+        "m80_warm_pool_lease_returned_total",
+        "Warm-pool leases released by callers since pool creation.",
+        metrics.lease_returned_total,
+        "counter",
+    );
+}
+
 fn render_post_restore_hook_duration(out: &mut String, metrics: &[PostRestoreHookDuration]) {
     let name = "m80_post_restore_hook_duration_seconds";
     render_family_header(
@@ -480,5 +611,48 @@ mod tests {
         assert!(rendered.contains("m80_restore_latency_seconds_bucket{le=\"+Inf\"} 2\n"));
         assert!(rendered.contains("m80_restore_latency_seconds_sum 0.202000\n"));
         assert!(rendered.contains("m80_restore_latency_seconds_count 2\n"));
+    }
+
+    #[test]
+    fn render_prometheus_includes_production_counter_families() {
+        let rendered = render_prometheus(
+            &HealthSnapshot::default(),
+            &OpsMetrics {
+                launches_total: 3,
+                errors_total: vec![crate::health::ErrorCount {
+                    variant: crate::health::MetricLabelValue::new("Storage").unwrap(),
+                    total: 2,
+                }],
+                phase_failures_total: vec![crate::health::PhaseFailureCount {
+                    phase: crate::health::MetricLabelValue::new("phase_3_storage_prep").unwrap(),
+                    total: 1,
+                }],
+                vsock_disconnects_total: 4,
+                idle_timeout_total: 5,
+                warm_pool: Some(WarmPoolMetrics {
+                    target_ready: 2,
+                    ready: 1,
+                    filling: 1,
+                    leased: 0,
+                    discarded_total: 3,
+                    consecutive_fill_errors: 1,
+                    fill_attempts_total: 7,
+                    fill_failures_total: 2,
+                    lease_acquired_total: 5,
+                    lease_returned_total: 4,
+                }),
+                ..OpsMetrics::default()
+            },
+        );
+
+        assert!(rendered.contains("# TYPE m80_launches_total counter"));
+        assert!(rendered.contains("m80_launches_total 3\n"));
+        assert!(rendered.contains("m80_errors_total{variant=\"Storage\"} 2\n"));
+        assert!(rendered.contains("m80_phase_failures_total{phase=\"phase_3_storage_prep\"} 1\n"));
+        assert!(rendered.contains("m80_vsock_disconnects_total 4\n"));
+        assert!(rendered.contains("m80_idle_timeout_total 5\n"));
+        assert!(rendered.contains("m80_warm_pool_ready 1\n"));
+        assert!(rendered.contains("m80_warm_pool_discarded_total 3\n"));
+        assert!(rendered.contains("m80_warm_pool_fill_attempts_total 7\n"));
     }
 }

@@ -18,11 +18,29 @@ Current gauge families:
 - `m80_vm_health_total`
 - `m80_vm_rollout_ready`
 - `m80_ops_vm_count`
+- `m80_warm_pool_target_ready`
+- `m80_warm_pool_ready`
+- `m80_warm_pool_filling`
+- `m80_warm_pool_leased`
+- `m80_warm_pool_consecutive_fill_errors`
 - `m80_pmem_layers_per_vm_count{sharing="per_vm"|"shared"}`
 - `m80_template_count{freshness="fresh"|"invalidated"}`
 - `m80_image_store_bytes`
 - `m80_template_store_bytes`
 - `m80_lease_attribution{template_fingerprint,pmem_digest_set,scratch_source}`
+
+Current counter families:
+
+- `m80_launches_total`
+- `m80_errors_total{variant=...}`
+- `m80_phase_failures_total{phase=...}`
+- `m80_vsock_disconnects_total`
+- `m80_idle_timeout_total`
+- `m80_warm_pool_discarded_total`
+- `m80_warm_pool_fill_attempts_total`
+- `m80_warm_pool_fill_failures_total`
+- `m80_warm_pool_lease_acquired_total`
+- `m80_warm_pool_lease_returned_total`
 
 Current histogram families:
 
@@ -47,9 +65,15 @@ Layered-rootfs labels are intentionally closed:
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/scrape.rs`
 `render_prometheus_metrics`.
 
+`m80-firecracker::ops_metrics_snapshot()` returns process-local counters for
+the current embedding process. The values reset when that process exits.
+`m80-firecracker::warm_pool_metrics(snapshot)` converts a `WarmPoolSnapshot`
+into renderable warm-pool metrics.
+
 ## Verification
 
 - `crates/m80-observability/src/prometheus.rs::tests::render_prometheus_text_contains_gauges_only`
+- `crates/m80-observability/src/prometheus.rs::tests::render_prometheus_includes_production_counter_families`
 - `crates/m80-observability/src/prometheus.rs::tests::restore_latency_histogram_has_target_buckets`
 - `crates/m80-observability/src/health.rs::tests::metric_label_value_rejects_free_string_shapes`
 - `crates/m80-observability/tests/guest_metrics_prometheus.rs::prometheus_render_spec_compliant`

@@ -109,6 +109,17 @@ fn help_env() {
 }
 
 #[test]
+fn help_metrics() {
+    let output = m80().args(["metrics", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Prometheus exposition format") && stdout.contains("--textfile"),
+        "metrics help should expose the Prometheus textfile surface, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_bug_report() {
     let output = m80().args(["bug-report", "--help"]).output().unwrap();
     assert!(output.status.success());

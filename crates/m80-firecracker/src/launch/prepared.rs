@@ -210,6 +210,7 @@ impl PreparedSandbox {
                 guard.disarm();
             }
             run_dir_cleanup.disarm();
+            crate::ops_metrics::record_launch();
             Ok(RunningSandbox {
                 vm_id,
                 request_id,

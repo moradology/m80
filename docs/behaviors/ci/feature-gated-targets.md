@@ -12,7 +12,6 @@ The ordinary CI workflow runs these feature-gated checks:
 
 - `cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2`
 - `cargo test -p m80-guestd-malicious --features malicious-artifact -- --test-threads=2`
-- `cargo test -p m80-observability --features _test_internal -- --test-threads=2`
 
 CI also checks feature-set extremes so default-feature drift and all-feature
 compile failures are visible:
@@ -39,7 +38,7 @@ than from the request id argument.
 - `cargo check --workspace --all-features`
 - `cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2`
 - `cargo test -p m80-guestd-malicious --features malicious-artifact -- --test-threads=2`
-- `cargo test -p m80-observability --features _test_internal -- --test-threads=2`
+- `cargo test -p m80-observability -- --test-threads=2`
 - `python3 scripts/lint-github-workflows.py`
 - `python3 scripts/run-actionlint.py --workflow-dir .github/workflows`
 - `bash -n specs/03-validate.sh specs/04-deps.sh`

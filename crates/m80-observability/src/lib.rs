@@ -5,11 +5,8 @@
 #![deny(missing_docs)]
 
 mod diagnostics;
-#[cfg(any(feature = "_test_internal", test))]
 mod health;
-#[cfg(any(feature = "_test_internal", test))]
 mod probe;
-#[cfg(any(feature = "_test_internal", test))]
 mod prometheus;
 /// Canonical tracing span names and field schemas for VM-mechanics surfaces.
 pub mod spans;
@@ -20,26 +17,22 @@ use std::path::PathBuf;
 pub use diagnostics::{
     Diagnostics, ExitReason, Phase, PhaseOutcome, VmEvent, DIAGNOSTICS_FILE_NAME,
 };
-/// Probe, health-rollup, and Prometheus-rendering symbols.  No production
-/// consumer exists in this workspace; they are gated behind `_test_internal`
-/// so integration tests can import them without widening the default public
-/// surface.
-#[cfg(any(feature = "_test_internal", test))]
+/// Probe, health-rollup, operational metric DTOs, and Prometheus-rendering
+/// symbols for production scrape integration.
 pub use health::{
-    aggregate_health, render_health_json, DurationHistogram, HealthSnapshot, LeaseAttribution,
-    MetricLabelError, MetricLabelValue, OpsMetrics, PmemLayerCountBySharing, PmemSharingLabel,
-    PostRestoreHookDuration, PostRestoreHookVariantLabel, ScratchSourceLabel,
-    TemplateCountByFreshness, TemplateFreshnessLabel,
+    aggregate_health, render_health_json, DurationHistogram, ErrorCount, HealthSnapshot,
+    LeaseAttribution, MetricLabelError, MetricLabelValue, OpsMetrics, PhaseFailureCount,
+    PmemLayerCountBySharing, PmemSharingLabel, PostRestoreHookDuration,
+    PostRestoreHookVariantLabel, ScratchSourceLabel, TemplateCountByFreshness,
+    TemplateFreshnessLabel, WarmPoolMetrics,
 };
-#[cfg(any(feature = "_test_internal", test))]
 pub use probe::{probe, VmHealth, VmProbeRecord};
-#[cfg(any(feature = "_test_internal", test))]
 pub use prometheus::render_prometheus;
 
 /// Errors surfaced by observability operations.
 ///
 /// Public because `Diagnostics::open`, `Diagnostics::record`, and the
-/// `_test_internal` probe/health helpers return it directly.
+/// probe/health helpers return it directly.
 #[derive(Debug, thiserror::Error)]
 pub enum ObservabilityError {
     /// Filesystem I/O failure where the target path is known.

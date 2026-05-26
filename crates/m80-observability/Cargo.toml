@@ -1,18 +1,12 @@
 [package]
 name = "m80-observability"
 publish.workspace = true
-description = "VM-lifecycle event log, per-VM probe, health rollup, Prometheus rendering (deferred to v0.2)"
+description = "VM-lifecycle event log, per-VM probe, health rollup, Prometheus rendering"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-
-[features]
-## Re-exports probe, health, and prometheus symbols so integration tests can
-## import them.  Not for production use.  Must be passed explicitly:
-## `cargo test --features _test_internal`.
-_test_internal = []
 
 [lints]
 workspace = true
@@ -28,8 +22,6 @@ tempfile.workspace = true
 
 [[test]]
 name = "v01_surface"
-required-features = ["_test_internal"]
 
 [[test]]
 name = "guest_metrics_prometheus"
-required-features = ["_test_internal"]

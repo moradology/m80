@@ -15,6 +15,7 @@ mod launch;
 mod layout;
 mod lifecycle;
 mod network_helper;
+mod ops_metrics;
 mod panic_payload;
 mod pmem;
 mod preboot;
@@ -50,6 +51,7 @@ pub use m80_firecracker_client::{CacheType, CpuTemplate, LogLevel as FcLogLevel}
 pub use m80_net_mode::{MacAddr, NetnsSpec, NetworkPolicy};
 pub use m80_snapshot::SnapshotPaths;
 pub use m80_storage::{ChangeSet, OverlayTemplateCloneMode};
+pub use ops_metrics::{ops_metrics_snapshot, warm_pool_metrics};
 pub use pmem::{
     validate_pmem_layers, ErofsImageRef, GuestMountPath, ImageDigest, PmemLayer, PmemSharing,
     TrustDomainAck, TrustReason, MAX_PMEM_LAYERS,

@@ -1,7 +1,8 @@
 use m80_observability::{
-    render_prometheus, DurationHistogram, HealthSnapshot, LeaseAttribution, MetricLabelValue,
-    OpsMetrics, PmemLayerCountBySharing, PostRestoreHookDuration, PostRestoreHookVariantLabel,
-    ScratchSourceLabel, TemplateCountByFreshness,
+    render_prometheus, DurationHistogram, ErrorCount, HealthSnapshot, LeaseAttribution,
+    MetricLabelValue, OpsMetrics, PhaseFailureCount, PmemLayerCountBySharing,
+    PostRestoreHookDuration, PostRestoreHookVariantLabel, ScratchSourceLabel,
+    TemplateCountByFreshness, WarmPoolMetrics,
 };
 use m80_proto::{GuestCpuMetrics, GuestMemMetrics, MetricsResponse};
 use std::collections::{BTreeMap, BTreeSet};
@@ -67,6 +68,29 @@ fn prometheus_render_spec_compliant() {
     };
     let metrics = OpsMetrics {
         vm_count: 10,
+        launches_total: 11,
+        errors_total: vec![ErrorCount {
+            variant: MetricLabelValue::new("Storage").unwrap(),
+            total: 2,
+        }],
+        phase_failures_total: vec![PhaseFailureCount {
+            phase: MetricLabelValue::new("phase_3_storage_prep").unwrap(),
+            total: 1,
+        }],
+        warm_pool: Some(WarmPoolMetrics {
+            target_ready: 4,
+            ready: 3,
+            filling: 1,
+            leased: 2,
+            discarded_total: 5,
+            consecutive_fill_errors: 1,
+            fill_attempts_total: 9,
+            fill_failures_total: 2,
+            lease_acquired_total: 7,
+            lease_returned_total: 6,
+        }),
+        vsock_disconnects_total: 12,
+        idle_timeout_total: 13,
         guest: Some(MetricsResponse {
             cpu: GuestCpuMetrics {
                 user_ticks: 10,
@@ -179,6 +203,13 @@ fn prometheus_render_spec_compliant() {
     assert_eq!(sample_families, expected_names);
 
     assert!(rendered.contains("m80_pmem_layers_per_vm_count{sharing=\"per_vm\"} 3\n"));
+    assert!(rendered.contains("m80_launches_total 11\n"));
+    assert!(rendered.contains("m80_errors_total{variant=\"Storage\"} 2\n"));
+    assert!(rendered.contains("m80_phase_failures_total{phase=\"phase_3_storage_prep\"} 1\n"));
+    assert!(rendered.contains("m80_warm_pool_target_ready 4\n"));
+    assert!(rendered.contains("m80_warm_pool_fill_attempts_total 9\n"));
+    assert!(rendered.contains("m80_vsock_disconnects_total 12\n"));
+    assert!(rendered.contains("m80_idle_timeout_total 13\n"));
     assert!(rendered.contains("m80_pmem_layers_per_vm_count{sharing=\"shared\"} 2\n"));
     assert!(rendered.contains("m80_template_count{freshness=\"fresh\"} 4\n"));
     assert!(rendered.contains("m80_template_count{freshness=\"invalidated\"} 1\n"));
@@ -202,6 +233,21 @@ fn expected_metric_families() -> BTreeMap<&'static str, &'static str> {
         ("m80_vm_health_total", "gauge"),
         ("m80_vm_rollout_ready", "gauge"),
         ("m80_ops_vm_count", "gauge"),
+        ("m80_launches_total", "counter"),
+        ("m80_errors_total", "counter"),
+        ("m80_phase_failures_total", "counter"),
+        ("m80_vsock_disconnects_total", "counter"),
+        ("m80_idle_timeout_total", "counter"),
+        ("m80_warm_pool_target_ready", "gauge"),
+        ("m80_warm_pool_ready", "gauge"),
+        ("m80_warm_pool_filling", "gauge"),
+        ("m80_warm_pool_leased", "gauge"),
+        ("m80_warm_pool_discarded_total", "counter"),
+        ("m80_warm_pool_consecutive_fill_errors", "gauge"),
+        ("m80_warm_pool_fill_attempts_total", "counter"),
+        ("m80_warm_pool_fill_failures_total", "counter"),
+        ("m80_warm_pool_lease_acquired_total", "counter"),
+        ("m80_warm_pool_lease_returned_total", "counter"),
         ("m80_pmem_layers_per_vm_count", "gauge"),
         ("m80_template_count", "gauge"),
         ("m80_restore_latency_seconds", "histogram"),

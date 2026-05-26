@@ -79,6 +79,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::Env => cmds::cmd_env(json),
 
+        Cmd::Metrics(args) => cmds::cmd_metrics(args, json),
+
         Cmd::Cleanup { force } => cmds::cmd_cleanup(force, json),
 
         Cmd::Net { action } => cmds::cmd_net(action, json),

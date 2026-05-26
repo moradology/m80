@@ -11,8 +11,8 @@ use m80_firecracker::{
 
 use crate::args::{
     BugReportArgs, EgressMode, ImageAction, InstallArgs, InstallCleanupArgs, InstallStatusArgs,
-    NetAction, OverlayCloneModeArg, QuickstartArgs, TemplateAction, UpdateArgs, WarmAction,
-    WritebackMode,
+    MetricsArgs, NetAction, OverlayCloneModeArg, QuickstartArgs, TemplateAction, UpdateArgs,
+    WarmAction, WritebackMode,
 };
 use crate::config;
 use crate::errors;
@@ -542,6 +542,10 @@ pub(crate) fn cmd_env(json: bool) -> anyhow::Result<i32> {
     env::cmd_env(json)
 }
 
+pub(crate) fn cmd_metrics(args: MetricsArgs, json: bool) -> anyhow::Result<i32> {
+    metrics::cmd_metrics(args, json)
+}
+
 fn emit_guest_boot_trace_if_enabled(run_dir: &Path) {
     if !std::env::var("M80_PHASE_TRACE").is_ok_and(|v| v == "1") {
         return;
@@ -647,6 +651,7 @@ mod image;
 mod install;
 mod install_cleanup;
 mod install_status;
+mod metrics;
 mod net;
 mod preflight;
 mod proto_json;
