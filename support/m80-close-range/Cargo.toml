@@ -1,5 +1,6 @@
 [package]
 name = "m80-close-range"
+publish = false
 description = "Safe Linux close_range wrapper for m80 process hardening"
 version = "0.0.0"
 edition = "2021"

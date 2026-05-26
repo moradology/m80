@@ -1,5 +1,6 @@
 [package]
 name = "m80-snapshot"
+publish.workspace = true
 description = "Snapshot manifest schemas, persistence path layout, and Firecracker capture/restore primitives"
 version.workspace = true
 edition.workspace = true

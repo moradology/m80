@@ -28,20 +28,21 @@ Callers that need direct lifecycle control should embed `m80-firecracker` and
 hold the returned `RunningSandbox` handle in-process. Out-of-process lifecycle
 control requires an explicit IPC design; it is not hidden behind CLI aliases.
 
-## Reserved Surfaces
+## Future Surfaces Not Yet Accepted
 
-These parse as intentional future shapes and exit 7 until their owning behavior
-lands:
+These are intentionally absent from the clap surface until their owning
+behavior lands:
 
 - `m80 run --allow-host <host>`
 - `m80 run --allow-cidr <cidr>`
 - `m80 run --mount-config <host>:<guest>[:ro]`
 - `m80 run --keep-on-failure`
+- `m80 warm enable --foreground`
 - `m80 warm enable --system`
 
-The reserved paths render a human error on stderr, and with global `--json`
-render a versioned JSON envelope on stderr whose `data` object contains
-`variant: "NotImplemented"` and `exit_code: 7`.
+They fail during argument parsing and never reach config, preflight, owner
+lookup, or backend work. Adding one of these flags is a public surface change
+and must ship with its behavior, docs, and tests in the same diff.
 
 The implemented PTY contract for `--tty` / `-t` / `-i` is captured in
 `docs/behaviors/cli/interactive-pty.md`. PTY-specific invalid combinations
@@ -62,9 +63,10 @@ command that claims to use warm capacity.
 ## Tests
 
 - `crates/m80-cli/tests/parse_args.rs` rejects removed commands.
-- `crates/m80-cli/tests/feature_gap_smoke.rs` verifies reserved paths exit 7,
-  including JSON mode, and verifies PTY invalid combinations fail as config
-  errors before backend work.
+- `crates/m80-cli/tests/parse_args.rs` verifies future flag shapes are not
+  accepted accidentally.
+- `crates/m80-cli/tests/feature_gap_smoke.rs` verifies PTY invalid
+  combinations fail as config errors before backend work.
 - `crates/m80-cli/tests/facade_runner.rs` verifies feature-gap dispatch without
   spawning the binary.
 - `crates/m80-cli/tests/help_smoke.rs` verifies the supported help surface; the

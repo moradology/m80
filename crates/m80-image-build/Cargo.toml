@@ -1,5 +1,6 @@
 [package]
 name = "m80-image-build"
+publish.workspace = true
 description = "Build the m80 guest image: kernel + rootfs + provenance manifest"
 version.workspace = true
 edition.workspace = true

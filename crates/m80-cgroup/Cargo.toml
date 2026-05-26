@@ -1,5 +1,6 @@
 [package]
 name = "m80-cgroup"
+publish.workspace = true
 description = "Per-VM cgroup v2 subtree for CPU/memory/pids enforcement"
 version.workspace = true
 edition.workspace = true

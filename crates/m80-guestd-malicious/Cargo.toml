@@ -1,5 +1,6 @@
 [package]
 name = "m80-guestd-malicious"
+publish.workspace = true
 description = "Test-only adversarial in-VM peer for real-KVM guest-to-host wire tests"
 version.workspace = true
 edition.workspace = true

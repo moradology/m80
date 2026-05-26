@@ -1,5 +1,6 @@
 [package]
 name = "m80-observability"
+publish.workspace = true
 description = "VM-lifecycle event log, per-VM probe, health rollup, Prometheus rendering (deferred to v0.2)"
 version.workspace = true
 edition.workspace = true

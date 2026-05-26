@@ -1,5 +1,6 @@
 [package]
 name = "m80-firecracker-client"
+publish.workspace = true
 description = "Synchronous HTTP-over-UDS client for the Firecracker REST API"
 version.workspace = true
 edition.workspace = true

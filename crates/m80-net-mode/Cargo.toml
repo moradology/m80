@@ -1,5 +1,6 @@
 [package]
 name = "m80-net-mode"
+publish.workspace = true
 description = "Resolver from caller intent to VmNetworkMode (NoEgress | AllowOutbound | JoinNetns)"
 version.workspace = true
 edition.workspace = true

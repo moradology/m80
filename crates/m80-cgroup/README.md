@@ -28,7 +28,7 @@ See rustdoc for full signatures.
 | `Limits::preset()` | One full CPU, 1.5 GiB memory, `memory.swap.max = 0`, 128 pids, no explicit cpuset pin, `io.weight = 100`, and `/proc/<pid>/oom_score_adj = 500`. Device-specific `io.max` rows remain caller-provided. |
 | `CpuMax` | Field type for `Limits::cpu_max`; either a concrete `(quota_us, period_us)` pair or `Max`. |
 | `IoMax { major, minor, rbps, wbps, riops, wiops }` | Field type for `Limits::io_max`; one cgroup v2 `io.max` throttle row for a host-specific block device. Its `Display` implementation renders the kernel file row. |
-| `CgroupError` | `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `SparseInheritedFile(&'static str)`, `InvalidLimit { field, value }`, and `Io { path, source }`. |
+| `CgroupError` | `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `SparseInheritedFile(&'static str)`, `InvalidLimit { field, value }`, `LivePids { path, pids }`, and `Io { path, source }`. |
 
 ## Non-goals
 

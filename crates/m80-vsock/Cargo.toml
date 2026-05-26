@@ -1,5 +1,6 @@
 [package]
 name = "m80-vsock"
+publish.workspace = true
 description = "Host-side bridge between Firecracker UDS and guest vsock CID/port"
 version.workspace = true
 edition.workspace = true

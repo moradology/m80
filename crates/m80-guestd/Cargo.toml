@@ -1,5 +1,6 @@
 [package]
 name = "m80-guestd"
+publish.workspace = true
 description = "In-VM daemon: vsock listener that runs argv and returns stdout/stderr/exit/timing"
 version.workspace = true
 edition.workspace = true

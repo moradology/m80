@@ -1,5 +1,6 @@
 [package]
 name = "m80-storage"
+publish.workspace = true
 description = "Per-VM rootfs cloning, scratch images, and post-stop change extraction"
 version.workspace = true
 edition.workspace = true

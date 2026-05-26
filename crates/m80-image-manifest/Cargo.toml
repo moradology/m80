@@ -1,5 +1,6 @@
 [package]
 name = "m80-image-manifest"
+publish.workspace = true
 description = "Schema and verification for the m80 guest-image provenance manifest"
 version.workspace = true
 edition.workspace = true

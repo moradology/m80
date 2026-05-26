@@ -1,5 +1,6 @@
 [package]
 name = "m80-attack-runner"
+publish.workspace = true
 description = "Deliberately malicious test binary for m80 jailer defense-in-depth checks"
 version.workspace = true
 edition.workspace = true

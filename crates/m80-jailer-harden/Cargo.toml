@@ -1,5 +1,6 @@
 [package]
 name = "m80-jailer-harden"
+publish.workspace = true
 description = "Apply inherited process hardening before execing Firecracker's jailer"
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "m80-jailer"
+publish.workspace = true
 description = "Materialize the Firecracker jailer chroot per VM with a replayable plan"
 version.workspace = true
 edition.workspace = true

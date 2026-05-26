@@ -1,5 +1,6 @@
 [package]
 name = "m80-image-store"
+publish.workspace = true
 description = "Content-addressed store for pre-built m80 image artifacts"
 version.workspace = true
 edition.workspace = true

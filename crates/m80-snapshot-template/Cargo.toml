@@ -1,5 +1,6 @@
 [package]
 name = "m80-snapshot-template"
+publish.workspace = true
 description = "Content-addressed snapshot-template store with process-local pins"
 version.workspace = true
 edition.workspace = true

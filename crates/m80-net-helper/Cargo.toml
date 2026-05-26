@@ -1,5 +1,6 @@
 [package]
 name = "m80-net-helper"
+publish.workspace = true
 description = "Privileged helper for finite m80 outbound network operations"
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "m80-net-outbound"
+publish.workspace = true
 description = "OutboundNat: per-host bridge, per-VM tap/IP/MAC, default-deny iptables, ownership-aware cleanup"
 version.workspace = true
 edition.workspace = true

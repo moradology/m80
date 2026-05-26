@@ -180,9 +180,9 @@ binaries, pull OCI images, or install packages implicitly.
   Phase D snapshot-template producer path, `list`/`show` inspect committed
   manifests, `rm` removes one unpinned template, and `prune --boot-spec`
   removes only invalidated templates in the selected conservative family scope.
-- `m80 warm` - explicit warm-sandbox owner control. Foreground owner mode is
-  implemented with `enable --foreground`, `status`, `drain`, and `disable`;
-  packaged system service mode remains reserved.
+- `m80 warm` - explicit warm-sandbox owner control. The foreground owner is
+  implemented with `enable`, `status`, `drain`, and `disable`; packaged system
+  service mode is not in the clap surface.
 - `m80 version` - prints release identity, package version, protocol version,
   image artifact schema versions, and Firecracker pin. Dev builds render as
   `<package-version>-dev`; release packaging injects `M80_RELEASE_TAG` and
@@ -192,7 +192,7 @@ binaries, pull OCI images, or install packages implicitly.
 
 Removed VM-front-door commands are not aliases: `launch`, out-of-process `exec`,
 foreground `stop`, and `snapshot capture` are not accepted by the clap surface.
-Reserved future surfaces are captured in
+Future surface exclusions are captured in
 `docs/behaviors/cli/feature-gaps.md`.
 Run-root list/inspect behavior is captured in
 `docs/behaviors/cli/run-root-commands.md`.
@@ -270,8 +270,6 @@ Read-only update status behavior is captured in
 - `--stdin` - reads host stdin fully and sends it to the guest process.
 - `--egress none|outbound` - selects egress policy. The CLI default is
   `outbound`; `none` disables guest egress.
-- `--allow-host <host>` / `--allow-cidr <cidr>` - reserved allowlist shape.
-  Until the egress allowlist behavior lands, using either exits 7.
 - `--scratch-size <bytes>` - overrides scratch overlay size in bytes. Zero is
   rejected.
 - `--overlay-clone-mode byte-copy|reflink|auto` - selects how the empty
@@ -294,9 +292,6 @@ Read-only update status behavior is captured in
   zero guest exit; `always` extracts after zero or non-zero guest exits while
   preserving the guest exit code when extraction succeeds. Writeback requires
   `--workspace`.
-- `--keep-on-failure` - reserved retention behavior; exits 7 until implemented.
-- `--mount-config <host>:<guest>[:ro]` - reserved config-file projection shape;
-  exits 7 until mount projection lands.
 - `--tty` / `-t` - allocates a guest terminal and streams the merged terminal
   byte stream to host stdout. `-i` additionally forwards live host stdin after
   putting the host terminal in raw mode. The TUI shape is
@@ -313,7 +308,7 @@ Read-only update status behavior is captured in
 Current foreground-owner shape:
 
 ```text
-m80 warm enable --foreground --size <n> [--profile <name>] [--egress none|outbound]
+m80 warm enable --size <n> [--profile <name>] [--egress none|outbound]
 m80 warm status [--profile <name>]
 m80 warm drain
 m80 warm disable
@@ -564,8 +559,8 @@ Stable surfaces:
   fixture substitution, and run-smoke command wiring.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
-- Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7
-  before backend work.
+- Feature gaps: future `run` allowlist/retention/mount-projection flags and
+  warm system-service mode are not accepted by the clap surface.
 - PTY mode: parse/help, request construction, raw-mode restoration, resize
   forwarding, exit-code mapping, invalid JSON/stdin combinations, a
   noninteractive terminal smoke, and an ignored host-PTY interactive smoke are

@@ -1,5 +1,6 @@
 [package]
 name = "m80-proto"
+publish.workspace = true
 description = "Protobuf envelope and length-prefixed framing for m80 host↔guest communication"
 version.workspace = true
 edition.workspace = true

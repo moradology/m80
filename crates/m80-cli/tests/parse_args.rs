@@ -212,6 +212,38 @@ fn parse_run_rejects_removed_noegress_spelling() {
 }
 
 #[test]
+fn parse_rejects_unimplemented_run_flag_shapes() {
+    for args in [
+        ["m80", "run", "--allow-host", "example.com", "--", "true"].as_slice(),
+        ["m80", "run", "--allow-cidr", "10.0.0.0/8", "--", "true"].as_slice(),
+        ["m80", "run", "--keep-on-failure", "--", "true"].as_slice(),
+        [
+            "m80",
+            "run",
+            "--mount-config",
+            "/etc/hosts:/etc/hosts:ro",
+            "--",
+            "true",
+        ]
+        .as_slice(),
+    ] {
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err(), "future run flag must not parse: {args:?}");
+    }
+}
+
+#[test]
+fn parse_rejects_unimplemented_warm_mode_flags() {
+    for args in [
+        ["m80", "warm", "enable", "--foreground", "--size", "1"].as_slice(),
+        ["m80", "warm", "enable", "--system", "--size", "1"].as_slice(),
+    ] {
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err(), "future warm flag must not parse: {args:?}");
+    }
+}
+
+#[test]
 fn parse_rejects_in_core_agent_subcommand() {
     let result = Cli::try_parse_from(["m80", "agent", "run", "--tool", "bash"]);
     assert!(

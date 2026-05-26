@@ -1,5 +1,6 @@
 [package]
 name = "m80-test-helpers"
+publish.workspace = true
 description = "Shared test fixtures and utilities for m80 integration tests (dev-dependency only)"
 version.workspace = true
 edition.workspace = true

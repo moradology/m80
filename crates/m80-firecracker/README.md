@@ -792,6 +792,10 @@ an invariant fails closed.
 - `FcError::AdmissionRefused` is raised by `Backend::admit()` when the backend
   has no admission permits available. Admission is non-blocking; callers decide
   whether and when to retry.
+- `FcError::KillFailed`, `ReapTimeout`, and `ReapFailed` distinguish
+  host-side process termination failures after m80 has committed to killing
+  Firecracker or jailer pids. They are transient infrastructure failures, not
+  guest exit statuses.
 - `FcError::PathIo`, `HostIo`, `Json`, `CommandSpawnFailed`,
   `CommandFailed`, and `ArtifactMissing` preserve concrete host paths,
   operation labels, serialization contexts, and helper-command status instead
@@ -912,7 +916,11 @@ Core types:
 - `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
 - `HotplugDriveDetach` — host-side request to detach one preallocated drive slot.
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
+- `CgroupMode` — finite cgroup policy selected from config or explicit caller
+  overrides.
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
+- `ConfigSource` and `EffectiveField` — source labels for effective config
+  diagnostics.
 - `FcError` — exhaustive typed error for all phases.
 - `FcErrorKind` — coarse recovery class returned by `FcError::kind()`.
   `FcError::variant_name()` returns the stable variant string used in CLI
@@ -940,6 +948,7 @@ Config helpers:
 
 - `load_config(flags) -> EffectiveConfig`
 - `load_config_from_paths(flags, ConfigFilePaths) -> EffectiveConfig`
+- `backend_config_from_effective(effective) -> BackendConfig`
 - `load_boot_spec_yaml_str(text) -> BootSpec`
 - `load_boot_spec_json_str(text) -> BootSpec`
 - `BackendConfig::builder(discovery)` for constructing backend config from
@@ -956,10 +965,9 @@ Layout helpers:
 
 - `run_dir_path`, `firecracker_api_socket_path`, `vsock_socket_path`,
   `rootfs_overlay_path`, `scratch_image_path`, `console_log_path`,
-  `boot_identity_path`.
-- `BOOT_IDENTITY_FILE`, `CONSOLE_LOG`, `FIRECRACKER_API_SOCKET`,
-  `ROOTFS_OVERLAY_IMAGE`, `SCRATCH_IMAGE`, `VSOCK_SOCKET`, and
-  `OWNERSHIP_LOCK`.
+  `boot_identity_path`, `fc_log_path`, `fc_metrics_path`.
+- `BOOT_IDENTITY_FILE`, `CONSOLE_LOG`, `FIRECRACKER_LOG`,
+  `FIRECRACKER_METRICS`, `ROOTFS_OVERLAY_IMAGE`, and `OWNERSHIP_LOCK`.
 
 Config defaults:
 

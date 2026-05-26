@@ -1,5 +1,6 @@
 [package]
 name = "m80-firecracker"
+publish.workspace = true
 description = "VM lifecycle state machine: composes preflight, jailer, cgroup, storage, vsock, network, into a launchable sandbox"
 version.workspace = true
 edition.workspace = true

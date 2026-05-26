@@ -1,5 +1,6 @@
 [package]
 name = "m80-cli"
+publish.workspace = true
 description = "The m80 command-line tool: thin shell over m80-firecracker"
 version.workspace = true
 edition.workspace = true

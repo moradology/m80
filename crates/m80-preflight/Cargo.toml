@@ -1,5 +1,6 @@
 [package]
 name = "m80-preflight"
+publish.workspace = true
 description = "Host capability checks and binary discovery before VM launch"
 version.workspace = true
 edition.workspace = true
