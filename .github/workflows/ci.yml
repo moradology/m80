@@ -161,16 +161,16 @@ jobs:
           fetch-depth: 0
 
       - name: Install audit toolchain
-        run: rustup toolchain install 1.85 --profile minimal
+        run: rustup toolchain install 1.88 --profile minimal
 
       - name: Install cargo-deny
-        run: cargo +1.85 install cargo-deny --version 0.19.4 --locked
+        run: cargo +1.88 install cargo-deny --version 0.19.4 --locked
 
       - name: Install cargo-audit
-        run: cargo +1.85 install cargo-audit --version 0.22.1 --locked
+        run: cargo +1.88 install cargo-audit --version 0.22.1 --locked
 
       - name: cargo deny
-        run: cargo +1.85 deny check advisories bans licenses sources
+        run: cargo +1.88 deny check advisories bans licenses sources
 
       - name: cargo audit
-        run: cargo +1.85 audit
+        run: cargo +1.88 audit

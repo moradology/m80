@@ -110,6 +110,7 @@ host-side TCB, m80 artifacts, and startup privilege through root, the documented
 m80 capability set, or a privileged container. For v0.x, Firecracker, jailer,
 and the Firecracker seccomp filter are operator-provided host prerequisites; if
 preflight reports one of those failures, see the
+[`host setup guide`](docs/ops/host-setup.md),
 [`host prerequisite policy`](docs/behaviors/release/host-prerequisite-policy.md)
 and
 [`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md).
