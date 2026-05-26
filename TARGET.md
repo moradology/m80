@@ -56,17 +56,17 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-16hx7.7` + `m80-s3r28.2` + `m80-16hx7.12` — self-hosted CI
-   workflow and battery convergence.** Wire the
-   now-documented runner, cleanup, and JSON report into an operator-triggered
-   privileged CI lane; close only after a verified self-hosted runner run.
-   Current state: the L1 self-hosted runner, substrate check, and real-KVM
-   `scripts/smoke.sh` path are proven green. The full ignored-test battery is
-   now the blocker; treat its JSON report as the source of truth for what to
-   fix next.
-2. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
+1. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
    runtime improvement unless repeated real-KVM battery runs are too slow or
    too hand-wired to use without a reproducible cache.
+2. **`m80-p4i52.1` + `m80-ij49d.{1,2,3}` — publish safety and README drift.**
+   These are the next no-KVM P1 correctness leaves. Verify each bead against
+   current source before editing; some docs-drift findings may already be stale
+   after recent cleanup commits.
+3. **Failure-path cleanup and observability, report-driven.** Pull
+   `m80-wok08.3`, `m80-243wj.17`, and adjacent cleanup/visibility leaves forward
+   only when privileged reports, operator debugging, or code review expose a
+   concrete failure path.
 
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
 produced the nested-KVM public-install smoke artifact for `v0.2.20`.
@@ -77,6 +77,14 @@ real-host residue coverage. `m80-16hx7.6` now has a documented/validated JSON
 report schema for the wrapper output. `m80-16hx7.5` now adds per-test
 before/after leak diffs, reports newly leaked host state as `leak-check`, and
 has a live wrapper proof against the helper package's ignored reaper test.
+`m80-16hx7.7` and `m80-s3r28.2` are closed as of 2026-05-26: GitHub
+Privileged E2E run
+`https://github.com/moradology/m80/actions/runs/26443657120` on commit
+`516ebce550ed6358a4f292f1923d9bd96c250277` passed `scripts/smoke.sh`, the full
+ignored privileged battery, report validation, and artifact upload. Validated
+report:
+`/tank/tmp/m80-e2e-gh-run-26443657120/m80-e2e-privileged-26443657120-1/m80-e2e-report.json`
+with `pass=111 fail=0 skip=33 total=144`.
 
 ## Long-run order
 
@@ -84,15 +92,11 @@ This is the working order when someone asks to keep pushing for a long stretch.
 Do not fan this into dozens of new leaves unless the report proves independent
 root causes.
 
-1. **Make the privileged battery converge.** Finish `m80-16hx7.7` /
-   `m80-s3r28.2` by driving the self-hosted workflow from "smoke green" to
-   "full report green or each remaining failure has a specific product/test
-   bead." Prefer fixing stale tests that contradict the current crate contract
-   over weakening the product. In particular, tests that assume root-capable
-   guest exec must either be rewritten around the documented non-root guestd
-   profile or moved into a dedicated root/probe harness with an explicit ignore
-   token.
-2. **Only then decide on artifact caching.** If the battery is green but reruns
+1. **Keep the privileged battery green.** The self-hosted workflow is now the
+   source of truth for kernel-touching confidence. If it fails, first preserve
+   and validate the JSON report, then fix or file only report-proven root
+   causes.
+2. **Decide on artifact caching.** If the battery is green but reruns
    are still slow or too hand-wired, claim `m80-16hx7.2`. If smoke's current
    rebuild-on-stale-manifest path is sufficient, leave `.2` open as
    operational polish rather than blocking v0.1.
