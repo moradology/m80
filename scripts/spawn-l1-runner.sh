@@ -235,7 +235,7 @@ write_files:
 runcmd:
   - [ bash, -lc, 'getent group 3000 >/dev/null || groupadd --system --gid 3000 m80jail' ]
   - [ bash, -lc, 'getent passwd 3000 >/dev/null || useradd --system --uid 3000 --gid 3000 --home-dir /nonexistent --shell /usr/sbin/nologin --no-create-home m80jail' ]
-  - [ bash, -lc, 'modprobe kvm_amd || modprobe kvm_intel || true' ]
+  - [ bash, -lc, 'modprobe kvm_amd nested=0 || modprobe kvm_intel nested=0 || true' ]
   - [ bash, -lc, 'modprobe nf_conntrack || true' ]
   - [ bash, -lc, 'modprobe br_netfilter || true' ]
   - [ bash, -lc, 'modprobe bridge || true' ]
@@ -341,6 +341,7 @@ wait_domain() {
     ssh_base "$ip" 'sudo cloud-init status --wait >/dev/null'
     ssh_base "$ip" 'test -r /dev/kvm && test -w /dev/kvm'
     ssh_base "$ip" "grep -qw svm /proc/cpuinfo || grep -qw vmx /proc/cpuinfo"
+    ssh_base "$ip" 'if test -r /sys/module/kvm_amd/parameters/nested; then grep -Eq "^(0|N|n)$" /sys/module/kvm_amd/parameters/nested; elif test -r /sys/module/kvm_intel/parameters/nested; then grep -Eq "^(0|N|n)$" /sys/module/kvm_intel/parameters/nested; else true; fi'
     ssh_base "$ip" 'getent passwd 3000 >/dev/null && getent group 3000 >/dev/null'
     ssh_base "$ip" 'test -d /sys/module/nf_conntrack || grep -qw nf_conntrack /proc/modules'
     ssh_base "$ip" 'test -d /sys/module/br_netfilter || grep -qw br_netfilter /proc/modules'

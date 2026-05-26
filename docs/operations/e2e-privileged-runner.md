@@ -11,6 +11,12 @@ Firecracker cannot expose nested KVM to its guest, so the L1 runner is a normal
 qemu/libvirt VM with `host-passthrough` CPU. m80 then runs Firecracker inside
 that L1.
 
+The L0 host must expose VMX/SVM into the L1. The L1's own KVM module must not
+expose nested virtualization onward to Firecracker guests:
+`/sys/module/kvm_amd/parameters/nested` or
+`/sys/module/kvm_intel/parameters/nested` should read `0`, `N`, or `n` inside
+the L1.
+
 ## L0 Host Setup
 
 Run this once on the bare-metal host:
@@ -73,8 +79,9 @@ Defaults:
 - jail identity: UID/GID `3000` (`m80jail`)
 
 The command waits for cloud-init, SSH, `/dev/kvm`, the nested CPU flag, the
-default jail identity, the official Firecracker binary, the official jailer
-binary, and the compiled Firecracker seccomp filter. On success it prints:
+default jail identity, the L1 KVM module with nested mode disabled, the
+official Firecracker binary, the official jailer binary, and the compiled
+Firecracker seccomp filter. On success it prints:
 
 ```sh
 M80_L1_NAME=...

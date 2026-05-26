@@ -26,6 +26,8 @@ All notable changes to m80 are documented here. Format roughly follows
   documentation.
 - Hardened privileged runner setup and CI substrate checks so KSM is disabled
   before real-KVM smoke starts.
+- Hardened L1 runner provisioning so the L1 exposes `/dev/kvm` to m80 while
+  keeping the L1 KVM module's nested mode disabled for Firecracker guests.
 
 ### Added — stripped-kernel PVH direct boot note
 
