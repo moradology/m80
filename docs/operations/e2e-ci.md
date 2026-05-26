@@ -16,8 +16,11 @@ Register only runners that satisfy
 - Rust toolchain and smoke build tools on PATH: `cargo`, `rustc`, `rg`, and
   `unsquashfs`;
 - Firecracker and jailer available at the paths used by the smoke scripts;
-- `M80_KERNEL_IMAGE` and `M80_ROOTFS_IMAGE` pointing at real guest artifacts, or
-  artifacts staged at the workflow defaults under `/tmp/m80-build-current`;
+- for `run_smoke=true` with `smoke_mode=full`, enough toolchain support for
+  `scripts/smoke.sh` to build guest artifacts at the configured paths;
+- when smoke is skipped or `smoke_mode=launch-only`, `M80_KERNEL_IMAGE` and
+  `M80_ROOTFS_IMAGE` pointing at real guest artifacts, or artifacts staged at
+  the workflow defaults under `/tmp/m80-build-current`;
 - a run root on a filesystem that permits device nodes.
 
 The workflow does not download secrets. Top-level permissions are read-only.

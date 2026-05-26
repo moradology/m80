@@ -242,7 +242,7 @@ write_files:
 runcmd:
   - [ bash, -lc, 'getent group 3000 >/dev/null || groupadd --system --gid 3000 m80jail' ]
   - [ bash, -lc, 'getent passwd 3000 >/dev/null || useradd --system --uid 3000 --gid 3000 --home-dir /nonexistent --shell /usr/sbin/nologin --no-create-home m80jail' ]
-  - [ bash, -lc, 'modprobe kvm_amd nested=0 || modprobe kvm_intel nested=0 || true' ]
+  - [ bash, -lc, 'for module in kvm_amd kvm_intel; do if lsmod | grep -q "^\${module} "; then modprobe -r "\$module" || true; fi; done; modprobe kvm_amd nested=0 || modprobe kvm_intel nested=0 || true' ]
   - [ bash, -lc, 'modprobe nf_conntrack || true' ]
   - [ bash, -lc, 'modprobe br_netfilter || true' ]
   - [ bash, -lc, 'modprobe bridge || true' ]

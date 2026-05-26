@@ -182,8 +182,10 @@ jobs:
             else
               printf 'KSM_RUN=absent\n'
             fi
-            test -f "$M80_KERNEL_IMAGE"
-            test -f "$M80_ROOTFS_IMAGE"
+            if [[ "$M80_E2E_RUN_SMOKE" != "true" || "$M80_E2E_SMOKE_MODE" != "full" ]]; then
+              test -f "$M80_KERNEL_IMAGE"
+              test -f "$M80_ROOTFS_IMAGE"
+            fi
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
             printf 'M80_E2E_RUNNER_LABEL=%s\n' "$M80_E2E_RUNNER_LABEL"

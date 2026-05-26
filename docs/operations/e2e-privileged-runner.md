@@ -99,8 +99,11 @@ M80_L1_SSH_TARGET=...
 M80_L1_SSH_OPTS=...
 ```
 
-Stage a coherent artifact set into the L1 before dispatching the workflow. The
-default workflow paths expect these under `/tmp/m80-build-current/artifacts`:
+For `run_smoke=true` with `smoke_mode=full`, the workflow can build the default
+guest artifacts inside the fresh L1 before the ignored test wrapper runs. If
+smoke is skipped or `smoke_mode=launch-only`, stage a coherent artifact set into
+the L1 before dispatching the workflow. The default workflow paths expect these
+under `/tmp/m80-build-current/artifacts`:
 
 ```sh
 vmlinux
