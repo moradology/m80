@@ -4,7 +4,10 @@
 mod common;
 
 use std::collections::BTreeMap;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::ExecRequest;
@@ -15,10 +18,10 @@ use common::RunDirDumpGuard;
 // `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock` fits the
 // 107-byte kernel cap (vm_id appears twice in the jail layout).
 
-fn shell_request(script: &str) -> ExecRequest {
+fn memhog_request(mib: u32) -> ExecRequest {
     ExecRequest {
-        program: "/bin/sh".into(),
-        args: vec!["-c".into(), script.into()],
+        program: "/tmp/m80-memhog".into(),
+        args: vec![mib.to_string()],
         cwd: None,
         env: None,
         stdin: None,
@@ -82,14 +85,19 @@ fn cgroup_memory_limit_oom_kills_workload() {
         "firecracker must apply the default host memory cap before workload"
     );
 
-    let result = running.exec(shell_request(
-        "set -eu\n\
-         mkdir -p /tmp/m80-memhog\n\
-         mount -t tmpfs -o size=1900m tmpfs /tmp/m80-memhog\n\
-         dd if=/dev/zero of=/tmp/m80-memhog/blob bs=1M count=1800",
-    ));
+    let memhog = compile_memhog_binary();
+    running
+        .upload_file_chunked(
+            "/tmp/m80-memhog",
+            Some(0o755),
+            Cursor::new(memhog),
+            1024 * 1024,
+        )
+        .expect("upload memhog helper");
 
-    let after = read_memory_events(&cgroup);
+    let result = running.exec(memhog_request(1_800));
+
+    let after = wait_for_memory_event(&cgroup, &before);
     assert!(
         event_increased(&before, &after, "oom_kill") || event_increased(&before, &after, "oom"),
         "cgroup memory.events must record OOM enforcement; before={before:?} after={after:?} exec_result={result:?}"
@@ -97,6 +105,91 @@ fn cgroup_memory_limit_oom_kills_workload() {
 
     let stopped = running.force_kill().expect("force-kill after OOM probe");
     stopped.delete().expect("delete");
+}
+
+fn compile_memhog_binary() -> Vec<u8> {
+    let build_dir = tempfile::tempdir().expect("tempdir for memhog build");
+    let source = build_dir.path().join("m80-memhog.c");
+    let output = build_dir.path().join("m80-memhog");
+    std::fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+int main(int argc, char **argv) {
+    unsigned long mib = 1800;
+    if (argc > 1) {
+        char *end = NULL;
+        errno = 0;
+        mib = strtoul(argv[1], &end, 10);
+        if (errno != 0 || end == argv[1] || *end != '\0' || mib == 0) {
+            fprintf(stderr, "invalid MiB argument\n");
+            return 2;
+        }
+    }
+
+    size_t bytes = (size_t)mib * 1024u * 1024u;
+    size_t page = (size_t)sysconf(_SC_PAGESIZE);
+    if (page == 0) {
+        page = 4096;
+    }
+
+    unsigned char *buf = malloc(bytes);
+    if (buf == NULL) {
+        fprintf(stderr, "malloc(%zu) failed: %s\n", bytes, strerror(errno));
+        return 3;
+    }
+
+    for (size_t offset = 0; offset < bytes; offset += page) {
+        buf[offset] = (unsigned char)(offset / page);
+    }
+    buf[bytes - 1] = 1;
+    printf("touched %lu MiB\n", mib);
+    fflush(stdout);
+    sleep(5);
+    return 0;
+}
+"#,
+    )
+    .unwrap_or_else(|e| panic!("write {}: {e}", source.display()));
+
+    let status = Command::new("cc")
+        .arg("-std=c11")
+        .arg("-O2")
+        .arg("-static")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-o")
+        .arg(&output)
+        .arg(&source)
+        .status()
+        .unwrap_or_else(|e| panic!("spawn cc for {}: {e}", source.display()));
+    assert!(
+        status.success(),
+        "compile {} with cc -static failed: {status}",
+        source.display()
+    );
+
+    std::fs::read(&output).unwrap_or_else(|e| panic!("read {}: {e}", output.display()))
+}
+
+fn wait_for_memory_event(cgroup: &Path, before: &BTreeMap<String, u64>) -> BTreeMap<String, u64> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let after = read_memory_events(cgroup);
+        if event_increased(before, &after, "oom_kill") || event_increased(before, &after, "oom") {
+            return after;
+        }
+        if Instant::now() >= deadline {
+            return after;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 fn read_cgroup_path(run_dir: &Path) -> PathBuf {

@@ -3,9 +3,10 @@
 mod common;
 
 use std::ffi::OsStr;
+use std::io::Cursor;
 use std::net::Ipv4Addr;
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
@@ -17,6 +18,8 @@ use common::RunDirDumpGuard;
 fn join_netns_routes_guest_traffic_through_caller_namespace() {
     let topology = JoinNetnsTopology::create();
     assert_other_namespace_cannot_reach_peer(&topology);
+    let peer_marker = format!("m80-join-netns-{}", unique_suffix());
+    let _peer_server = PeerTcpServer::start(&topology, &peer_marker);
 
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -67,22 +70,36 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
     let run_dir = running.run_dir().to_owned();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
 
+    let tcp_client = compile_tcp_client_binary();
+    running
+        .upload_file_chunked(
+            "/tmp/m80-tcp-connect",
+            Some(0o755),
+            Cursor::new(tcp_client),
+            1024 * 1024,
+        )
+        .expect("upload tcp client");
+
     let response = running
-        .exec(shell_request(&format!(
-            "/bin/busybox ping -c 1 -W 2 {}",
-            topology.peer_ipv4
-        )))
-        .expect("exec guest ping through join netns");
+        .exec(tcp_connect_request(
+            topology.peer_ipv4,
+            topology.peer_port,
+            &peer_marker,
+        ))
+        .expect("exec guest TCP probe through join netns");
 
     let stopped = running.stop().expect("stop");
-    if response.status == ExecStatus::Completed && response.exit_code == Some(0) {
+    if response.status == ExecStatus::Completed
+        && response.exit_code == Some(0)
+        && String::from_utf8_lossy(&response.stdout).contains(&peer_marker)
+    {
         stopped.delete().expect("delete");
         return;
     }
 
     let preserved = stopped.preserve_for_triage().expect("preserve run dir");
     panic!(
-        "JoinNetns guest ping failed: status={:?}; exit={:?}; stdout={:?}; stderr={:?}; preserved run dir={}",
+        "JoinNetns guest TCP probe failed: status={:?}; exit={:?}; stdout={:?}; stderr={:?}; preserved run dir={}",
         response.status,
         response.exit_code,
         String::from_utf8_lossy(&response.stdout),
@@ -91,10 +108,10 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
     );
 }
 
-fn shell_request(script: &str) -> ExecRequest {
+fn tcp_connect_request(peer_ipv4: Ipv4Addr, peer_port: u16, marker: &str) -> ExecRequest {
     ExecRequest {
-        program: "/bin/sh".into(),
-        args: vec!["-c".into(), script.into()],
+        program: "/tmp/m80-tcp-connect".into(),
+        args: vec![peer_ipv4.to_string(), peer_port.to_string(), marker.into()],
         cwd: None,
         env: None,
         stdin: None,
@@ -103,12 +120,106 @@ fn shell_request(script: &str) -> ExecRequest {
     }
 }
 
+fn compile_tcp_client_binary() -> Vec<u8> {
+    let build_dir = tempfile::tempdir().expect("tempdir for tcp client build");
+    let source = build_dir.path().join("m80-tcp-connect.c");
+    let output = build_dir.path().join("m80-tcp-connect");
+    std::fs::write(
+        &source,
+        r#"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+int main(int argc, char **argv) {
+    if (argc != 4) {
+        fprintf(stderr, "usage: %s <ipv4> <port> <marker>\n", argv[0]);
+        return 2;
+    }
+
+    char *end = NULL;
+    long port = strtol(argv[2], &end, 10);
+    if (end == argv[2] || *end != '\0' || port <= 0 || port > 65535) {
+        fprintf(stderr, "invalid port\n");
+        return 2;
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        fprintf(stderr, "socket: %s\n", strerror(errno));
+        return 3;
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    if (inet_pton(AF_INET, argv[1], &addr.sin_addr) != 1) {
+        fprintf(stderr, "invalid address\n");
+        close(fd);
+        return 2;
+    }
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        fprintf(stderr, "connect: %s\n", strerror(errno));
+        close(fd);
+        return 4;
+    }
+
+    char buf[256];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    if (n < 0) {
+        fprintf(stderr, "read: %s\n", strerror(errno));
+        close(fd);
+        return 5;
+    }
+    buf[n] = '\0';
+    close(fd);
+
+    fputs(buf, stdout);
+    if (strstr(buf, argv[3]) == NULL) {
+        fprintf(stderr, "missing marker\n");
+        return 6;
+    }
+    return 0;
+}
+"#,
+    )
+    .unwrap_or_else(|e| panic!("write {}: {e}", source.display()));
+
+    let status = Command::new("cc")
+        .arg("-std=c11")
+        .arg("-O2")
+        .arg("-static")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-o")
+        .arg(&output)
+        .arg(&source)
+        .status()
+        .unwrap_or_else(|e| panic!("spawn cc for {}: {e}", source.display()));
+    assert!(
+        status.success(),
+        "compile {} with cc -static failed: {status}",
+        source.display()
+    );
+
+    std::fs::read(&output).unwrap_or_else(|e| panic!("read {}: {e}", output.display()))
+}
+
 struct JoinNetnsTopology {
     join: NetnsGuard,
-    _peer: NetnsGuard,
+    peer: NetnsGuard,
     other: NetnsGuard,
     tap_name: String,
     peer_ipv4: Ipv4Addr,
+    peer_port: u16,
     guest_ipv4: ipnet::Ipv4Net,
 }
 
@@ -125,6 +236,7 @@ impl JoinNetnsTopology {
         let peer_veth = format!("vp{suffix}");
         let subnet_octet = 10 + (u8::from_str_radix(&suffix[0..2], 16).unwrap() % 200);
         let peer_ipv4 = Ipv4Addr::new(10, 203, subnet_octet, 1);
+        let peer_port = 18_080;
         let guest_ipv4 = format!("10.203.{subnet_octet}.2/24").parse().unwrap();
 
         run(
@@ -199,13 +311,87 @@ impl JoinNetnsTopology {
 
         Self {
             join,
-            _peer: peer,
+            peer,
             other,
             tap_name,
             peer_ipv4,
+            peer_port,
             guest_ipv4,
         }
     }
+}
+
+struct PeerTcpServer {
+    child: Child,
+    _ready_dir: tempfile::TempDir,
+}
+
+impl PeerTcpServer {
+    fn start(topology: &JoinNetnsTopology, marker: &str) -> Self {
+        let ready_dir = tempfile::tempdir().expect("tcp server ready tempdir");
+        let ready_path = ready_dir.path().join("ready");
+        let script = r#"
+import pathlib
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+marker = sys.argv[3].encode()
+ready = pathlib.Path(sys.argv[4])
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind((host, port))
+server.listen(1)
+ready.write_text("ready\n")
+conn, _addr = server.accept()
+with conn:
+    conn.sendall(marker)
+"#;
+        let child = Command::new("ip")
+            .args([
+                "netns",
+                "exec",
+                &topology.peer.name,
+                "python3",
+                "-c",
+                script,
+            ])
+            .arg(topology.peer_ipv4.to_string())
+            .arg(topology.peer_port.to_string())
+            .arg(marker)
+            .arg(&ready_path)
+            .spawn()
+            .expect("start peer TCP server");
+
+        wait_for_ready_file(&ready_path);
+        Self {
+            child,
+            _ready_dir: ready_dir,
+        }
+    }
+}
+
+impl Drop for PeerTcpServer {
+    fn drop(&mut self) {
+        if matches!(self.child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn wait_for_ready_file(path: &std::path::Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if path.is_file() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!("peer TCP server did not report ready at {}", path.display());
 }
 
 fn assert_other_namespace_cannot_reach_peer(topology: &JoinNetnsTopology) {

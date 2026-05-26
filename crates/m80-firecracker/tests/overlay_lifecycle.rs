@@ -5,6 +5,7 @@
 
 mod common;
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::process::Command;
 
 use common::RunDirDumpGuard;
@@ -105,7 +106,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
             program: "/bin/sh".to_string(),
             args: vec![
                 "-c".to_string(),
-                format!("printf '{marker}' > /m80-probe && mount"),
+                format!("printf '{marker}' > /tmp/m80-probe && mount"),
             ],
             cwd: None,
             env: None,
@@ -132,7 +133,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
         .manifest
         .verify(manifest_dir)
         .expect("base artifacts must still verify after launch");
-    let upper_probe = debugfs_cat(&overlay, "/root/m80-probe");
+    let upper_probe = debugfs_cat(&overlay, "/root/tmp/m80-probe");
     assert_eq!(upper_probe, marker);
 
     stopped.delete().expect("delete");
@@ -193,7 +194,7 @@ fn overlay_immutability_lower_unchanged_after_upper_write() {
     let mut running = sandbox.launch().expect("launch");
     let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
 
-    let target = "/bin/busybox";
+    let target = "/tmp/m80-overlay-copy-up";
     let marker = "m80-overlay-copy-up\n";
     let response = running
         .exec(ExecRequest {
@@ -210,7 +211,7 @@ fn overlay_immutability_lower_unchanged_after_upper_write() {
     assert_eq!(
         response.exit_code,
         Some(0),
-        "lower write failed for {target}: stdout={} stderr={}",
+        "overlay write failed for {target}: stdout={} stderr={}",
         String::from_utf8_lossy(&response.stdout),
         String::from_utf8_lossy(&response.stderr)
     );
@@ -325,6 +326,7 @@ fn three_drive_order_mounts_workspace_as_vdc_and_preserves_base() {
 
     let vm_id = format!("drive-order-{}", std::process::id());
     let host_workspace = tempfile::tempdir().expect("workspace tempdir");
+    make_world_writable(host_workspace.path());
     let sandbox = backend
         .admit(SandboxConfig {
             vm_id: Some(vm_id.clone()),
@@ -403,6 +405,15 @@ fn three_drive_order_mounts_workspace_as_vdc_and_preserves_base() {
         .verify(manifest_dir)
         .expect("base artifacts must still verify after workspace write");
     stopped.delete().expect("delete");
+}
+
+fn make_world_writable(path: &std::path::Path) {
+    let mut perms = std::fs::metadata(path)
+        .unwrap_or_else(|e| panic!("metadata {}: {e}", path.display()))
+        .permissions();
+    perms.set_mode(0o777);
+    std::fs::set_permissions(path, perms)
+        .unwrap_or_else(|e| panic!("chmod 0777 {}: {e}", path.display()));
 }
 
 fn write_guest_file(running: &mut m80_firecracker::RunningSandbox, path: &str, mib: u32) {

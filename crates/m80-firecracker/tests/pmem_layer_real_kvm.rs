@@ -30,7 +30,7 @@ mod pmem_layer_real_kvm {
     use super::*;
 
     #[test]
-    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
     fn pmem_layer_per_vm_mount_dax_real_kvm() {
         let _serial = REAL_KVM_LOCK.lock().expect("real-kvm test lock");
         let store = open_default_store();
@@ -55,7 +55,7 @@ mod pmem_layer_real_kvm {
     }
 
     #[test]
-    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
     fn pmem_layer_per_vm_distinct_backing_inodes_real_kvm() {
         let _serial = REAL_KVM_LOCK.lock().expect("real-kvm test lock");
         let store = open_default_store();
@@ -99,7 +99,7 @@ mod pmem_layer_real_kvm {
     }
 
     #[test]
-    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
     fn pmem_layer_shared_reuses_backing_inode_real_kvm() {
         let _serial = REAL_KVM_LOCK.lock().expect("real-kvm test lock");
         let store = open_default_store();
@@ -191,7 +191,7 @@ mod pmem_layer_real_kvm {
     }
 
     #[test]
-    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
     fn pmem_layer_per_vm_no_cross_vm_page_sharing_real_kvm() {
         let _serial = REAL_KVM_LOCK.lock().expect("real-kvm test lock");
         let store = open_default_store();
@@ -250,7 +250,7 @@ mod pmem_layer_real_kvm {
     }
 
     #[test]
-    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+    #[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
     fn pmem_layer_per_vm_teardown_leaves_no_leak_real_kvm() {
         let _serial = REAL_KVM_LOCK.lock().expect("real-kvm test lock");
         let store = open_default_store();

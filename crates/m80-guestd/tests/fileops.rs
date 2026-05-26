@@ -302,3 +302,36 @@ fn chunked_upload_writes_chunks_and_commits() {
     assert_eq!(commit.payload.bytes_written, 6);
     assert_eq!(std::fs::read(&path).unwrap(), b"abcdef");
 }
+
+#[test]
+fn chunked_upload_sequence_gap_closes_upload_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("gap.bin");
+    let mut input = Vec::new();
+    input.extend(frame(FileWriteBeginRequest {
+        path: path.display().to_string(),
+        mode: Some(0o600),
+    }));
+    input.extend(frame(FileWriteChunkRequest {
+        upload_id: "u1".into(),
+        seq: 1,
+        bytes: b"gap".to_vec(),
+    }));
+    input.extend(frame(FileWriteCommitRequest {
+        upload_id: "u1".into(),
+    }));
+
+    let output = handle(input);
+    let mut cursor = Cursor::new(output);
+    let begin: Envelope<FileWriteBeginResponse> = read_frame(&mut cursor).unwrap();
+    let chunk: Envelope<FileWriteChunkResponse> = read_frame(&mut cursor).unwrap();
+
+    assert_eq!(begin.payload.upload_id.as_deref(), Some("u1"));
+    assert_eq!(chunk.payload.seq, 1);
+    assert_eq!(chunk.payload.error, Some(FileError::InvalidSequence));
+    assert!(
+        read_frame::<_, FileWriteCommitResponse>(&mut cursor).is_err(),
+        "guestd must close the upload session after a terminal chunk error"
+    );
+    assert!(!path.exists());
+}

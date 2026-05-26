@@ -15,8 +15,9 @@ non-zero.
 
 Covered probes:
 
-- `dev_mem_nonroot`: drops to uid/gid 65534 and opens `/dev/mem`; expected
-  result is `EACCES`, `EPERM`, or no device node in the stripped guest.
+- `dev_mem_nonroot`: runs as the guest exec non-root profile, or drops to
+  uid/gid 65534 when invoked from a root test shell, then opens `/dev/mem`;
+  expected result is `EACCES`, `EPERM`, or no device node in the stripped guest.
 - `virtio_config_write`: locates a virtio sysfs `config` file and attempts a
   write with an invalid userspace buffer; expected result is `EFAULT`, `EBADF`,
   `EINVAL`, `EPERM`, `EACCES`, `EROFS`, `ENODEV`, or no exposed config file.
@@ -24,11 +25,13 @@ Covered probes:
   result is a trapped privileged instruction signal.
 - `write_cr0` and `write_cr4`: attempt control-register writes from userspace;
   expected result is a trapped privileged instruction signal.
-- `proc_kcore_nonroot`: drops to uid/gid 65534 and opens `/proc/kcore`; expected
-  result is `EACCES`, `EPERM`, or `ENOENT`. The stripped m80 kernel disables
-  `CONFIG_PROC_KCORE`, so absence is a valid closed surface.
-- `ioperm_iopl_nonroot`: drops privileges and calls `ioperm(2)` and `iopl(2)`;
-  expected result is `EPERM`.
+- `proc_kcore_nonroot`: runs under the guest exec non-root profile, or drops to
+  uid/gid 65534 when invoked from a root test shell, then opens `/proc/kcore`;
+  expected result is `EACCES`, `EPERM`, or `ENOENT`. The stripped m80 kernel
+  disables `CONFIG_PROC_KCORE`, so absence is a valid closed surface.
+- `ioperm_iopl_nonroot`: runs under the guest exec non-root profile, or drops
+  privileges when invoked from a root test shell, and calls `ioperm(2)` and
+  `iopl(2)`; expected result is `EPERM`.
 - `vsock_non_allowed_cid`: attempts a guest-initiated vsock connection to CID
   99; expected result is refusal, no route/device, address unavailability, or a
   bounded timeout rather than a completed connection.

@@ -6,7 +6,7 @@ mod pmem_shared_support;
 use pmem_shared_support as support;
 
 #[test]
-#[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool"]
+#[ignore = "requires-kvm requires-root requires-artifacts requires-erofs-tool requires-pmem"]
 fn shared_pmem_marker_lifecycle_releases_refs_and_preserves_artifact() {
     let _serial = support::REAL_KVM_LOCK.lock().expect("real-kvm test lock");
     let store = support::open_default_store();

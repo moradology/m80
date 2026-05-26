@@ -42,7 +42,10 @@ bytes is rejected immediately with `OversizedPayload { size: MAX_FRAME_BYTES + 1
 
 **Present-tense statement:** `read_frame` allocates the body buffer only after
 the four-byte prefix has passed the strict cap check. The encoder
-(`write_frame`) applies the same body-length guard before writing.
+(`write_frame`) applies the same body-length guard before writing. A receiver
+that sees `OversizedPayload` closes that channel without writing a typed
+payload response, because the peer may already have sent bytes from the rejected
+body and the stream is no longer aligned to the next frame boundary.
 
 A peer that closes before the four-byte prefix or before the announced body is
 fully read surfaces as `Io(UnexpectedEof)`, **not** `OversizedPayload` — the
@@ -65,15 +68,17 @@ cap variant is reserved for a body length that is genuinely too large.
 When protobuf decoding fails to parse a frame, `read_frame` returns
 `ProtoError::MalformedPayload(detail)` where `detail` is the
 decoder error string. Connection handlers **must** drop the
-connection on this error; the byte stream is in an unrecoverable state and
-attempting to read further frames from the same connection is undefined
-behaviour at the protocol level.
+connection on framing and parse errors; the byte stream is in an unrecoverable
+state and attempting to read further frames from the same connection is
+undefined behaviour at the protocol level.
 
 **Present-tense statement:** A `MalformedPayload` return from `read_frame`
 means the framing invariant has been violated. The caller is responsible for
 closing the connection. m80's connection handlers (in `m80-guestd` and
-`m80-firecracker`) must exit the request loop and close the connection on any
-`Err` from `read_frame`, matching predecessor's drop pattern.
+`m80-firecracker`) must exit the request loop and close the connection on
+poisoned framing errors. A decodable `IncompatibleVersion` frame may still get
+a typed failure response because the envelope was parsed and the stream
+boundary is known.
 
 **predecessor source:**
 - `crates/sandbox/agent-guest-proto/src/envelope.rs:307-310` — `serde_json::from_slice(trimmed).map_err(|e| ProtoError::MalformedPayload { detail: e.to_string() })`
@@ -83,4 +88,6 @@ closing the connection. m80's connection handlers (in `m80-guestd` and
 - `crates/m80-proto/src/framing.rs` — `read_frame` returns `Err(ProtoError::MalformedPayload(...))` on protobuf parse failure
 - `crates/m80-proto/src/error.rs` — `ProtoError::MalformedPayload(String)`
 
-**Test:** `crates/m80-proto/tests/framing_parse_failure.rs::malformed_protobuf_returns_error_and_drops_connection`
+**Tests:**
+- `crates/m80-proto/tests/framing_parse_failure.rs::malformed_protobuf_returns_error_and_drops_connection`
+- `crates/m80-guestd/tests/handle_connection.rs::oversized_initial_frame_drops_connection_without_response`

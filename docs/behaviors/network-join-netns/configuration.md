@@ -40,3 +40,5 @@ Tests:
 - `crates/m80-jailer/src/materialized.rs::tests::validate_netns_path_rejects_symlink`
 - `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace`
 - `crates/m80-firecracker/tests/join_netns_real_kvm.rs::join_netns_routes_guest_traffic_through_caller_namespace`
+  proves an unprivileged guest exec can reach a TCP server in the joined peer
+  namespace through the caller-provided TAP and bridge.

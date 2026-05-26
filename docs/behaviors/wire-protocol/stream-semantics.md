@@ -40,8 +40,9 @@ Sequences are monotonic within one stream and start at zero.
 - `file_write_chunk_request` uses one `u64` sequence within the upload id
   returned by `file_write_begin_response`. Guestd rejects gaps and duplicates
   with `FileError::InvalidSequence`, removes the failed upload, and unlinks the
-  temp file; the host validates each ack echoes the same upload id and expected
-  sequence before sending the next chunk.
+  temp file, then closes the upload connection after writing the error ack; the
+  host validates each ack echoes the same upload id and expected sequence before
+  sending the next chunk.
 - `pty_input` and `pty_output` have independent `u32` sequences. `pty_resize`
   and `pty_control` share the host control sequence.
 

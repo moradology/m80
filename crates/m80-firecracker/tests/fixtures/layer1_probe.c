@@ -40,6 +40,9 @@ static int error_note(const char *probe, const char *note) {
 }
 
 static int drop_to_nobody(const char *probe) {
+    if (geteuid() != 0) {
+        return 0;
+    }
     if (setgid(65534) != 0) {
         return error_note(probe, "setgid(65534) failed");
     }

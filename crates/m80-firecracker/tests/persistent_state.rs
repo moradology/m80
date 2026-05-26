@@ -18,6 +18,7 @@
 
 mod common;
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::sync::mpsc;
 
 use common::RunDirDumpGuard;
@@ -139,6 +140,7 @@ fn two_execs_workspace_persists() {
     let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
 
     let host_workspace = tempfile::tempdir().expect("tempdir");
+    make_world_writable(host_workspace.path());
     let sandbox = backend
         .admit(sandbox_config_with_workspace(
             vm_id,
@@ -175,6 +177,7 @@ fn extract_changes_after_unclean_stop_coherent() {
     let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
 
     let host_workspace = tempfile::tempdir().expect("workspace tempdir");
+    make_world_writable(host_workspace.path());
     let sandbox = backend
         .admit(sandbox_config_with_workspace(
             vm_id,
@@ -259,6 +262,15 @@ fn extract_changes_after_unclean_stop_coherent() {
     }
 
     stopped.delete().expect("delete");
+}
+
+fn make_world_writable(path: &std::path::Path) {
+    let mut perms = std::fs::metadata(path)
+        .unwrap_or_else(|e| panic!("metadata {}: {e}", path.display()))
+        .permissions();
+    perms.set_mode(0o777);
+    std::fs::set_permissions(path, perms)
+        .unwrap_or_else(|e| panic!("chmod 0777 {}: {e}", path.display()));
 }
 
 /// Three sequential execs accumulate a numeric counter in /tmp/n.

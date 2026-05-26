@@ -91,7 +91,7 @@ fn run_handler_with_reader_never_ready(input: Vec<u8>) -> Vec<u8> {
 }
 
 #[test]
-fn oversized_initial_frame_returns_error_response() {
+fn oversized_initial_frame_drops_connection_without_response() {
     let mut input = ((MAX_FRAME_BYTES as u32) + 1).to_be_bytes().to_vec();
     input.extend(request_frame(
         make_request("false", vec![], None, 5_000),
@@ -101,8 +101,8 @@ fn oversized_initial_frame_returns_error_response() {
     let out = run_handler(input);
 
     assert!(
-        !out.is_empty(),
-        "oversized frame must produce an error frame so the host sees a Failed response, not a silent EOF"
+        out.is_empty(),
+        "oversized frame must drop the poisoned connection without a mismatched error response"
     );
 }
 

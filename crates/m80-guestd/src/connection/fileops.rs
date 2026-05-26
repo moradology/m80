@@ -160,8 +160,10 @@ fn handle_one<W: Write>(
         }
         PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST => {
             let (request_id, req) = decode::<FileWriteChunkRequest>(raw)?;
-            respond(writer, request_id, write_chunk(req, uploads))?;
-            Ok(true)
+            let response = write_chunk(req, uploads);
+            let keep_open = response.error.is_none();
+            respond(writer, request_id, response)?;
+            Ok(keep_open)
         }
         PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST => {
             let (request_id, req) = decode::<FileWriteCommitRequest>(raw)?;

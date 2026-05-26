@@ -39,9 +39,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use m80_proto::{
     read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
     ExecRequest, ExecResponse, ExecStatus, ExecTiming, Payload, PingRequest, PongResponse,
-    RawEnvelope, ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST,
-    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST,
-    PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    ProtoError, RawEnvelope, ShutdownAction, ShutdownRequest, ShutdownResponse,
+    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PING_REQUEST,
+    PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST, PAYLOAD_KIND_PTY_REQUEST,
+    PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
 
 use crate::{
@@ -92,11 +93,11 @@ fn unix_ms_now() -> u64 {
 /// - `metrics_request`: sample guest procfs and guestd-local counters.
 /// - any other kind: respond with a Failed envelope and `Continue`.
 ///
-/// On recoverable request errors (malformed payload, spawn failure, …) an
-/// `ExecResponse` with `status: Failed` is attempted. Oversized frame prefixes
-/// poison the current stream, so guestd logs the protocol error and returns
-/// without writing a response; the caller then drops this connection and accepts
-/// the next one.
+/// On recoverable request errors that still carry a decodable envelope,
+/// an `ExecResponse` with `status: Failed` is attempted. Oversized and malformed
+/// initial frames poison the current stream, so guestd logs the protocol error
+/// and returns without writing a mismatched response frame; the caller then
+/// drops this connection and accepts the next one.
 pub fn handle_connection_with_reader_ready<R, W, F>(
     mut reader: R,
     mut writer: W,
@@ -114,17 +115,12 @@ where
         Err(e) => {
             metrics::record_error();
             protocol_log::warn_proto_error(GuestLogPhase::Exec, None, None, &e);
-            // OversizedPayload fires after reading only the 4-byte length
-            // prefix; the body bytes are still in the stream and the write
-            // side is unaffected. Fall through to send an error frame so the
-            // host sees a Failed response instead of a silent EOF.
-            //
-            // For all other read errors (malformed decodable-size frame,
-            // version mismatch, etc.) the same error-frame path applies.
-            let timing = failed_timing(received_at);
-            let resp = error_response(format!("{e:#}").into_bytes(), timing);
-            let out_env = Envelope::new(resp);
-            let _ = write_frame(&mut writer, &out_env);
+            if let ProtoError::IncompatibleVersion { .. } = e {
+                let timing = failed_timing(received_at);
+                let resp = error_response(format!("{e:#}").into_bytes(), timing);
+                let out_env = Envelope::new(resp);
+                let _ = write_frame(&mut writer, &out_env);
+            }
             return Ok(ConnectionOutcome::Continue);
         }
     };
