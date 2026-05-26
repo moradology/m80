@@ -122,10 +122,12 @@ Sequestering it has three benefits:
   bridge and host-veth interfaces, then lists the per-VM chain, FORWARD, and NAT
   POSTROUTING for missing-rule detection before installing missing rules
   through one `iptables-restore -w --noflush` batch. The batch appends per-VM
-  filter rules, inserts FORWARD entries scoped by the m80 bridge plus guest
+  filter rules, inserts outbound FORWARD entries scoped by the m80 bridge, the
+  VM's host-side veth bridge port, and guest
   `/32`, inserts a per-VM TCP SYN connlimit reject at 256 concurrent
-  connections from the m80 bridge plus guest `/32`, and appends NAT POSTROUTING
-  masquerade.
+  connections from the same bridge/port plus guest `/32`, and appends NAT
+  POSTROUTING masquerade. Inbound/reply FORWARD entries still target the shared
+  bridge output path plus guest `/32`.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't

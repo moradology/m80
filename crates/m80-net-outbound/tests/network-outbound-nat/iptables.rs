@@ -398,6 +398,10 @@ fn forward_inserts_route_guest_through_filter_chain() {
         "-s",
         &guest,
         "-m",
+        "physdev",
+        "--physdev-in",
+        &state.host_veth_name,
+        "-m",
         "comment",
         "--comment",
         &comment,
@@ -441,6 +445,10 @@ fn forward_inserts_route_guest_through_filter_chain() {
         "tcp",
         "--syn",
         "-m",
+        "physdev",
+        "--physdev-in",
+        &state.host_veth_name,
+        "-m",
         "connlimit",
         "--connlimit-above",
         "256",
@@ -466,7 +474,12 @@ fn forward_inserts_route_guest_through_filter_chain() {
         assert!(
             rule.windows(2)
                 .any(|pair| pair == ["-i", &state.bridge.bridge_name]),
-            "outbound entry rules must remain scoped to the m80 bridge"
+            "outbound entry rules must remain routed through the m80 bridge"
+        );
+        assert!(
+            rule.windows(2)
+                .any(|pair| pair == ["--physdev-in", &state.host_veth_name]),
+            "outbound entry rules must constrain the incoming bridge port"
         );
     }
 }

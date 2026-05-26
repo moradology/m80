@@ -60,9 +60,9 @@ operations use rtnetlink.
 Bridge-port isolation is part of the per-VM isolation boundary. Host-side veth
 ports on the same run-root bridge must not be able to exchange L2 traffic
 directly through the bridge; routed egress is controlled later by the per-VM
-bridge-and-guest-IPv4-scoped FORWARD rules and NAT policy. The VMM-local bridge
-is not port-isolated because it must carry traffic between the guest TAP and the
-veth peer. m80 assigns deterministic VMM-local bridge and TAP link MACs that are
+bridge-port-and-guest-IPv4-scoped FORWARD rules and NAT policy. The VMM-local
+bridge is not port-isolated because it must carry traffic between the guest TAP
+and the veth peer. m80 assigns deterministic VMM-local bridge and TAP link MACs that are
 distinct from the guest MAC so gateway replies addressed to the guest MAC are
 forwarded to the Firecracker TAP path rather than consumed by a host-side link
 device.

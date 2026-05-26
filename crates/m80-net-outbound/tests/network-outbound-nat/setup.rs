@@ -565,6 +565,13 @@ fn failed_launch_after_bridge_cleans_bridge() {
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
     let planned_bridge = planned_bridge_state(temp.path()).unwrap();
+    let planned_vm = planned_vm_network_state(
+        &intent,
+        "vm-123",
+        temp.path(),
+        &run_dir,
+        planned_bridge.clone(),
+    );
     let mut ops = RecordingLinkOps {
         fail_create_tap: true,
         ..RecordingLinkOps::default()
@@ -583,8 +590,17 @@ fn failed_launch_after_bridge_cleans_bridge() {
         "delete_link_if_exists {}",
         planned_bridge.bridge_name
     )));
+    assert!(ops.operations.contains(&format!(
+        "delete_link_if_exists {}",
+        planned_vm.host_veth_name
+    )));
+    assert!(ops.operations.contains(&format!(
+        "delete_network_namespace_if_exists {}",
+        planned_vm.vmm_netns_name
+    )));
     assert!(!bridge_state_path(temp.path()).exists());
     assert!(!vm_network_state_path(&run_dir).exists());
+    assert!(!guest_ipv4_claim_path(temp.path(), planned_vm.guest_ipv4).exists());
 }
 
 #[test]

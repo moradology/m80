@@ -8,11 +8,13 @@ trusted isolation primitive. Per-VM isolation is enforced in three places:
 - preflight requires `br_netfilter` plus
   `net.bridge.bridge-nf-call-iptables=1` before OutboundNat can launch, so
   bridge traffic traverses iptables;
-- IPv6 is disabled on the owned bridge and TAP interfaces before firewall
-  rules are installed;
-- outbound FORWARD ingress matches `-i <tap>` plus the guest `/32`, so a
-  sibling VM cannot spoof another guest source address and enter that VM's
-  filter chain.
+- IPv6 is disabled on the owned bridge and host-side veth interfaces before
+  firewall rules are installed;
+- outbound FORWARD ingress matches the m80 bridge plus
+  `--physdev-in <host_veth>` and the guest `/32`, so a sibling VM cannot spoof
+  another guest source address and enter that VM's filter chain. The host-side
+  veth is the host-visible per-VM ingress port for the private VMM namespace
+  topology.
 
 The IPv4 NAT policy remains per-VM and comment-tagged for cleanup. Bridge
 egress replies still match the bridge output path plus conntrack state.

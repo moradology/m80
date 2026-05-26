@@ -108,21 +108,22 @@ Verification:
 ## Forward Entries
 
 The policy phase inserts four filter/FORWARD rules at index 1:
-`-i <bridge> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
-per-VM filter chain,
+`-i <bridge> -s <guest_ipv4>/32 -m physdev --physdev-in <host_veth> -j <chain>`
+routes guest egress through the per-VM filter chain,
 `-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new inbound traffic, and
 `-o <bridge> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
 permits replies. A guest-source-scoped
-`-i <bridge> -s <guest_ipv4>/32 -p tcp --syn -m connlimit --connlimit-above 256 --connlimit-mask 32 -j REJECT`
+`-i <bridge> -s <guest_ipv4>/32 -p tcp --syn -m physdev --physdev-in <host_veth> -m connlimit --connlimit-above 256 --connlimit-mask 32 -j REJECT`
 caps one guest's concurrent TCP connection pressure before it can consume the
 host-global conntrack table. Because all four use `-I ... 1`, the final
 effective order keeps the connlimit and RELATED/ESTABLISHED rules above the
 inbound reject.
 
-Outbound entry rules match the m80 bridge plus guest `/32`. The L2 sibling
-boundary is enforced before routing by bridge-port isolation on each host-side
-veth; FORWARD rules then apply the per-VM routed egress policy by bridge ingress
-and source address.
+Outbound entry rules match the routed m80 bridge path plus the VM's host-side
+veth bridge port, so a sibling VM cannot spoof the guest source address and
+enter another VM's filter chain. The L2 sibling boundary is also enforced before
+routing by bridge-port isolation on each host-side veth; FORWARD rules then
+apply the per-VM routed egress policy by bridge port and source address.
 
 Source: predecessor `ensure_forwarding_entry_rules` lines 1630-1695.
 
