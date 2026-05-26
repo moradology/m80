@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,12 +18,8 @@ use m80_proto::{ExecRequest, ExecStatus};
 fn snapshot_concurrent_capture_and_restore() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let initial_snap_dir = discovery
-        .run_root
-        .join(format!("snap-concurrency-initial-{}", unique_suffix()));
-    let recapture_snap_dir = discovery
-        .run_root
-        .join(format!("snap-concurrency-recapture-{}", unique_suffix()));
+    let initial_snap_dir = snapshot_artifact_dir(&discovery.run_root, "initial");
+    let recapture_snap_dir = snapshot_artifact_dir(&discovery.run_root, "recapture");
     let initial_paths = snapshot_paths(&initial_snap_dir);
     let recapture_paths = snapshot_paths(&recapture_snap_dir);
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
@@ -112,6 +108,16 @@ fn snapshot_concurrent_capture_and_restore() {
     let _ = std::fs::remove_dir_all(recapture_snap_dir);
 }
 
+#[test]
+fn snapshot_artifact_dirs_stay_under_reserved_warm_tree() {
+    let run_root = tempfile::tempdir().expect("run root");
+
+    let dir = snapshot_artifact_dir(run_root.path(), "recapture");
+
+    assert!(dir.starts_with(run_root.path().join("warm")));
+    assert_ne!(dir.parent(), Some(run_root.path()));
+}
+
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
     let run_root = discovery.run_root.clone();
     BackendConfig::builder(discovery)
@@ -133,6 +139,12 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         fc_log_level: None,
         ..common::sandbox_config_with_id(vm_id)
     }
+}
+
+fn snapshot_artifact_dir(run_root: &Path, label: &str) -> PathBuf {
+    run_root
+        .join("warm")
+        .join(format!("snapshot-concurrency-{label}-{}", unique_suffix()))
 }
 
 fn snapshot_paths(dir: &Path) -> SnapshotPaths {

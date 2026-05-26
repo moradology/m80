@@ -231,7 +231,11 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 because snapshot capture/restore methods are first-class `m80-firecracker`
 lifecycle methods. Snapshot parents must canonicalize below the backend
 `run_root`; capture and restore reject outside directories and symlink escapes
-before exposing snapshot files to jailed Firecracker through `/snapshot`.
+before exposing snapshot files to jailed Firecracker through `/snapshot`. Durable
+caller-owned snapshot directories must not be top-level `run_root` children that
+look like VM ids, because startup recovery owns those entries as VM run-dirs.
+Use a reserved subtree such as `run_root/warm/...` for snapshots that must
+survive backend reinitialization.
 `ChangeSet` is likewise re-exported from `m80-storage` because
 `StoppedSandbox::extract_changes` returns it directly.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
