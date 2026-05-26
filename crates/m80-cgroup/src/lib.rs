@@ -37,6 +37,10 @@ const DEFAULT_IO_WEIGHT: u16 = 100;
 const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
 const CGROUP_KILL_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const CGROUP_KILL_DRAIN_POLL: Duration = Duration::from_millis(20);
+const CGROUP_RMDIR_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+const CGROUP_RMDIR_DRAIN_POLL: Duration = Duration::from_millis(20);
+const LINUX_EBUSY: i32 = 16;
+const LINUX_ENOTEMPTY: i32 = 39;
 
 static SUBTREE_CONTROL_PRIMED: OnceLock<()> = OnceLock::new();
 static SUBTREE_CONTROL_PRIME_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -180,7 +184,7 @@ impl Drop for Subtree {
         if let Err(e) = kill_cgroup(&self.0) {
             warn!("drop: cgroup.kill({}) failed: {e}", self.0.display());
         }
-        if let Err(e) = fs::remove_dir(&self.0) {
+        if let Err(e) = remove_empty_cgroup_leaf(&self.0) {
             warn!("drop: rmdir({}) failed: {e}", self.0.display());
         }
     }
@@ -210,7 +214,7 @@ pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
         });
     }
 
-    fs::remove_dir(&leaf).map_err(|source| CgroupError::Io { path: leaf, source })?;
+    remove_empty_cgroup_leaf(&leaf)?;
 
     Ok(())
 }
@@ -420,6 +424,35 @@ fn wait_for_empty_cgroup(path: &Path) -> Result<(), CgroupError> {
         }
         thread::sleep(CGROUP_KILL_DRAIN_POLL);
     }
+}
+
+fn remove_empty_cgroup_leaf(path: &Path) -> Result<(), CgroupError> {
+    let started = Instant::now();
+    loop {
+        match fs::remove_dir(path) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(source) if is_transient_cgroup_rmdir_error(&source) => {
+                if started.elapsed() >= CGROUP_RMDIR_DRAIN_TIMEOUT {
+                    return Err(CgroupError::Io {
+                        path: path.to_path_buf(),
+                        source,
+                    });
+                }
+                thread::sleep(CGROUP_RMDIR_DRAIN_POLL);
+            }
+            Err(source) => {
+                return Err(CgroupError::Io {
+                    path: path.to_path_buf(),
+                    source,
+                });
+            }
+        }
+    }
+}
+
+fn is_transient_cgroup_rmdir_error(err: &io::Error) -> bool {
+    matches!(err.raw_os_error(), Some(LINUX_EBUSY | LINUX_ENOTEMPTY))
 }
 
 fn cgroup_procs(path: &Path) -> Result<String, CgroupError> {

@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ── Re-exports from m80-test-helpers ─────────────────────────────────────────
 
@@ -198,6 +198,50 @@ pub(crate) fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracke
     m80_firecracker::SandboxConfig {
         vm_id: Some(vm_id.into()),
         ..sandbox_config()
+    }
+}
+
+/// Open a raw guestd vsock channel with the same transient-open tolerance used
+/// by the production exec path.
+///
+/// Real Firecracker vsock readiness can briefly accept the UDS connection and
+/// then reject the `CONNECT` handshake with `BrokenPipe` while the guest-side
+/// listener finishes settling. Product calls already retry this path; raw wire
+/// tests need the same discipline because they intentionally bypass
+/// `RunningSandbox`.
+#[allow(dead_code)]
+pub(crate) fn open_vsock_channel_with_retry(
+    uds: &Path,
+    guest_port: u32,
+    context: &str,
+) -> m80_vsock::Channel {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match m80_vsock::Channel::open_uds_only(uds, guest_port) {
+            Ok(channel) => return channel,
+            Err(err) if is_transient_vsock_open_error(&err) => {
+                if Instant::now() >= deadline {
+                    panic!(
+                        "failed to open raw vsock channel for {context} before retry deadline: {err}"
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(err) => {
+                panic!("failed to open raw vsock channel for {context}: {err}");
+            }
+        }
+    }
+}
+
+fn is_transient_vsock_open_error(err: &m80_vsock::VsockError) -> bool {
+    match err {
+        m80_vsock::VsockError::HandshakeFailed => true,
+        m80_vsock::VsockError::Io { source, .. } => matches!(
+            source.kind(),
+            std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionRefused
+        ),
+        _ => false,
     }
 }
 

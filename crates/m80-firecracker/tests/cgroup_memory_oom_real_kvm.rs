@@ -4,7 +4,7 @@
 mod common;
 
 use std::collections::BTreeMap;
-use std::io::Cursor;
+use std::io::{Cursor, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -13,6 +13,8 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, Sandbox
 use m80_proto::ExecRequest;
 
 use common::RunDirDumpGuard;
+
+const OOM_TEST_HEADROOM_BYTES: u64 = 128 * 1024 * 1024;
 
 // vm_id must stay under ~22 chars so the AF_UNIX socket path
 // `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock` fits the
@@ -73,18 +75,21 @@ fn cgroup_memory_limit_oom_kills_workload() {
     let run_dir = running.run_dir().to_owned();
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
     let cgroup = read_cgroup_path(&run_dir);
-    let before = read_memory_events(&cgroup);
 
     let memory_max = std::fs::read_to_string(cgroup.join("memory.max")).expect("memory.max");
+    let default_memory_max = m80_cgroup::Limits::preset()
+        .memory_max
+        .expect("default memory.max");
     assert_eq!(
         memory_max.trim(),
-        m80_cgroup::Limits::preset()
-            .memory_max
-            .expect("default memory.max")
-            .to_string(),
+        default_memory_max.to_string(),
         "firecracker must apply the default host memory cap before workload"
     );
 
+    // The default cap is intentionally below this VM's guest RAM, so setup I/O
+    // can trip it before the actual workload. Lift the cap only for helper
+    // upload, then lower it to a measured cap before running the workload.
+    write_cgroup_file_for_test(&cgroup.join("memory.max"), "max\n");
     let memhog = compile_memhog_binary();
     running
         .upload_file_chunked(
@@ -94,8 +99,13 @@ fn cgroup_memory_limit_oom_kills_workload() {
             1024 * 1024,
         )
         .expect("upload memhog helper");
+    drop_guest_page_cache(&mut running);
 
-    let result = running.exec(memhog_request(1_800));
+    let current = read_memory_current(&cgroup);
+    let test_memory_max = current.saturating_add(OOM_TEST_HEADROOM_BYTES);
+    write_cgroup_file_for_test(&cgroup.join("memory.max"), &format!("{test_memory_max}\n"));
+    let before = read_memory_events(&cgroup);
+    let result = running.exec(memhog_request(512));
 
     let after = wait_for_memory_event(&cgroup, &before);
     assert!(
@@ -122,7 +132,7 @@ fn compile_memhog_binary() -> Vec<u8> {
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    unsigned long mib = 1800;
+    unsigned long mib = 512;
     if (argc > 1) {
         char *end = NULL;
         errno = 0;
@@ -178,6 +188,29 @@ int main(int argc, char **argv) {
     std::fs::read(&output).unwrap_or_else(|e| panic!("read {}: {e}", output.display()))
 }
 
+fn drop_guest_page_cache(running: &mut m80_firecracker::RunningSandbox) {
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "sync; (echo 3 > /proc/sys/vm/drop_caches) >/dev/null 2>&1 || true".into(),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect("drop guest page cache");
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "best-effort drop_caches command failed: stderr={}",
+        String::from_utf8_lossy(&response.stderr)
+    );
+}
+
 fn wait_for_memory_event(cgroup: &Path, before: &BTreeMap<String, u64>) -> BTreeMap<String, u64> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -192,11 +225,29 @@ fn wait_for_memory_event(cgroup: &Path, before: &BTreeMap<String, u64>) -> BTree
     }
 }
 
+fn read_memory_current(cgroup: &Path) -> u64 {
+    let path = cgroup.join("memory.current");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
+}
+
 fn read_cgroup_path(run_dir: &Path) -> PathBuf {
     let path = run_dir.join("cgroup-path.txt");
     let text =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     PathBuf::from(text.trim())
+}
+
+fn write_cgroup_file_for_test(path: &Path, value: &str) {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
+    file.write_all(value.as_bytes())
+        .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 fn read_memory_events(cgroup: &Path) -> BTreeMap<String, u64> {

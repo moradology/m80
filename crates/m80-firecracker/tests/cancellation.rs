@@ -103,8 +103,7 @@ fn open_raw_channel(
     vm_id: &str,
 ) -> Channel {
     let uds = vsock_uds(run_dir, firecracker_bin, vm_id);
-    Channel::open_uds_only(&uds, GUEST_PORT_DEFAULT)
-        .expect("failed to open raw vsock channel for cancel test")
+    common::open_vsock_channel_with_retry(&uds, GUEST_PORT_DEFAULT, "cancel test")
 }
 
 // ── Scenario 1: cancel kills a running process ────────────────────────────────

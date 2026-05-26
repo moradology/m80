@@ -71,7 +71,7 @@ fn launch_vm(discovery: &m80_preflight::Discovery) -> (m80_firecracker::RunningS
 
 fn open_channel(run_dir: &Path, firecracker_bin: &Path, vm_id: &str) -> Channel {
     let uds = vsock_uds(run_dir, firecracker_bin, vm_id);
-    Channel::open_uds_only(&uds, GUEST_PORT_DEFAULT).expect("open vsock channel")
+    common::open_vsock_channel_with_retry(&uds, GUEST_PORT_DEFAULT, "wire frame boundary test")
 }
 
 fn open_raw_stream(run_dir: &Path, firecracker_bin: &Path, vm_id: &str) -> BufReader<UnixStream> {

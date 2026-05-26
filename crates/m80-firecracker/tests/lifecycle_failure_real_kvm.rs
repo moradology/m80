@@ -367,7 +367,7 @@ fn start_blocking_exec(
 ) -> Channel {
     let vsock = m80_firecracker::vsock_socket_path(running.run_dir(), &discovery.firecracker_bin);
     let mut channel =
-        Channel::open_uds_only(&vsock, GUEST_PORT_DEFAULT).expect("open blocking exec channel");
+        common::open_vsock_channel_with_retry(&vsock, GUEST_PORT_DEFAULT, "blocking exec test");
     let req = ExecRequest {
         program: "/bin/sh".into(),
         args: vec!["-c".into(), "sleep 60".into()],

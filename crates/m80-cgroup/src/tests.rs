@@ -550,6 +550,28 @@ fn drop_without_cgroup_kill_removes_empty_temp_leaf() {
 }
 
 #[test]
+fn remove_empty_cgroup_leaf_retries_transient_rmdir_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = dir.path().join("leaf");
+    fs::create_dir(&leaf).unwrap();
+    let blocker = leaf.join("temporary-child");
+    fs::write(&blocker, "not empty yet").unwrap();
+
+    let remover = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        fs::remove_file(blocker).unwrap();
+    });
+
+    remove_empty_cgroup_leaf(&leaf).expect("transiently non-empty leaf should be retried");
+    remover.join().expect("blocker remover panicked");
+
+    assert!(
+        !leaf.exists(),
+        "leaf must be removed after transient rmdir failure clears"
+    );
+}
+
+#[test]
 #[ignore = "requires-root requires-cgroup-v2"]
 fn cgroup_drop_with_live_procs_uses_cgroup_kill_then_rmdir() {
     Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
