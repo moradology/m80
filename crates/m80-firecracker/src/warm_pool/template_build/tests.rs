@@ -251,7 +251,10 @@ impl Fixture {
     fn fake() -> Self {
         let temp = TempDir::new().expect("tempdir");
         let backend = Arc::new(
-            Backend::new(make_backend_config(fake_discovery(temp.path()))).expect("Backend::new"),
+            Backend::new_without_parent_capability_drop_for_tests(make_backend_config(
+                fake_discovery(temp.path()),
+            ))
+            .expect("Backend::new"),
         );
         Self { temp, backend }
     }

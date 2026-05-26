@@ -16,6 +16,32 @@ fn backend_init_drops_parent_cap_net_admin() {
     .expect("Backend::new");
     drop(backend);
 
+    assert_thread_lacks_cap_net_admin();
+}
+
+#[test]
+#[ignore = "requires-kvm requires-root requires-network-namespace requires-artifacts"]
+fn backend_init_drops_parent_cap_net_admin_for_each_thread() {
+    let discovery = m80_preflight::run().expect("preflight");
+
+    for _ in 0..2 {
+        let discovery = discovery.clone();
+        std::thread::spawn(move || {
+            let backend = Backend::new(
+                BackendConfig::builder(discovery)
+                    .cgroup_mode(CgroupMode::Disabled)
+                    .build(),
+            )
+            .expect("Backend::new");
+            drop(backend);
+            assert_thread_lacks_cap_net_admin();
+        })
+        .join()
+        .expect("capability-drop thread");
+    }
+}
+
+fn assert_thread_lacks_cap_net_admin() {
     let status = std::fs::read_to_string("/proc/thread-self/status").expect("status");
     for field in ["CapEff", "CapPrm", "CapBnd"] {
         let value = status_hex_value(&status, field);

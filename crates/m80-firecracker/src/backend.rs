@@ -11,7 +11,6 @@ use m80_image_store::{ImageStore, DEFAULT_STORE_ROOT};
 use m80_jailer::inspect_run_dir;
 use m80_snapshot_template::{HookSpecSet, PinnedTemplate, TemplateInputs, TemplateStore};
 
-#[cfg(not(test))]
 use crate::capabilities::drop_parent_cap_net_admin;
 use crate::error::{ConfigError, FcError};
 use crate::layout::{socket_path_len, SUN_PATH_BUDGET};
@@ -68,9 +67,6 @@ impl Backend {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
         let network_helper = backend_network_helper(&config.discovery.net_helper_bin)?;
-        #[cfg(test)]
-        let _ = parent_capability_drop;
-        #[cfg(not(test))]
         if parent_capability_drop == ParentCapabilityDrop::Run {
             drop_parent_cap_net_admin()?;
         }
@@ -680,7 +676,8 @@ done
             .jail_gid(3000)
             .cgroup_mode(CgroupMode::Disabled)
             .build();
-        let _backend = Backend::new(config).expect("Backend::new");
+        let _backend =
+            Backend::new_without_parent_capability_drop_for_tests(config).expect("Backend::new");
 
         assert!(
             marker.exists(),
@@ -891,7 +888,7 @@ done
 
     fn test_backend(run_root: &std::path::Path) -> Arc<Backend> {
         Arc::new(
-            Backend::new(
+            Backend::new_without_parent_capability_drop_for_tests(
                 BackendConfig::builder(fake_discovery(run_root))
                     .max_concurrent_vms(1)
                     .run_root(run_root)

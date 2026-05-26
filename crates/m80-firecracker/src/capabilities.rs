@@ -1,37 +1,15 @@
 //! Parent-process capability hardening after privileged helpers start.
 
-#[cfg(not(test))]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(not(test))]
-use std::sync::Mutex;
-
-#[cfg(not(test))]
 use caps::{CapSet, Capability};
 
 use crate::error::CapabilityDropError;
 
 const CAP_NET_ADMIN_BIT: u32 = 12;
-#[cfg(not(test))]
-static CAP_NET_ADMIN_DROPPED: AtomicBool = AtomicBool::new(false);
-#[cfg(not(test))]
-static CAP_NET_ADMIN_DROP_LOCK: Mutex<()> = Mutex::new(());
 
-/// Drop `CAP_NET_ADMIN` from the backend thread once per process.
-#[cfg(not(test))]
+/// Drop `CAP_NET_ADMIN` from the backend thread.
 pub(crate) fn drop_parent_cap_net_admin() -> Result<(), CapabilityDropError> {
-    if CAP_NET_ADMIN_DROPPED.load(Ordering::Acquire) {
-        return Ok(());
-    }
-    let _guard = CAP_NET_ADMIN_DROP_LOCK
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
-    if CAP_NET_ADMIN_DROPPED.load(Ordering::Acquire) {
-        return Ok(());
-    }
-
     let before = read_parent_capability_status()?;
     if !before.has_cap_net_admin() {
-        CAP_NET_ADMIN_DROPPED.store(true, Ordering::Release);
         return Ok(());
     }
 
@@ -43,11 +21,9 @@ pub(crate) fn drop_parent_cap_net_admin() -> Result<(), CapabilityDropError> {
 
     let after = read_parent_capability_status()?;
     after.verify_cap_net_admin_absent()?;
-    CAP_NET_ADMIN_DROPPED.store(true, Ordering::Release);
     Ok(())
 }
 
-#[cfg(not(test))]
 fn drop_cap_from_bounding() -> Result<(), CapabilityDropError> {
     let current =
         caps::read(None, CapSet::Bounding).map_err(|source| CapabilityDropError::ReadCaps {
@@ -61,7 +37,6 @@ fn drop_cap_from_bounding() -> Result<(), CapabilityDropError> {
     Ok(())
 }
 
-#[cfg(not(test))]
 fn drop_cap_from_set(set: CapSet, set_name: &'static str) -> Result<(), CapabilityDropError> {
     let mut current = caps::read(None, set).map_err(|source| CapabilityDropError::ReadCaps {
         set: set_name,
@@ -106,7 +81,6 @@ impl ParentCapabilityStatus {
     }
 }
 
-#[cfg(not(test))]
 fn read_parent_capability_status() -> Result<ParentCapabilityStatus, CapabilityDropError> {
     let text = std::fs::read_to_string("/proc/thread-self/status")
         .map_err(|source| CapabilityDropError::StatusRead { source })?;

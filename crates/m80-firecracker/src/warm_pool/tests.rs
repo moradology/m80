@@ -56,7 +56,7 @@ fn warm_pool_fill_rejects_tampered_snapshot_before_admission() {
     std::fs::write(&paths.mem, b"tampered-memory").expect("tamper memory");
 
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(1)
                 .run_root(run_root.path())
@@ -105,7 +105,7 @@ fn target_ready_above_admission_limit_is_rejected() {
     let run_root = tempfile::tempdir().expect("run root");
     let discovery = fake_discovery(run_root.path());
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(1)
                 .run_root(run_root.path())
@@ -146,7 +146,7 @@ fn set_target_ready_rejects_values_above_admission_limit() {
     let run_root = tempfile::tempdir().expect("run root");
     let discovery = fake_discovery(run_root.path());
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(1)
                 .run_root(run_root.path())
@@ -189,7 +189,7 @@ fn set_target_ready_rejects_values_above_initial_cpu_allocator_capacity() {
     let run_root = tempfile::tempdir().expect("run root");
     let discovery = fake_discovery(run_root.path());
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(2)
                 .run_root(run_root.path())
@@ -235,7 +235,7 @@ fn fill_worker_panic_rolls_back_filling_count() {
     let run_root = tempfile::tempdir().expect("run root");
     let discovery = fake_discovery(run_root.path());
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(1)
                 .run_root(run_root.path())
@@ -283,7 +283,7 @@ fn snapshot_restore_fingerprint_mismatch_records_fill_failure() {
     let run_root = tempfile::tempdir().expect("run root");
     let discovery = fake_discovery(run_root.path());
     let backend = Arc::new(
-        Backend::new(
+        Backend::new_without_parent_capability_drop_for_tests(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(1)
                 .run_root(run_root.path())

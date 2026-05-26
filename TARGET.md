@@ -56,20 +56,7 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-vpw49.8` — outbound-network isolation coverage, pending KVM proof.**
-   Candidate commit `fe4fa943` scopes OutboundNat FORWARD entry rules by the
-   routed m80 bridge plus `--physdev-in <host_veth>` and adds no-KVM tests/docs.
-   Do not close until a self-hosted KVM run proves the egress peer/ICMP tests.
-   Local proof so far: `cargo fmt --all -- --check`,
-   `cargo test -p m80-net-outbound`, `git diff --check`, and
-   `iptables -m physdev -h`. The GitHub dispatch HTTP 500 cleared on
-   2026-05-26; run
-   `https://github.com/moradology/m80/actions/runs/26447668914` is queued
-   against commit `2d12982d86c433c04eb92392aeb23760f1e7e43b` for the external
-   network proof. A local focused attempt on this host is not closure evidence:
-   m80 preflight rejects the host with `NestedVirtEnabled { vendor: "amd" }`
-   even though `/dev/kvm` exists.
-2. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
+1. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
 
@@ -127,6 +114,13 @@ failures, finite `FcError` variants, vsock disconnects, and idle timeouts,
 active warm-owner slot metrics when present, and
 `docs/behaviors/observability/production-metrics-surface.md` records the
 process-local counter boundary.
+`m80-vpw49.8` is closed as of 2026-05-26: L1 real-KVM proof with
+`M80_RUN_EXTERNAL_NETWORK_E2E=1` passed all outbound egress ignored tests,
+including external DNS/HTTP, HTTP by IP, ICMP default-deny, peer-guest isolation,
+private Firecracker netns, and post-drop CAP_NET_ADMIN behavior. Proof artifacts:
+`/tank/tmp/m80-vpw49-8-proof/m80-vpw49-8-egress.log`,
+`/tank/tmp/m80-vpw49-8-proof/m80-cap-net-admin-drop.log`, and
+`/tank/tmp/m80-vpw49-8-proof/m80-cap-drop-smoke.log`.
 
 ## Long-run order
 
@@ -137,26 +131,23 @@ root causes.
 1. **Keep the privileged battery green.** The self-hosted workflow is now the
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
-   causes. Current state: workflow dispatch now succeeds; run `26447668914` is
-   queued on the self-hosted privileged runner for the `m80-vpw49.8` external
-   network proof.
-2. **Close the active network proof boundary.** `m80-vpw49.8` is the only
-   in-progress bead. If the KVM run is green, close it with the run URL/report
-   path. If it fails, fix only the report-proven rule/topology issue.
-3. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
+   causes. Current state: GitHub workflow dispatch works, but repo-visible
+   self-hosted runners are absent; use the L1 KVM runner for proof until a
+   `self-hosted,kvm` runner is registered again.
+2. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
    external consumer integration has a concrete m80 gap.** The observability
    batch that was gating long-run diagnosis is complete enough for the next
    proof/refactor work.
-4. **Harden failure visibility and cleanup if E2E reports regress.** Pull
+3. **Harden failure visibility and cleanup if E2E reports regress.** Pull
    `m80-wok08.3`, `m80-243wj.17`, and adjacent failure-path cleanup beads
    forward only when the real-KVM reports show leaked processes, swallowed
    thread panics, or missing preserved-run-dir evidence.
-5. **Defer heavy refactors until the coverage lane lands.** `m80-ezs0x.1` /
+4. **Defer heavy refactors until the coverage lane lands.** `m80-ezs0x.1` /
    `m80-ezs0x.2` are real problems, but launch/exec refactors touch the most
    failure-sensitive surface. Do them after the no-KVM coverage and
    observability lanes give a better safety net, and attach fresh real-KVM
    smoke evidence to the refactor commit.
-6. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
+5. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
    v0.1 gate. Resume it after smoke + full ignored battery are green.
 
 ## Deferred (not v0.1, no calendar)

@@ -155,7 +155,9 @@ fn fake_backend(run_root: &Path) -> Arc<crate::Backend> {
         .jail_gid(3000)
         .cgroup_mode(crate::CgroupMode::Disabled)
         .build();
-    Arc::new(crate::Backend::new(config).expect("Backend::new"))
+    Arc::new(
+        crate::Backend::new_without_parent_capability_drop_for_tests(config).expect("Backend::new"),
+    )
 }
 
 fn pmem_layer(name: &str) -> crate::PmemLayer {
