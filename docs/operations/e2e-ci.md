@@ -38,6 +38,9 @@ Manual inputs:
 - `timeout_seconds`: per-test timeout; default `180`.
 - `run_smoke`: `true` or `false`; default `true`.
 - `smoke_mode`: `full` or `launch-only`; default `full`.
+- `external_network`: `true` or `false`; default `false`. Set to `true` to
+  export `M80_RUN_EXTERNAL_NETWORK_E2E=1` and run tests tagged
+  `requires-external-network`.
 - `upload_run_dirs`: archive the run root after failure; default `true`.
 
 Repository or organization variables can override:
@@ -60,7 +63,10 @@ The job checks the substrate first: `/dev/kvm`, `sudo -n`, `ip`, `iptables`,
 kernel/rootfs/seccomp artifact paths, and the m80 host-binary paths. It then
 runs `scripts/smoke.sh`,
 which refreshes `m80-guestd` from the checked-out commit and rebuilds the guest
-image when the manifest daemon hash is stale. The smoke is followed by:
+image when the manifest daemon hash is stale. When `external_network=true`,
+the job sets `M80_RUN_EXTERNAL_NETWORK_E2E=1` for the ignored-test wrapper so
+external DNS, HTTP, and ICMP probes are selected instead of skipped. The smoke
+is followed by:
 
 ```sh
 scripts/run-e2e.sh --package "$M80_E2E_PACKAGE" --timeout "$M80_E2E_TIMEOUT_SECONDS" --json

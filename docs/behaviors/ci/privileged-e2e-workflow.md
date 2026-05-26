@@ -13,6 +13,9 @@ Contract:
   artifact paths before the battery runs;
 - `scripts/smoke.sh` runs before ignored tests unless an operator disables it
   for wrapper debugging;
+- `workflow_dispatch` has an `external_network` input that selects
+  `requires-external-network` tests by exporting
+  `M80_RUN_EXTERNAL_NETWORK_E2E=1`;
 - `scripts/run-e2e.sh --json` emits the machine-readable report and
   `scripts/validate-e2e-report.py` validates it in the same job;
 - artifacts are uploaded with `if: always()`, including runner diagnostics and

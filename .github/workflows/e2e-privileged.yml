@@ -19,6 +19,10 @@ on:
         description: "scripts/smoke.sh mode: full or launch-only"
         required: false
         default: full
+      external_network:
+        description: Run tests marked requires-external-network with M80_RUN_EXTERNAL_NETWORK_E2E=1
+        required: false
+        default: "false"
       upload_run_dirs:
         description: Archive the run root when the job fails
         required: false
@@ -39,6 +43,7 @@ env:
   M80_E2E_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '180' }}
   M80_E2E_RUN_SMOKE: ${{ inputs.run_smoke || 'true' }}
   M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
+  M80_E2E_EXTERNAL_NETWORK: ${{ inputs.external_network || 'false' }}
   M80_E2E_RUN_ROOT: ${{ vars.M80_E2E_RUN_ROOT || '/var/lib/m80-r' }}
   M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
   M80_IMAGE_KIND: ${{ vars.M80_IMAGE_KIND || 'minimal' }}
@@ -78,6 +83,10 @@ jobs:
             full|launch-only) ;;
             *) echo "smoke_mode must be full or launch-only, got $M80_E2E_SMOKE_MODE" >&2; exit 2 ;;
           esac
+          case "$M80_E2E_EXTERNAL_NETWORK" in
+            true|false) ;;
+            *) echo "external_network must be true or false, got $M80_E2E_EXTERNAL_NETWORK" >&2; exit 2 ;;
+          esac
           case "$M80_IMAGE_KIND" in
             ubuntu|minimal|minimal-erofs) ;;
             *) echo "M80_IMAGE_KIND must be ubuntu|minimal|minimal-erofs, got $M80_IMAGE_KIND" >&2; exit 2 ;;
@@ -116,6 +125,7 @@ jobs:
             test -f "$M80_ROOTFS_IMAGE"
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
+            printf 'M80_E2E_EXTERNAL_NETWORK=%s\n' "$M80_E2E_EXTERNAL_NETWORK"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
             printf 'M80_IMAGE_KIND=%s\n' "$M80_IMAGE_KIND"
             printf 'M80_ARTIFACT_DIR=%s\n' "$M80_ARTIFACT_DIR"
@@ -144,6 +154,11 @@ jobs:
         run: |
           set -euo pipefail
           status=0
+          external_network=0
+          if [[ "$M80_E2E_EXTERNAL_NETWORK" == "true" ]]; then
+            external_network=1
+          fi
+          export M80_RUN_EXTERNAL_NETWORK_E2E="$external_network"
           scripts/run-e2e.sh \
             --package "$M80_E2E_PACKAGE" \
             --timeout "$M80_E2E_TIMEOUT_SECONDS" \
