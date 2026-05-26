@@ -21,7 +21,8 @@ scripts/setup-privileged-runner.sh
 
 The setup is idempotent. It installs qemu/libvirt/cloud-init tooling, loads the
 KVM, TUN, bridge, and vsock modules, starts libvirt, activates the default NAT
-network, and verifies `/dev/kvm`, `/dev/net/tun`, and nested KVM mode.
+network, disables KSM for the current boot, and verifies `/dev/kvm`,
+`/dev/net/tun`, and nested KVM mode.
 
 Host requirements:
 
@@ -32,6 +33,8 @@ Host requirements:
   `/sys/module/kvm_amd/parameters/nested` reads `Y`, `y`, or `1`.
 - `/dev/kvm` readable/writable by the runner account through the `kvm` group or
   `sudo`; `/dev/net/tun` present.
+- KSM disabled: `/sys/kernel/mm/ksm/run` reads `0` when that path exists. Run
+  `scripts/setup-privileged-runner.sh` after reboot if the host re-enables it.
 - Passwordless `sudo -n` for host setup, iptables/netlink cleanup, and
   privileged E2E commands when the runner is not root.
 

@@ -12,6 +12,7 @@ Register only runners that satisfy
 
 - Linux x86_64 with `/dev/kvm` readable and writable by the runner user;
 - passwordless `sudo -n` for iptables, netlink, run-root cleanup, and smoke;
+- KSM disabled (`/sys/kernel/mm/ksm/run` is `0` when present);
 - Firecracker and jailer available at the paths used by the smoke scripts;
 - `M80_KERNEL_IMAGE` and `M80_ROOTFS_IMAGE` pointing at real guest artifacts, or
   artifacts staged at the workflow defaults under `/tmp/m80-build-current`;
@@ -48,7 +49,8 @@ Repository or organization variables can override:
 ## What Runs
 
 The job checks the substrate first: `/dev/kvm`, `sudo -n`, `ip`, `iptables`,
-and kernel/rootfs artifact paths. It then runs `scripts/smoke.sh`, followed by:
+KSM disabled, and kernel/rootfs artifact paths. It then runs
+`scripts/smoke.sh`, followed by:
 
 ```sh
 scripts/run-e2e.sh --package "$M80_E2E_PACKAGE" --timeout "$M80_E2E_TIMEOUT_SECONDS" --json

@@ -24,6 +24,8 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added the self-hosted `kvm` privileged E2E workflow scaffold, including smoke
   execution, structured report validation, failure artifact upload, and operator
   documentation.
+- Hardened privileged runner setup and CI substrate checks so KSM is disabled
+  before real-KVM smoke starts.
 
 ### Added — stripped-kernel PVH direct boot note
 

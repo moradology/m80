@@ -16,7 +16,8 @@ Usage: scripts/setup-privileged-runner.sh [--dry-run] [--json] [--no-apt] [--use
 Idempotently prepares the bare-metal host for m80 nested-virt release runners:
 installs qemu/libvirt/cloud-init tooling, loads required kernel modules, starts
 libvirt, ensures the default NAT network is active, and checks /dev/kvm plus
-/dev/net/tun access.
+/dev/net/tun access. The setup also disables KSM for the current boot because
+m80 preflight rejects page deduplication for guest-isolation work.
 
 Options:
   --dry-run    Print actions without changing the host.
@@ -165,6 +166,22 @@ fix_device_modes() {
     fi
 }
 
+disable_ksm() {
+    local ksm_run=/sys/kernel/mm/ksm/run
+    if [[ ! -e "$ksm_run" ]]; then
+        log "KSM sysfs absent"
+        return 0
+    fi
+    local current
+    current="$(<"$ksm_run")"
+    if [[ "$current" == "0" ]]; then
+        log "KSM already disabled"
+        return 0
+    fi
+    log "disabling KSM"
+    as_root sh -c "printf 0 > '$ksm_run'"
+}
+
 verify() {
     local failures=()
     for cmd in virsh virt-install qemu-system-x86_64 qemu-img cloud-localds ssh ssh-keygen ip iptables ipset make cc; do
@@ -179,6 +196,9 @@ verify() {
     fi
     if [[ ! -e /dev/net/tun ]]; then
         failures+=("missing /dev/net/tun")
+    fi
+    if [[ -e /sys/kernel/mm/ksm/run ]] && ! grep -qx '0' /sys/kernel/mm/ksm/run; then
+        failures+=("KSM is enabled: /sys/kernel/mm/ksm/run=$(cat /sys/kernel/mm/ksm/run)")
     fi
     if [[ -r /sys/module/kvm_amd/parameters/nested ]]; then
         if ! grep -Eq '^(1|Y|y)$' /sys/module/kvm_amd/parameters/nested; then
@@ -225,6 +245,7 @@ payload = {
         "kvm": pathlib.Path("/dev/kvm").exists(),
         "tun": pathlib.Path("/dev/net/tun").exists(),
     },
+    "ksm_run": read("/sys/kernel/mm/ksm/run"),
     "nested": {
         "amd": read("/sys/module/kvm_amd/parameters/nested"),
         "intel": read("/sys/module/kvm_intel/parameters/nested"),
@@ -280,6 +301,7 @@ start_libvirt
 activate_default_network
 ensure_groups
 fix_device_modes
+disable_ksm
 verify
 
 if [[ "$JSON" -eq 1 ]]; then

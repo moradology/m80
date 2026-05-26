@@ -91,6 +91,13 @@ jobs:
             sudo -n true
             command -v ip
             command -v iptables
+            if [[ -e /sys/kernel/mm/ksm/run ]]; then
+              ksm_run="$(cat /sys/kernel/mm/ksm/run)"
+              printf 'KSM_RUN=%s\n' "$ksm_run"
+              test "$ksm_run" = "0"
+            else
+              printf 'KSM_RUN=absent\n'
+            fi
             test -f "$M80_KERNEL_IMAGE"
             test -f "$M80_ROOTFS_IMAGE"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
