@@ -42,6 +42,10 @@ All notable changes to m80 are documented here. Format roughly follows
   manifest daemon hash with the `m80-guestd` binary built from the checkout,
   rebuilding the image when they differ, and defaulted privileged CI to the
   minimal image kind for fast self-contained refreshes.
+- Tightened privileged E2E selection so image-kind tests use artifact
+  directories with matching manifests and host-binary manifests, report schema
+  v3 records `mkfs.erofs` availability, and L1 runner provisioning installs
+  `erofs-utils`.
 
 ### Added — stripped-kernel PVH direct boot note
 

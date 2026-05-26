@@ -12,7 +12,7 @@ from collections import Counter
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -39,6 +39,7 @@ ENVIRONMENT_FIELDS = {
     "cgroup_v2_available",
     "loop_device_available",
     "debugfs_available",
+    "mkfs_erofs_available",
     "docker_available",
     "measurement_enabled",
     "pmem_artifacts_available",

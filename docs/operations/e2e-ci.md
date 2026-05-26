@@ -56,8 +56,9 @@ Repository or organization variables can override:
 ## What Runs
 
 The job checks the substrate first: `/dev/kvm`, `sudo -n`, `ip`, `iptables`,
-`cargo`, `rustc`, `rg`, `unsquashfs`, KSM disabled, kernel/rootfs/seccomp
-artifact paths, and the m80 host-binary paths. It then runs `scripts/smoke.sh`,
+`cargo`, `rustc`, `rg`, `unsquashfs`, `mkfs.erofs`, KSM disabled,
+kernel/rootfs/seccomp artifact paths, and the m80 host-binary paths. It then
+runs `scripts/smoke.sh`,
 which refreshes `m80-guestd` from the checked-out commit and rebuilds the guest
 image when the manifest daemon hash is stale. The smoke is followed by:
 

@@ -5,7 +5,7 @@ Bead: `m80-16hx7.6`
 `scripts/run-e2e.sh --json` emits the privileged E2E batch report. The report
 is a fail-closed schema contract, not an informal debug blob:
 
-- `schema_version` is `1`.
+- `schema_version` is `3`.
 - Unknown top-level, environment, artifact, summary, or result fields are
   rejected by `scripts/validate-e2e-report.py`.
 - `summary` counts must match the concrete `results` records.

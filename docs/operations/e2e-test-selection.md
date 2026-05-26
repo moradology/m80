@@ -23,6 +23,7 @@ Every ignored Rust test must use one or more space-separated tokens:
 | `requires-loop-device` | Needs loop-device or loop-mount access. |
 | `requires-snapshot-support` | Needs Firecracker snapshot support. |
 | `requires-debugfs` | Needs `debugfs`. |
+| `requires-erofs-tool` | Needs `mkfs.erofs` to build erofs pmem-layer fixtures. |
 | `requires-pmem` | Needs pmem/erofs/DAX fixture artifacts. |
 | `measurement` | Measurement-shaped; skipped unless `M80_RUN_MEASUREMENT_E2E=1`. |
 | `slow` | Slow by design; still must combine with concrete resource tokens. |

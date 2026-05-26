@@ -190,6 +190,7 @@ packages:
   - ca-certificates
   - curl
   - e2fsprogs
+  - erofs-utils
   - git
   - iproute2
   - jq

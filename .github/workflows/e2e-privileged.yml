@@ -104,6 +104,7 @@ jobs:
             command -v rustc
             command -v rg
             command -v unsquashfs
+            command -v mkfs.erofs
             if [[ -e /sys/kernel/mm/ksm/run ]]; then
               ksm_run="$(cat /sys/kernel/mm/ksm/run)"
               printf 'KSM_RUN=%s\n' "$ksm_run"

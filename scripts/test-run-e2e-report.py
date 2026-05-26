@@ -18,7 +18,7 @@ spec.loader.exec_module(validate_e2e_report)
 
 def valid_report() -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": "2026-05-26T00:00:00Z",
         "package": "m80-firecracker",
         "run_root": "/var/lib/m80-r",
@@ -36,6 +36,7 @@ def valid_report() -> dict:
             "cgroup_v2_available": True,
             "loop_device_available": True,
             "debugfs_available": True,
+            "mkfs_erofs_available": True,
             "docker_available": False,
             "measurement_enabled": False,
             "pmem_artifacts_available": False,
@@ -112,7 +113,7 @@ class E2EReportValidatorTests(unittest.TestCase):
         report["summary"]["failed"] = False
         report["results"][0]["duration_ms"] = False
         errors = "\n".join(validate_e2e_report.validate_report(report, source="fixture"))
-        self.assertIn("schema_version must be 2", errors)
+        self.assertIn("schema_version must be 3", errors)
         self.assertIn("summary.failed: must be a non-negative integer", errors)
         self.assertIn("results[0].duration_ms: must be a non-negative integer", errors)
 

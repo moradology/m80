@@ -51,7 +51,7 @@ The setup script installs this Ubuntu package set when `--no-apt` is not used:
 
 Each spawned L1 installs the runtime/build tools used by the privileged
 workflow: stable Rust via rustup, `build-essential`, `busybox-static`,
-`ripgrep`, and `squashfs-tools`. The workflow builds `m80`,
+`erofs-utils`, `ripgrep`, and `squashfs-tools`. The workflow builds `m80`,
 `m80-jailer-harden`, and `m80-net-helper` from the checked-out commit, installs
 them under `/opt/m80-ci/bin` as `root:root`, and writes a matching
 `host-binaries.manifest.json` before smoke/preflight.

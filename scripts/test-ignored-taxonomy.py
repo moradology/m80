@@ -22,6 +22,7 @@ ALLOWED = {
     "requires-loop-device",
     "requires-snapshot-support",
     "requires-debugfs",
+    "requires-erofs-tool",
     "requires-pmem",
     "measurement",
     "manual",

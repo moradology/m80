@@ -14,14 +14,14 @@ python3 scripts/validate-e2e-report.py /tank/tmp/m80-e2e-report.json
 
 ## Schema
 
-Current reports use `schema_version: 2`. Unknown fields are invalid; a future
+Current reports use `schema_version: 3`. Unknown fields are invalid; a future
 shape must bump `schema_version`.
 
 Top-level fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema_version` | integer | Must be `2`. |
+| `schema_version` | integer | Must be `3`. |
 | `generated_at` | string | UTC RFC3339 timestamp ending in `Z`. |
 | `package` | string | Cargo package whose integration tests were selected. |
 | `run_root` | string | Run root passed to tests as `M80_RUN_ROOT`. |
@@ -48,6 +48,7 @@ Top-level fields:
 | `cgroup_v2_available` | Unified cgroup v2 is mounted. |
 | `loop_device_available` | A loop-control or loop device is visible. |
 | `debugfs_available` | `debugfs` is on `PATH`. |
+| `mkfs_erofs_available` | `mkfs.erofs` is on `PATH` for tests that build erofs pmem layers. |
 | `docker_available` | Docker is installed and the daemon is reachable. |
 | `measurement_enabled` | `M80_RUN_MEASUREMENT_E2E=1`. |
 | `pmem_artifacts_available` | A pmem/erofs fixture variable is set. |
@@ -88,8 +89,8 @@ Each `results[]` entry has:
 | `reason` | string or null | Required for `skip`; optional for `fail`; null otherwise. |
 | `exit_code` | integer | Per-test command exit code. |
 | `duration_ms` | integer | Per-test runtime, or `0` for list/skip records. |
-| `stdout_excerpt` | string | Present only on `fail`; last 4000 bytes of stdout. |
-| `stderr_excerpt` | string | Present only on `fail`; last 4000 bytes of stderr. |
+| `stdout_excerpt` | string | Present only on `fail`; complete stdout when <=6000 bytes, otherwise first 2000 bytes plus last 4000 bytes. |
+| `stderr_excerpt` | string | Present only on `fail`; complete stderr when <=6000 bytes, otherwise first 2000 bytes plus last 4000 bytes. |
 
 ## Interpretation
 

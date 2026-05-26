@@ -147,6 +147,11 @@ if command -v debugfs >/dev/null 2>&1; then
     have_debugfs=1
 fi
 
+have_mkfs_erofs=0
+if command -v mkfs.erofs >/dev/null 2>&1; then
+    have_mkfs_erofs=1
+fi
+
 have_docker=0
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     have_docker=1
@@ -174,31 +179,47 @@ fi
 
 manifest_schema_ok() {
     local dir="$1"
-    python3 - "$dir/output.ext4.manifest.json" <<'PY'
+    local expected_kind="$2"
+    python3 - "$dir/output.ext4.manifest.json" "$expected_kind" <<'PY'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
+expected_kind = sys.argv[2]
 if not path.exists():
     raise SystemExit(1)
 try:
     data = json.loads(path.read_text())
 except Exception:
     raise SystemExit(1)
-raise SystemExit(0 if data.get("schema_version") == 5 else 1)
+raise SystemExit(
+    0
+    if data.get("schema_version") == 5
+    and data.get("image_kind") == expected_kind
+    else 1
+)
 PY
 }
 
+image_kind_artifacts_available() {
+    local dir="$1"
+    local expected_kind="$2"
+    [[ -f "$dir/vmlinux" ]] \
+        && [[ -f "$dir/output.ext4" ]] \
+        && [[ -f "$dir/host-binaries.manifest.json" ]] \
+        && manifest_schema_ok "$dir" "$expected_kind"
+}
+
 minimal_artifacts=0
-minimal_dir="${M80_MINIMAL_ARTIFACT_DIR:-/tmp/m80-build/minimal}"
-if [[ -f "$minimal_dir/vmlinux" && -f "$minimal_dir/output.ext4" ]] && manifest_schema_ok "$minimal_dir"; then
+minimal_dir="${M80_MINIMAL_ARTIFACT_DIR:-$artifact_dir}"
+if image_kind_artifacts_available "$minimal_dir" "minimal"; then
     minimal_artifacts=1
 fi
 
 ubuntu_artifacts=0
 ubuntu_dir="${M80_UBUNTU_ARTIFACT_DIR:-/tmp/m80-build/ubuntu}"
-if [[ -f "$ubuntu_dir/vmlinux" && -f "$ubuntu_dir/output.ext4" ]] && manifest_schema_ok "$ubuntu_dir"; then
+if image_kind_artifacts_available "$ubuntu_dir" "ubuntu"; then
     ubuntu_artifacts=1
 fi
 
@@ -239,7 +260,9 @@ def excerpt(path):
     if not p.exists():
         return ""
     text = p.read_text(errors="replace")
-    return text[-4000:]
+    if len(text) <= 6000:
+        return text
+    return text[:2000] + "\n... <m80 excerpt truncated> ...\n" + text[-4000:]
 
 entry = {
     "status": os.environ["RESULT_STATUS"],
@@ -292,6 +315,7 @@ allowed = {
     "requires-loop-device",
     "requires-snapshot-support",
     "requires-debugfs",
+    "requires-erofs-tool",
     "requires-pmem",
     "measurement",
     "manual",
@@ -396,6 +420,10 @@ skip_reason_for() {
         echo "missing-debugfs"
         return
     fi
+    if has_token requires-erofs-tool && [[ "$have_mkfs_erofs" -ne 1 ]]; then
+        echo "missing-mkfs-erofs"
+        return
+    fi
     if has_token requires-docker && [[ "$have_docker" -ne 1 ]]; then
         echo "requires-docker"
         return
@@ -443,7 +471,7 @@ emit_report() {
             "$list_only" "$timeout_s" "$have_sudo" "$have_kvm" "$have_artifacts" \
             "$have_seccomp_filter" "$have_host_manifest" "$have_harden" "$have_net_helper" \
             "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
-            "$have_debugfs" "$have_docker" "$measurement_enabled" \
+            "$have_debugfs" "$have_mkfs_erofs" "$have_docker" "$measurement_enabled" \
             "$pmem_artifacts" "$external_network_enabled" "$malicious_artifacts" \
             "$minimal_artifacts" "$ubuntu_artifacts" <<'PY'
 import datetime
@@ -461,7 +489,7 @@ if path.exists():
     results = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 counts = Counter(item["status"] for item in results)
 report = {
-    "schema_version": 2,
+    "schema_version": 3,
     "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     "package": sys.argv[3],
     "run_root": sys.argv[4],
@@ -479,13 +507,14 @@ report = {
         "cgroup_v2_available": flag(22),
         "loop_device_available": flag(23),
         "debugfs_available": flag(24),
-        "docker_available": flag(25),
-        "measurement_enabled": flag(26),
-        "pmem_artifacts_available": flag(27),
-        "external_network_enabled": flag(28),
-        "malicious_artifacts_available": flag(29),
-        "minimal_artifacts_available": flag(30),
-        "ubuntu_artifacts_available": flag(31),
+        "mkfs_erofs_available": flag(25),
+        "docker_available": flag(26),
+        "measurement_enabled": flag(27),
+        "pmem_artifacts_available": flag(28),
+        "external_network_enabled": flag(29),
+        "malicious_artifacts_available": flag(30),
+        "minimal_artifacts_available": flag(31),
+        "ubuntu_artifacts_available": flag(32),
     },
     "artifacts": {
         "artifact_dir": sys.argv[5],
@@ -618,15 +647,11 @@ while IFS= read -r exe; do
             M80_NET_HELPER_BIN="$net_helper_bin"
             M80_RUN_ROOT="$run_root"
             M80_RUN_EXTERNAL_NETWORK_E2E="${M80_RUN_EXTERNAL_NETWORK_E2E:-}"
+            M80_MINIMAL_ARTIFACT_DIR="$minimal_dir"
+            M80_UBUNTU_ARTIFACT_DIR="$ubuntu_dir"
         )
         if [[ -n "${M80_MALICIOUS_ARTIFACT_DIR:-}" ]]; then
             run_env+=(M80_MALICIOUS_ARTIFACT_DIR="$M80_MALICIOUS_ARTIFACT_DIR")
-        fi
-        if [[ -n "${M80_MINIMAL_ARTIFACT_DIR:-}" ]]; then
-            run_env+=(M80_MINIMAL_ARTIFACT_DIR="$M80_MINIMAL_ARTIFACT_DIR")
-        fi
-        if [[ -n "${M80_UBUNTU_ARTIFACT_DIR:-}" ]]; then
-            run_env+=(M80_UBUNTU_ARTIFACT_DIR="$M80_UBUNTU_ARTIFACT_DIR")
         fi
         if [[ -n "${M80_FIRECRACKER_BIN:-}" ]]; then
             run_env+=(M80_FIRECRACKER_BIN="$M80_FIRECRACKER_BIN")
