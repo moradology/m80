@@ -36,7 +36,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   the canonical image-store root before calling `mount(2)`. Bind destinations
   under `dev`, `proc`, or `sys` are rejected: device nodes and virtual kernel
   filesystems are the official jailer's responsibility, not caller-provided
-  host binds.
+  host binds. Best-effort `Drop` warnings carry structured `vm_id`.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::jail_root()` returns the materialized chroot root;

@@ -116,6 +116,7 @@ impl RunningSandbox {
     /// Returns `FcError::Snapshot` if either REST call fails. The caller
     /// should treat any error as the VM being in an unknown state and call
     /// `force_kill()`.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn capture(&mut self, paths: SnapshotPaths) -> Result<(), FcError> {
         let snapshot_plan = prepare_snapshot_paths(&paths, &self.backend.config.run_root, true)?;
         let stage_paths = snapshot_plan.stage_paths(&self.run_dir);
@@ -159,6 +160,7 @@ impl RunningSandbox {
     /// 4. `residue_cleanup` — remove run-root directories and scratch state.
     /// 5. `release` — foundation resources dropped, permit and scratch moved
     ///    into the returned `StoppedSandbox`.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
         self.kill_guard.disarm();
         let run_root = self.backend.config.run_root.clone();
@@ -177,7 +179,8 @@ impl RunningSandbox {
 
         // Phase 2: bounded_stop.
         let t_bounded = Instant::now();
-        let exit_reason = bounded_stop(self.firecracker.firecracker_pid(), &vsock_uds)?;
+        let exit_reason =
+            bounded_stop(&self.vm_id, self.firecracker.firecracker_pid(), &vsock_uds)?;
 
         // Phase 4: release. Destructure to drop everything except what moves
         // into StoppedSandbox.
@@ -219,7 +222,7 @@ impl RunningSandbox {
         if let Some(handle) = watcher_thread {
             join_watcher_with_timeout(&vm_id, handle);
         }
-        unmount_snapshot_bind(snapshot_mount.as_deref());
+        unmount_snapshot_bind(&vm_id, snapshot_mount.as_deref());
         drop_jail_with_timeout(&vm_id, jail);
         release_shared_pmem_refs(shared_pmem_refs)?;
         phase_event("stop_release", &vm_id, t_release.elapsed());
@@ -250,6 +253,7 @@ impl RunningSandbox {
     /// The run-dir is preserved for offline inspection. The caller decides
     /// whether to delete it via [`StoppedSandbox::delete`] or preserve it
     /// further via [`StoppedSandbox::preserve_for_triage`].
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn force_kill(mut self) -> Result<StoppedSandbox, FcError> {
         self.kill_guard.disarm();
         let run_root = self.backend.config.run_root.clone();
@@ -267,12 +271,24 @@ impl RunningSandbox {
         match force_kill_disposition() {
             StopDisposition::HostForceKill => {
                 if let Err(err) = kill_and_reap_pid(self.firecracker.firecracker_pid()) {
+                    tracing::error!(
+                        vm_id = %self.vm_id,
+                        pid = self.firecracker.firecracker_pid(),
+                        error = %err,
+                        "force_kill failed; leaking sandbox state"
+                    );
                     self.record_forced_kill_ambiguous(&err);
                     std::mem::forget(self);
                     return Err(err);
                 }
                 if self.firecracker.jailer_pid() != self.firecracker.firecracker_pid() {
                     if let Err(err) = kill_and_reap_pid(self.firecracker.jailer_pid()) {
+                        tracing::error!(
+                            vm_id = %self.vm_id,
+                            pid = self.firecracker.jailer_pid(),
+                            error = %err,
+                            "force_kill failed; leaking sandbox state"
+                        );
                         self.record_forced_kill_ambiguous(&err);
                         std::mem::forget(self);
                         return Err(err);
@@ -320,7 +336,7 @@ impl RunningSandbox {
         if let Some(handle) = watcher_thread {
             join_watcher_with_timeout(&vm_id, handle);
         }
-        unmount_snapshot_bind(snapshot_mount.as_deref());
+        unmount_snapshot_bind(&vm_id, snapshot_mount.as_deref());
         drop_jail_with_timeout(&vm_id, jail);
         release_shared_pmem_refs(shared_pmem_refs)?;
         crate::diagnostics::record_stop_reason(
@@ -520,7 +536,7 @@ fn validate_snapshot_parent_scope(
     Ok(canonical_parent)
 }
 
-pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
+pub(crate) fn unmount_snapshot_bind(vm_id: &str, mount_path: Option<&Path>) {
     let Some(mount_path) = mount_path else {
         return;
     };
@@ -528,11 +544,11 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
     if let Err(e) = umount2(mount_path, MntFlags::MNT_DETACH) {
         // Skip remove_dir: if umount failed the mount is still active and
         // remove_dir will fail too, producing a confusing second warning.
-        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind unmount failed; skipping dir removal");
+        tracing::warn!(vm_id = %vm_id, path = %mount_path.display(), err = %e, "snapshot bind unmount failed; skipping dir removal");
         return;
     }
     if let Err(e) = std::fs::remove_dir(mount_path) {
-        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind mount dir cleanup failed");
+        tracing::warn!(vm_id = %vm_id, path = %mount_path.display(), err = %e, "snapshot bind mount dir cleanup failed");
     }
 }
 
@@ -549,11 +565,16 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
 ///
 /// If the vsock RPC fails (guest unreachable / already dead), SIGKILL
 /// directly — same outcome.
-fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<ExitReason, FcError> {
+fn bounded_stop(
+    vm_id: &str,
+    firecracker_pid: u32,
+    vsock_uds: &Path,
+) -> Result<ExitReason, FcError> {
     match normal_stop_disposition() {
         StopDisposition::GuestdShutdownThenFirecrackerKill => {
             let exit_reason = if let Err(e) = send_shutdown_request(firecracker_pid, vsock_uds) {
                 tracing::warn!(
+                    vm_id = %vm_id,
                     error = %e,
                     "vsock graceful-stop failed; SIGKILLing without ack"
                 );

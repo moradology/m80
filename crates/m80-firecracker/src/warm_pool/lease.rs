@@ -27,6 +27,7 @@ impl WarmLease {
     }
 
     /// Run one exec request on the leased slot.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.current_vm_id()))]
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
         if self.is_one_shot() {
             return self.exec_and_discard(|sandbox| sandbox.exec(req));
@@ -36,6 +37,7 @@ impl WarmLease {
 
     /// Run one exec request on the leased slot with a caller-supplied opaque
     /// request id for wire frames and diagnostics.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.current_vm_id()))]
     pub fn exec_with_request_id(
         &mut self,
         req: ExecRequest,
@@ -53,6 +55,7 @@ impl WarmLease {
 
     /// Run one exec request on the leased slot and forward stdout/stderr
     /// chunks as guestd emits them.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.current_vm_id()))]
     pub fn exec_streaming(
         &mut self,
         req: ExecRequest,
@@ -66,6 +69,7 @@ impl WarmLease {
 
     /// Run one streaming exec request on the leased slot with a caller-supplied
     /// opaque request id for wire frames and diagnostics.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.current_vm_id()))]
     pub fn exec_streaming_with_request_id(
         &mut self,
         req: ExecRequest,
@@ -243,6 +247,13 @@ impl WarmLease {
         self.slot.as_ref().is_some_and(|slot| slot.sandbox.one_shot)
     }
 
+    fn current_vm_id(&self) -> &str {
+        self.slot
+            .as_ref()
+            .map(|slot| slot.sandbox.vm_id())
+            .unwrap_or("<released>")
+    }
+
     fn exec_and_discard<T>(
         &mut self,
         f: impl FnOnce(&mut RunningSandbox) -> Result<T, FcError>,
@@ -254,6 +265,7 @@ impl WarmLease {
             mut sandbox,
             cpuset_cpus,
         } = slot;
+        let vm_id = sandbox.vm_id().to_owned();
         let result = f(&mut sandbox);
         let discard_result = discard_sandbox_with_diagnostics(sandbox, result.as_ref().err());
         self.release_and_refill(cpuset_cpus);
@@ -261,6 +273,7 @@ impl WarmLease {
             (Ok(value), Ok(())) => Ok(value),
             (Ok(value), Err(cleanup)) => {
                 tracing::error!(
+                    vm_id = %vm_id,
                     error = %cleanup,
                     "failed to discard one-shot warm lease after exec success"
                 );
@@ -269,6 +282,7 @@ impl WarmLease {
             (Err(err), Ok(())) => Err(err),
             (Err(err), Err(cleanup)) => {
                 tracing::error!(
+                    vm_id = %vm_id,
                     error = %cleanup,
                     "failed to discard one-shot warm lease after exec error"
                 );
@@ -294,8 +308,9 @@ impl Drop for WarmLease {
                 sandbox,
                 cpuset_cpus,
             } = slot;
+            let vm_id = sandbox.vm_id().to_owned();
             if let Err(err) = discard_sandbox(sandbox) {
-                tracing::error!(error = %err, "failed to discard warm lease during drop");
+                tracing::error!(vm_id = %vm_id, error = %err, "failed to discard warm lease during drop");
             }
             self.release_and_refill(cpuset_cpus);
         }

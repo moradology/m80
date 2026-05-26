@@ -138,7 +138,9 @@ impl Plan {
         // Construct the guard up-front so that on any `?`-propagated error the
         // partially-applied state (created dirs + bind mounts so far) gets
         // unwound by `Drop` instead of leaking into the host's mount table.
+        let vm_id = crate::materialized::vm_id_for_plan(&self);
         let mut materialized = MaterializedJail {
+            vm_id,
             jail_path: jail_root,
             bind_mounts: Vec::new(),
             created_dirs: Vec::new(),

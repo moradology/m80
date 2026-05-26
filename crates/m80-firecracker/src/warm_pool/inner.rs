@@ -122,6 +122,7 @@ impl WarmPoolInner {
             sandbox,
             cpuset_cpus,
         } = slot;
+        let vm_id = sandbox.vm_id().to_owned();
         let result = discard_sandbox(sandbox);
         {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
@@ -130,7 +131,7 @@ impl WarmPoolInner {
             self.changed.notify_all();
         }
         if let Err(err) = result {
-            tracing::error!(error = %err, reason, "failed to discard unleased warm-pool slot");
+            tracing::error!(vm_id = %vm_id, error = %err, reason, "failed to discard unleased warm-pool slot");
         }
     }
 

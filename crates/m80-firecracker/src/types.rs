@@ -549,7 +549,7 @@ impl Drop for ForceKillGuard {
             }
         }
         if let Some(snap) = self.snapshot_mount.take() {
-            crate::lifecycle::unmount_snapshot_bind(Some(&snap));
+            crate::lifecycle::unmount_snapshot_bind(&self.vm_id, Some(&snap));
         }
     }
 }

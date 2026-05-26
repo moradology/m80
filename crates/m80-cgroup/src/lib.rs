@@ -47,7 +47,10 @@ static SUBTREE_CONTROL_PRIME_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
 #[derive(Debug)]
-pub struct Subtree(PathBuf);
+pub struct Subtree {
+    vm_id: String,
+    path: PathBuf,
+}
 
 impl Subtree {
     /// Probe whether this host has unified cgroup v2 — call from preflight
@@ -101,7 +104,10 @@ impl Subtree {
         }
         inherit_sparse_cpuset_file(parent, &leaf, "cpuset.mems")?;
 
-        let subtree = Subtree(leaf.clone());
+        let subtree = Subtree {
+            vm_id: vm_id.to_owned(),
+            path: leaf.clone(),
+        };
         subtree.apply_limits(limits)?;
         if let Some(oom_score_adj) = limits.oom_score_adj {
             for pid in enrolled_pids(jailed.jailer_pid(), jailed.firecracker_pid()) {
@@ -125,7 +131,7 @@ impl Subtree {
     /// value alone.
     pub(crate) fn apply_limits(&self, limits: &Limits) -> Result<(), CgroupError> {
         if let Some(cpu_max) = &limits.cpu_max {
-            let path = self.0.join("cpu.max");
+            let path = self.path.join("cpu.max");
             match cpu_max {
                 CpuMax::Quota {
                     quota_us,
@@ -136,29 +142,32 @@ impl Subtree {
         }
 
         if let Some(mem) = limits.memory_max {
-            write_cgroup_file(&self.0.join("memory.max"), &format!("{mem}\n"))?;
+            write_cgroup_file(&self.path.join("memory.max"), &format!("{mem}\n"))?;
         }
 
         if let Some(mem_swap) = limits.memory_swap_max {
-            write_cgroup_file(&self.0.join("memory.swap.max"), &format!("{mem_swap}\n"))?;
+            write_cgroup_file(&self.path.join("memory.swap.max"), &format!("{mem_swap}\n"))?;
         }
 
         if let Some(pids) = limits.pids_max {
-            write_cgroup_file(&self.0.join("pids.max"), &format!("{pids}\n"))?;
+            write_cgroup_file(&self.path.join("pids.max"), &format!("{pids}\n"))?;
         }
 
         if let Some(cpuset_cpus) = &limits.cpuset_cpus {
             validate_cpuset_cpus(cpuset_cpus)?;
-            write_cgroup_file(&self.0.join("cpuset.cpus"), &format!("{cpuset_cpus}\n"))?;
+            write_cgroup_file(&self.path.join("cpuset.cpus"), &format!("{cpuset_cpus}\n"))?;
         }
 
         if let Some(io_weight) = limits.io_weight {
             validate_io_weight(io_weight)?;
-            write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
+            write_cgroup_file(
+                &self.path.join("io.weight"),
+                &format!("default {io_weight}\n"),
+            )?;
         }
 
         for io_max in &limits.io_max {
-            write_cgroup_file(&self.0.join("io.max"), &format!("{io_max}\n"))?;
+            write_cgroup_file(&self.path.join("io.max"), &format!("{io_max}\n"))?;
         }
 
         Ok(())
@@ -181,11 +190,21 @@ fn enrolled_pids(jailer_pid: u32, firecracker_pid: u32) -> Vec<u32> {
 
 impl Drop for Subtree {
     fn drop(&mut self) {
-        if let Err(e) = kill_cgroup(&self.0) {
-            warn!("drop: cgroup.kill({}) failed: {e}", self.0.display());
+        if let Err(e) = kill_cgroup(&self.path) {
+            warn!(
+                vm_id = %self.vm_id,
+                path = %self.path.display(),
+                err = %e,
+                "drop: cgroup.kill failed"
+            );
         }
-        if let Err(e) = remove_empty_cgroup_leaf(&self.0) {
-            warn!("drop: rmdir({}) failed: {e}", self.0.display());
+        if let Err(e) = remove_empty_cgroup_leaf(&self.path) {
+            warn!(
+                vm_id = %self.vm_id,
+                path = %self.path.display(),
+                err = %e,
+                "drop: cgroup rmdir failed"
+            );
         }
     }
 }

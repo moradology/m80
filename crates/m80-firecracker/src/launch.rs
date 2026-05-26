@@ -134,6 +134,7 @@ impl Sandbox {
     ///
     /// Consumes `self` so a failed launch cannot be retried — the admission
     /// permit is dropped on any error path.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.config.vm_id.as_deref().unwrap_or("<unresolved>")))]
     pub fn launch(self) -> Result<RunningSandbox, FcError> {
         self.prepare()?.start()
     }
@@ -476,6 +477,7 @@ const RESTORE_PROBE_SLEEP: Duration = Duration::from_millis(50);
 impl Sandbox {
     /// Restore a previously-captured snapshot with the baseline post-restore
     /// reseed hook and no lease-specific identity hooks.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.config.vm_id.as_deref().unwrap_or("<unresolved>")))]
     pub fn launch_from_snapshot(
         self,
         snapshot: SnapshotPaths,
@@ -515,6 +517,7 @@ impl Sandbox {
     /// **not used** on the restore path — guestd does not re-dial after
     /// TRANSPORT_RESET. The probe in step 6 is the readiness signal; post-restore
     /// hooks are the lease-handoff gate.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.config.vm_id.as_deref().unwrap_or("<unresolved>")))]
     pub fn launch_from_snapshot_with_hooks(
         self,
         snapshot: SnapshotPaths,
@@ -532,6 +535,7 @@ impl Sandbox {
         )
     }
 
+    #[tracing::instrument(skip_all, fields(vm_id = %self.config.vm_id.as_deref().unwrap_or("<unresolved>")))]
     pub(crate) fn launch_from_template_body_with_hooks(
         self,
         template: &PinnedTemplate,
@@ -549,6 +553,7 @@ impl Sandbox {
         )
     }
 
+    #[tracing::instrument(skip_all, fields(vm_id = %self.config.vm_id.as_deref().unwrap_or("<unresolved>")))]
     fn launch_from_prepared_snapshot_with_hooks(
         self,
         snapshot: SnapshotPaths,

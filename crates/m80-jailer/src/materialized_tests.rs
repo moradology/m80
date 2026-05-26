@@ -198,6 +198,7 @@ echo $$ > "$jail_root/firecracker.pid"
         .join("vm-cgroup-version")
         .join("root");
     let jail = MaterializedJail {
+        vm_id: "vm-cgroup-version".to_owned(),
         plan,
         jail_path,
         bind_mounts: Vec::new(),
@@ -361,6 +362,7 @@ echo fake-firecracker-stderr >&2
     let plan = Plan::compute(&cfg).unwrap();
     let jail_path = run_dir.join("firecracker").join("vm-stdio").join("root");
     let jail = MaterializedJail {
+        vm_id: "vm-stdio".to_owned(),
         plan,
         jail_path,
         bind_mounts: Vec::new(),
@@ -520,6 +522,7 @@ fi
     let plan = Plan::compute(&cfg).unwrap();
     let jail_path = run_dir.join("firecracker").join("vm-newpid").join("root");
     let jail = MaterializedJail {
+        vm_id: "vm-newpid".to_owned(),
         plan,
         jail_path,
         bind_mounts: Vec::new(),
@@ -599,6 +602,7 @@ echo $$ > "$jail_root/firecracker.pid"
     let plan = Plan::compute(&cfg).unwrap();
     let jail_path = run_dir.join("firecracker").join("vm-daemon").join("root");
     let jail = MaterializedJail {
+        vm_id: "vm-daemon".to_owned(),
         plan,
         jail_path,
         bind_mounts: Vec::new(),
@@ -691,6 +695,7 @@ echo $$ > "$jail_root/firecracker.pid"
         .join("vm-null-stdio")
         .join("root");
     let jail = MaterializedJail {
+        vm_id: "vm-null-stdio".to_owned(),
         plan,
         jail_path,
         bind_mounts: Vec::new(),

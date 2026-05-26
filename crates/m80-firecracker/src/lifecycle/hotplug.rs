@@ -286,6 +286,7 @@ fn discard_after_hotplug_failure(mut sandbox: RunningSandbox, err: FcError) -> F
     );
     if let Err(cleanup) = sandbox.force_kill().and_then(|stopped| stopped.delete()) {
         tracing::error!(
+            vm_id = %vm_id,
             error = %cleanup,
             "failed to discard sandbox after drive hotplug failure"
         );

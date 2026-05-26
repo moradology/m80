@@ -61,11 +61,13 @@ impl RunningSandbox {
     ///
     /// Internally this uses [`RunningSandbox::exec_streaming`] and buffers
     /// stdout/stderr up to the existing 1 MiB per-stream cap.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
         self.exec_inner(req, None, true, None)
     }
 
     /// Send one exec request with a call-wide wall-clock budget.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_with_max_duration(
         &mut self,
         req: ExecRequest,
@@ -79,6 +81,7 @@ impl RunningSandbox {
     ///
     /// Cancellation is best effort until guestd acknowledges it. A successful
     /// cancel returns `ExecStatus::Cancelled` with host-observed timing.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_with_cancel(
         &mut self,
         req: ExecRequest,
@@ -87,6 +90,7 @@ impl RunningSandbox {
         self.exec_inner(req, Some(cancel_rx), true, None)
     }
 
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub(crate) fn exec_ready_probe(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
         self.exec_inner(req, None, false, None)
     }
@@ -137,6 +141,7 @@ impl RunningSandbox {
     ///
     /// The request is forced to `streaming = true` before it is sent. The call
     /// blocks until guestd returns the terminal [`ExecExit`] frame.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_streaming(
         &mut self,
         req: ExecRequest,
@@ -146,6 +151,7 @@ impl RunningSandbox {
     }
 
     /// Send one streaming exec request with a call-wide wall-clock budget.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_streaming_with_max_duration(
         &mut self,
         req: ExecRequest,
@@ -161,6 +167,7 @@ impl RunningSandbox {
     /// The cancel frame is sent on a cloned writer for the same vsock
     /// connection. Guestd serializes requests, so opening a second channel
     /// could not interrupt the running child.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_streaming_with_cancel(
         &mut self,
         req: ExecRequest,
@@ -176,6 +183,7 @@ impl RunningSandbox {
     /// Host terminal input, resize, control, and cancellation events are read
     /// from `event_rx` and forwarded on the same vsock connection. The call
     /// blocks until guestd returns the terminal [`PtyExit`] frame.
+    #[tracing::instrument(skip_all, fields(vm_id = %self.vm_id))]
     pub fn exec_pty(
         &mut self,
         req: PtyRequest,
@@ -204,7 +212,8 @@ impl RunningSandbox {
             &envelope,
         )?;
         let started_at_unix_ms = unix_ms_now();
-        let _event_forwarder = spawn_pty_event_forwarder(&channel, request_id.clone(), event_rx)?;
+        let _event_forwarder =
+            spawn_pty_event_forwarder(&channel, &self.vm_id, request_id.clone(), event_rx)?;
         let t = Instant::now();
         let mut output_total = 0u64;
         let mut expected_output_seq = 0u32;
@@ -399,6 +408,7 @@ impl RunningSandbox {
                     }
                 });
                 Some(CancelForwarder {
+                    vm_id: self.vm_id.clone(),
                     stop,
                     done_rx,
                     handle: Some(handle),
@@ -620,6 +630,7 @@ fn claim_one_shot_exec(one_shot: bool, consumed: &mut bool) -> Result<(), FcErro
 }
 
 struct CancelForwarder {
+    vm_id: String,
     /// Drop signal for the cancel-forwarder thread. Drop publishes with
     /// `Release`; the thread loads with `Acquire`.
     stop: Arc<AtomicBool>,
@@ -632,6 +643,7 @@ impl Drop for CancelForwarder {
         self.stop.store(true, Ordering::Release);
         join_forwarder_with_timeout(
             "cancel forwarder",
+            &self.vm_id,
             &self.done_rx,
             &mut self.handle,
             FORWARDER_JOIN_TIMEOUT,
@@ -640,6 +652,7 @@ impl Drop for CancelForwarder {
 }
 
 struct PtyEventForwarder {
+    vm_id: String,
     /// Drop signal for the PTY event-forwarder thread. Drop publishes with
     /// `Release`; the thread loads with `Acquire`.
     stop: Arc<AtomicBool>,
@@ -652,6 +665,7 @@ impl Drop for PtyEventForwarder {
         self.stop.store(true, Ordering::Release);
         join_forwarder_with_timeout(
             "pty event forwarder",
+            &self.vm_id,
             &self.done_rx,
             &mut self.handle,
             FORWARDER_JOIN_TIMEOUT,
@@ -669,6 +683,7 @@ impl Drop for ForwarderDone {
 
 fn join_forwarder_with_timeout(
     name: &'static str,
+    vm_id: &str,
     done_rx: &mpsc::Receiver<()>,
     handle: &mut Option<JoinHandle<()>>,
     timeout: Duration,
@@ -679,10 +694,10 @@ fn join_forwarder_with_timeout(
     match done_rx.recv_timeout(timeout) {
         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => match thread.join() {
             Ok(()) => {}
-            Err(panic) => tracing::error!(?panic, "{name} thread panicked"),
+            Err(panic) => tracing::error!(vm_id = %vm_id, ?panic, "{name} thread panicked"),
         },
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            tracing::error!("{name} thread did not stop within {timeout:?}; detaching");
+            tracing::error!(vm_id = %vm_id, "{name} thread did not stop within {timeout:?}; detaching");
         }
     }
 }
@@ -795,6 +810,7 @@ fn append_capped(dst: &mut Vec<u8>, bytes: &[u8]) -> bool {
 
 fn spawn_pty_event_forwarder(
     channel: &Channel,
+    vm_id: &str,
     request_id: String,
     event_rx: mpsc::Receiver<PtyHostEvent>,
 ) -> Result<PtyEventForwarder, FcError> {
@@ -846,6 +862,7 @@ fn spawn_pty_event_forwarder(
         }
     });
     Ok(PtyEventForwarder {
+        vm_id: vm_id.to_owned(),
         stop,
         done_rx,
         handle: Some(handle),

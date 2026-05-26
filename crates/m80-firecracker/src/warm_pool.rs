@@ -336,8 +336,9 @@ impl WarmPool {
             discard
         };
         for (sandbox, cpuset_cpus) in discard {
+            let vm_id = sandbox.vm_id().to_owned();
             if let Err(err) = discard_sandbox(sandbox) {
-                tracing::error!(error = %err, "failed to discard surplus warm-pool slot after resize");
+                tracing::error!(vm_id = %vm_id, error = %err, "failed to discard surplus warm-pool slot after resize");
             }
             let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
             state.release_cpuset_cpus(cpuset_cpus);
@@ -444,8 +445,9 @@ impl Drop for WarmPool {
             };
             for slot in ready {
                 let WarmSlot { sandbox, .. } = slot;
+                let vm_id = sandbox.vm_id().to_owned();
                 if let Err(err) = discard_sandbox(sandbox) {
-                    tracing::error!(error = %err, "failed to discard warm-pool slot during drop");
+                    tracing::error!(vm_id = %vm_id, error = %err, "failed to discard warm-pool slot during drop");
                 }
             }
         }

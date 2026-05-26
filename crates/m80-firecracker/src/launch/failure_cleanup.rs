@@ -63,7 +63,7 @@ impl Drop for LaunchRunDirCleanupGuard {
 fn preserve_failed_launch_run_dir(vm_id: &str, run_dir: &std::path::Path) {
     let Some(run_root) = run_dir.parent() else {
         tracing::error!(
-            vm_id,
+            vm_id = %vm_id,
             path = %run_dir.display(),
             "launch failure cleanup could not preserve run-dir without parent"
         );
@@ -72,7 +72,7 @@ fn preserve_failed_launch_run_dir(vm_id: &str, run_dir: &std::path::Path) {
     let preserved_parent = run_root.join(".preserved");
     if let Err(e) = std::fs::create_dir_all(&preserved_parent) {
         tracing::error!(
-            vm_id,
+            vm_id = %vm_id,
             path = %preserved_parent.display(),
             error = %e,
             "launch failure cleanup failed to create preserved directory"
@@ -82,12 +82,12 @@ fn preserve_failed_launch_run_dir(vm_id: &str, run_dir: &std::path::Path) {
     let dest = preserved_parent.join(format!("{}-{vm_id}", crate::runroot::unix_ms_now()));
     match std::fs::rename(run_dir, &dest) {
         Ok(()) => tracing::warn!(
-            vm_id,
+            vm_id = %vm_id,
             path = %dest.display(),
             "launch failure cleanup preserved partial run-dir"
         ),
         Err(e) => tracing::error!(
-            vm_id,
+            vm_id = %vm_id,
             from = %run_dir.display(),
             to = %dest.display(),
             error = %e,

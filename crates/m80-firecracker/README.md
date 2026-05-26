@@ -437,6 +437,10 @@ Host lifecycle diagnostics are appended to `<run_root>/<vm_id>/diagnostics.jsonl
 with schema version 2. The diagnostics writer is optional: if opening or
 writing it fails, boot and teardown continue and the failure is logged through
 `tracing`. See `docs/behaviors/observability/diagnostics-log.md`.
+Public launch, restore, exec, capture, stop, and warm-lease exec entrypoints
+open `tracing` spans with structured `vm_id`. Best-effort teardown warnings
+that may fire after owner frames unwind also carry `vm_id` directly; see
+`docs/behaviors/observability/vm-id-correlation.md`.
 `Backend::new()` runs one synchronous best-effort stale run-root recovery pass.
 `Backend::recover_stale_run_root()` remains available as an explicit one-shot
 orchestrator-driven scan; v0.1 has no background recovery thread.

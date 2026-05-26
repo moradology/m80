@@ -286,6 +286,7 @@ fn cancel_forwarder_drop_detaches_after_join_timeout() {
         let _ = thread_released_tx.send(());
     });
     let forwarder = CancelForwarder {
+        vm_id: "vm-forwarder-timeout".to_owned(),
         stop,
         done_rx,
         handle: Some(handle),

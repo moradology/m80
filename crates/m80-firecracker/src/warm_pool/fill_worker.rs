@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::{discard_sandbox, duration_micros_u64, WarmPoolInner, FILL_BACKOFF};
+use super::{discard_sandbox, duration_micros_u64, WarmPoolInner, WarmSlot, FILL_BACKOFF};
 use crate::panic_payload;
 
 pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<String>) {
@@ -53,16 +53,21 @@ pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<S
         let fill_duration_us = duration_micros_u64(fill_started.elapsed());
         let backoff = match launched {
             Ok(Ok(slot)) if inner.shutdown.load(std::sync::atomic::Ordering::Acquire) => {
-                let discard_result = discard_sandbox(slot.sandbox);
+                let WarmSlot {
+                    sandbox,
+                    cpuset_cpus,
+                } = slot;
+                let vm_id = sandbox.vm_id().to_owned();
+                let discard_result = discard_sandbox(sandbox);
                 let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
                 state.filling = state.filling.saturating_sub(1);
-                state.release_cpuset_cpus(slot.cpuset_cpus);
+                state.release_cpuset_cpus(cpuset_cpus);
                 state.discarded = state.discarded.saturating_add(1);
                 state.record_fill_success(fill_duration_us);
                 inner.changed.notify_all();
                 fill_guard.disarm();
                 if let Err(err) = discard_result {
-                    tracing::error!(error = %err, "failed to discard warm-pool slot after shutdown");
+                    tracing::error!(vm_id = %vm_id, error = %err, "failed to discard warm-pool slot after shutdown");
                 }
                 return;
             }

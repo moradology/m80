@@ -25,6 +25,8 @@ const STDIO_LOG_MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// A materialized chroot. Drop tears it down.
 #[derive(Debug)]
 pub struct MaterializedJail {
+    /// VM id derived from the run-dir basename.
+    pub(crate) vm_id: String,
     /// The plan that produced this jail.
     pub(crate) plan: Plan,
     /// Path to the chroot root.
@@ -48,13 +50,24 @@ pub struct MaterializedJail {
 pub fn materialized_jail_for_test(plan: Plan) -> MaterializedJail {
     let jail_path =
         crate::types::jail_root_path(&plan.config.run_dir, &plan.config.firecracker_bin);
+    let vm_id = vm_id_for_plan(&plan);
     MaterializedJail {
+        vm_id,
         plan,
         jail_path,
         bind_mounts: Vec::new(),
         created_dirs: Vec::new(),
         placeholder_files: Vec::new(),
     }
+}
+
+pub(crate) fn vm_id_for_plan(plan: &Plan) -> String {
+    plan.config
+        .run_dir
+        .file_name()
+        .expect("run_dir has a basename")
+        .to_string_lossy()
+        .into_owned()
 }
 
 impl MaterializedJail {
@@ -76,17 +89,6 @@ impl MaterializedJail {
     /// Polls up to 1 s for `<jail_path>/<firecracker-bin-basename>.pid` to
     /// appear.
     pub fn launch(&self, api_socket: &Path) -> Result<JailedFirecracker, JailerError> {
-        // run_dir is `<run_root>/<vm_id>` and api_socket is `firecracker.sock`
-        // — both come from m80-firecracker's known shape, so a missing
-        // file_name here is a programmer bug, not a runtime fault.
-        let vm_id = self
-            .plan
-            .config
-            .run_dir
-            .file_name()
-            .expect("run_dir has a basename")
-            .to_string_lossy()
-            .into_owned();
         let api_socket_name = api_socket.file_name().expect("api_socket has a basename");
 
         // jailer's `--chroot-base-dir` is the run_dir; jailer appends
@@ -136,7 +138,7 @@ impl MaterializedJail {
         command
             .env_clear()
             .arg("--id")
-            .arg(&vm_id)
+            .arg(&self.vm_id)
             .arg("--exec-file")
             .arg(&self.plan.config.firecracker_bin)
             .arg("--uid")
@@ -514,7 +516,12 @@ impl Drop for MaterializedJail {
 
         for path in self.bind_mounts.iter().rev() {
             if let Err(e) = umount2(path.as_path(), MntFlags::MNT_DETACH) {
-                warn!("drop: umount2({}) failed: {e}", path.display());
+                warn!(
+                    vm_id = %self.vm_id,
+                    path = %path.display(),
+                    err = %e,
+                    "drop: bind umount failed"
+                );
             }
         }
 
@@ -522,13 +529,23 @@ impl Drop for MaterializedJail {
         // visible again after umount).
         for path in self.placeholder_files.iter().rev() {
             if let Err(e) = std::fs::remove_file(path) {
-                warn!("drop: unlink({}) failed: {e}", path.display());
+                warn!(
+                    vm_id = %self.vm_id,
+                    path = %path.display(),
+                    err = %e,
+                    "drop: placeholder unlink failed"
+                );
             }
         }
 
         for path in self.created_dirs.iter().rev() {
             if let Err(e) = std::fs::remove_dir(path) {
-                warn!("drop: rmdir({}) failed: {e}", path.display());
+                warn!(
+                    vm_id = %self.vm_id,
+                    path = %path.display(),
+                    err = %e,
+                    "drop: directory cleanup failed"
+                );
             }
         }
     }

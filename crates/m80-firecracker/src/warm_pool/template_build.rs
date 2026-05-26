@@ -302,8 +302,9 @@ fn cleanup_staging_dir(staging_dir: &Path) {
 }
 
 fn discard_running(running: crate::types::RunningSandbox) {
+    let vm_id = running.vm_id().to_owned();
     if let Err(err) = running.force_kill().and_then(|stopped| stopped.delete()) {
-        tracing::warn!(error = %err, "failed to discard sandbox after template build failure");
+        tracing::warn!(vm_id = %vm_id, error = %err, "failed to discard sandbox after template build failure");
     }
 }
 

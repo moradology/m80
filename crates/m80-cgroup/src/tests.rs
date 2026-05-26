@@ -544,7 +544,10 @@ fn drop_without_cgroup_kill_removes_empty_temp_leaf() {
     let leaf = dir.path().join("leaf");
     fs::create_dir(&leaf).unwrap();
 
-    drop(Subtree(leaf.clone()));
+    drop(Subtree {
+        vm_id: "vm-drop-empty".to_owned(),
+        path: leaf.clone(),
+    });
 
     assert!(!leaf.exists(), "empty temp leaf must be removed on Drop");
 }
@@ -598,7 +601,10 @@ fn cgroup_drop_with_live_procs_uses_cgroup_kill_then_rmdir() {
         cleaned: false,
     };
 
-    drop(Subtree(leaf.clone()));
+    drop(Subtree {
+        vm_id: "vm-drop-live".to_owned(),
+        path: leaf.clone(),
+    });
 
     assert!(
         !leaf.exists(),

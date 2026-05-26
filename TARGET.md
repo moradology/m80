@@ -63,10 +63,10 @@ In priority order. Update freely as work lands.
    Local proof so far: `cargo fmt --all -- --check`,
    `cargo test -p m80-net-outbound`, `git diff --check`, and
    `iptables -m physdev -h`.
-2. **`m80-9jfaz.2`, then `m80-mrjqs.3` — production observability.** Add VM
-   correlation to existing events before adding the larger metrics surface, so
-   failures from future long runs are easier to diagnose. `m80-mrjqs.4`
-   (`/logger` capture) is already implemented and closed.
+2. **`m80-mrjqs.3` — production metrics surface.** VM correlation for existing
+   lifecycle spans/events is now closed in `m80-9jfaz.2`; add the larger
+   metrics surface next so future long runs are easier to diagnose.
+   `m80-mrjqs.4` (`/logger` capture) is already implemented and closed.
 3. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
@@ -113,6 +113,11 @@ and `KernelKind::Stock` manifest round-trip.
 exposes `put_logger`, launch configures Firecracker's native logger before
 metrics, `docs/behaviors/diagnostics/fc-native-logger.md` records the contract,
 and focused logger tests pass.
+`m80-9jfaz.2` is closed as of 2026-05-26: launch/restore/exec/capture/stop and
+warm-lease exec entrypoints open `vm_id` spans, per-VM teardown warning/error
+events carry structured `vm_id`, `MaterializedJail` and cgroup `Subtree` store
+VM ids for Drop logging, and the contract is pinned in
+`docs/behaviors/observability/vm-id-correlation.md`.
 
 ## Long-run order
 
@@ -128,10 +133,10 @@ root causes.
 2. **Close the active network proof boundary.** `m80-vpw49.8` is the only
    in-progress bead. If the KVM run is green, close it with the run URL/report
    path. If it fails, fix only the report-proven rule/topology issue.
-3. **Do the observability batch.** Work `m80-9jfaz.2` first because it is small
-   and improves correlation in existing logs. Then work `m80-mrjqs.3` to expose
-   the production metrics surface. Treat `m80-f20y0.1` as strategic context, not
-   a code leaf, until the external consumer integration has a concrete m80 gap.
+3. **Do the observability batch.** `m80-9jfaz.2` is complete; work
+   `m80-mrjqs.3` next to expose the production metrics surface. Treat
+   `m80-f20y0.1` as strategic context, not a code leaf, until the external
+   consumer integration has a concrete m80 gap.
 4. **Harden failure visibility and cleanup if E2E reports regress.** Pull
    `m80-wok08.3`, `m80-243wj.17`, and adjacent failure-path cleanup beads
    forward only when the real-KVM reports show leaked processes, swallowed
