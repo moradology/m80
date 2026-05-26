@@ -1,4 +1,5 @@
 name: Privileged E2E
+run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}
 
 on:
   workflow_dispatch:

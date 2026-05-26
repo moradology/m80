@@ -738,6 +738,8 @@ def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str
 def lint_privileged_e2e_workflow(path: Path, text: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     required_tokens = {
+        "run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}":
+            "privileged E2E workflow run name must include the selected runner label",
         "runner_label:": "privileged E2E workflow must expose runner_label input",
         "pull_number:": "privileged E2E workflow must expose pull_number input for public PR-ref fetch",
         "target_sha:": "privileged E2E workflow must expose target_sha input",

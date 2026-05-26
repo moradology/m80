@@ -144,6 +144,16 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+        workflow = privileged_e2e_workflow().replace(
+            "run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}",
+            "",
+        )
+        with workflow_dir("e2e-privileged.yml", workflow) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("run name must include the selected runner label", result.stderr)
+
         with workflow_dir(
             "e2e-privileged.yml",
             privileged_e2e_workflow().replace("runner_label:", "runner_slot:"),
@@ -1991,6 +2001,7 @@ def ci_diff_check_step() -> str:
 def privileged_e2e_workflow() -> str:
     return """
 name: Privileged E2E
+run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}
 on:
   workflow_dispatch:
     inputs:
