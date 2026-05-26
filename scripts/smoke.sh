@@ -28,6 +28,8 @@
 #   M80_RUN_ROOT              (default /var/lib/m80-run; do NOT use /tmp — nodev)
 #   FIRECRACKER_BIN           (default /opt/firecracker/bin/firecracker)
 #   JAILER_BIN                (default /opt/firecracker/bin/jailer)
+#   M80_JAILER_HARDEN_BIN     (default target/release/m80-jailer-harden)
+#   M80_NET_HELPER_BIN        (default target/release/m80-net-helper)
 #   M80_JAIL_UID              (default = current user uid)
 #   M80_JAIL_GID              (default = `kvm` group gid, falls back to user gid)
 #   M80_IMAGE_KIND            (default ubuntu; "minimal" or "minimal-erofs")
@@ -46,6 +48,14 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+REPO_ROOT="$(pwd)"
+
+absolute_repo_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$REPO_ROOT" "$1" ;;
+    esac
+}
 
 # --- knobs ---
 IMAGE_KIND="${M80_IMAGE_KIND:-ubuntu}"
@@ -67,6 +77,8 @@ esac
 RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-run}"
 FIRECRACKER_BIN="${FIRECRACKER_BIN:-/opt/firecracker/bin/firecracker}"
 JAILER_BIN="${JAILER_BIN:-/opt/firecracker/bin/jailer}"
+JAILER_HARDEN_BIN="$(absolute_repo_path "${M80_JAILER_HARDEN_BIN:-target/release/m80-jailer-harden}")"
+NET_HELPER_BIN="$(absolute_repo_path "${M80_NET_HELPER_BIN:-target/release/m80-net-helper}")"
 IMAGE_BUILD_DIR="${IMAGE_BUILD_DIR:-/tmp/m80-build/$IMAGE_KIND}"
 JAIL_UID="${M80_JAIL_UID:-$(id -u)}"
 JAIL_GID="${M80_JAIL_GID:-$(getent group kvm | cut -d: -f3 || id -g)}"
@@ -141,6 +153,8 @@ echo "  kernel-kind: $KERNEL_KIND"
 echo "  run-root:    $RUN_ROOT"
 echo "  firecracker: $FIRECRACKER_BIN"
 echo "  jailer:      $JAILER_BIN"
+echo "  harden:      $JAILER_HARDEN_BIN"
+echo "  net-helper:  $NET_HELPER_BIN"
 echo "  kernel:      $KERNEL_IMAGE"
 echo "  rootfs:      $ROOTFS_IMAGE"
 echo "  jail uid/gid: $JAIL_UID/$JAIL_GID"
@@ -149,7 +163,12 @@ echo
 
 # --- build the cli ---
 echo "=== build ==="
-cargo build --release -p m80-cli -p m80-image-build -p m80-guestd
+cargo build --release \
+    -p m80-cli \
+    -p m80-image-build \
+    -p m80-guestd \
+    -p m80-jailer-harden \
+    -p m80-net-helper
 
 # For minimal kinds, additionally build a static (musl) m80-guestd.
 if [[ "$IMAGE_KIND" == "minimal" || "$IMAGE_KIND" == "minimal-erofs" ]]; then
@@ -228,6 +247,8 @@ sudo chown "$(id -u):$(id -g)" "$RUN_ROOT"
 M80_ENV=(
     M80_FIRECRACKER_BIN="$FIRECRACKER_BIN"
     M80_JAILER_BIN="$JAILER_BIN"
+    M80_JAILER_HARDEN_BIN="$JAILER_HARDEN_BIN"
+    M80_NET_HELPER_BIN="$NET_HELPER_BIN"
     M80_KERNEL_IMAGE="$KERNEL_IMAGE"
     M80_ROOTFS_IMAGE="$ROOTFS_IMAGE"
     M80_KERNEL_KIND="$KERNEL_KIND"

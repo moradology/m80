@@ -32,6 +32,7 @@ ENVIRONMENT_FIELDS = {
     "kvm_available",
     "artifacts_available",
     "jailer_harden_available",
+    "net_helper_available",
     "iproute2_available",
     "cgroup_v2_available",
     "loop_device_available",
@@ -44,7 +45,7 @@ ENVIRONMENT_FIELDS = {
     "minimal_artifacts_available",
     "ubuntu_artifacts_available",
 }
-ARTIFACT_FIELDS = {"kernel", "rootfs", "jailer_harden"}
+ARTIFACT_FIELDS = {"kernel", "rootfs", "jailer_harden", "net_helper"}
 SUMMARY_FIELDS = {"passed", "failed", "skipped", "listed", "total"}
 RESULT_FIELDS = {
     "status",

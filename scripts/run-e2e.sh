@@ -32,6 +32,7 @@ Environment:
   M80_KERNEL_IMAGE                 default /tmp/m80-build-current/artifacts/vmlinux
   M80_ROOTFS_IMAGE                 default /tmp/m80-build-current/artifacts/output.ext4
   M80_JAILER_HARDEN_BIN            default target/debug/m80-jailer-harden
+  M80_NET_HELPER_BIN               default target/debug/m80-net-helper
   M80_JAIL_UID / M80_JAIL_GID       override test jail identity when 3000 is unavailable
   M80_RUN_EXTERNAL_NETWORK_E2E=1   opt into external-network egress tests
   M80_MALICIOUS_ARTIFACT_DIR       enables malicious-guestd real-KVM tests
@@ -72,7 +73,14 @@ done
 
 kernel_image="${M80_KERNEL_IMAGE:-/tmp/m80-build-current/artifacts/vmlinux}"
 rootfs_image="${M80_ROOTFS_IMAGE:-/tmp/m80-build-current/artifacts/output.ext4}"
-jailer_harden_bin="${M80_JAILER_HARDEN_BIN:-$PWD/target/debug/m80-jailer-harden}"
+absolute_repo_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$PWD" "$1" ;;
+    esac
+}
+jailer_harden_bin="$(absolute_repo_path "${M80_JAILER_HARDEN_BIN:-target/debug/m80-jailer-harden}")"
+net_helper_bin="$(absolute_repo_path "${M80_NET_HELPER_BIN:-target/debug/m80-net-helper}")"
 
 sudo_cmd=()
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -97,6 +105,11 @@ fi
 have_harden=0
 if [[ -x "$jailer_harden_bin" ]]; then
     have_harden=1
+fi
+
+have_net_helper=0
+if [[ -x "$net_helper_bin" ]]; then
+    have_net_helper=1
 fi
 
 have_ip=0
@@ -340,6 +353,10 @@ skip_reason_for() {
         echo "missing-m80-jailer-harden"
         return
     fi
+    if has_token requires-kvm && [[ "$have_net_helper" -ne 1 ]]; then
+        echo "missing-m80-net-helper"
+        return
+    fi
     if has_token requires-network-namespace && [[ "$have_ip" -ne 1 ]]; then
         echo "missing-iproute2"
         return
@@ -398,9 +415,9 @@ emit_report() {
     if [[ "$json" -eq 1 ]]; then
         python3 - \
             "$results" "$exit_code" "$package" "$run_root" \
-            "$kernel_image" "$rootfs_image" "$jailer_harden_bin" \
+            "$kernel_image" "$rootfs_image" "$jailer_harden_bin" "$net_helper_bin" \
             "$list_only" "$timeout_s" "$have_sudo" "$have_kvm" "$have_artifacts" \
-            "$have_harden" "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
+            "$have_harden" "$have_net_helper" "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
             "$have_debugfs" "$have_docker" "$measurement_enabled" \
             "$pmem_artifacts" "$external_network_enabled" "$malicious_artifacts" \
             "$minimal_artifacts" "$ubuntu_artifacts" <<'PY'
@@ -423,29 +440,31 @@ report = {
     "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     "package": sys.argv[3],
     "run_root": sys.argv[4],
-    "list_only": flag(8),
-    "timeout_seconds": int(sys.argv[9]),
+    "list_only": flag(9),
+    "timeout_seconds": int(sys.argv[10]),
     "environment": {
-        "sudo_available": flag(10),
-        "kvm_available": flag(11),
-        "artifacts_available": flag(12),
-        "jailer_harden_available": flag(13),
-        "iproute2_available": flag(14),
-        "cgroup_v2_available": flag(15),
-        "loop_device_available": flag(16),
-        "debugfs_available": flag(17),
-        "docker_available": flag(18),
-        "measurement_enabled": flag(19),
-        "pmem_artifacts_available": flag(20),
-        "external_network_enabled": flag(21),
-        "malicious_artifacts_available": flag(22),
-        "minimal_artifacts_available": flag(23),
-        "ubuntu_artifacts_available": flag(24),
+        "sudo_available": flag(11),
+        "kvm_available": flag(12),
+        "artifacts_available": flag(13),
+        "jailer_harden_available": flag(14),
+        "net_helper_available": flag(15),
+        "iproute2_available": flag(16),
+        "cgroup_v2_available": flag(17),
+        "loop_device_available": flag(18),
+        "debugfs_available": flag(19),
+        "docker_available": flag(20),
+        "measurement_enabled": flag(21),
+        "pmem_artifacts_available": flag(22),
+        "external_network_enabled": flag(23),
+        "malicious_artifacts_available": flag(24),
+        "minimal_artifacts_available": flag(25),
+        "ubuntu_artifacts_available": flag(26),
     },
     "artifacts": {
         "kernel": sys.argv[5],
         "rootfs": sys.argv[6],
         "jailer_harden": sys.argv[7],
+        "net_helper": sys.argv[8],
     },
     "summary": {
         "passed": counts["pass"],
@@ -564,6 +583,7 @@ while IFS= read -r exe; do
             M80_KERNEL_IMAGE="$kernel_image"
             M80_ROOTFS_IMAGE="$rootfs_image"
             M80_JAILER_HARDEN_BIN="$jailer_harden_bin"
+            M80_NET_HELPER_BIN="$net_helper_bin"
             M80_RUN_ROOT="$run_root"
             M80_RUN_EXTERNAL_NETWORK_E2E="${M80_RUN_EXTERNAL_NETWORK_E2E:-}"
         )

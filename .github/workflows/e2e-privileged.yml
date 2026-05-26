@@ -43,7 +43,8 @@ env:
   M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
   M80_KERNEL_IMAGE: ${{ vars.M80_KERNEL_IMAGE || '/tmp/m80-build-current/artifacts/vmlinux' }}
   M80_ROOTFS_IMAGE: ${{ vars.M80_ROOTFS_IMAGE || '/tmp/m80-build-current/artifacts/output.ext4' }}
-  M80_JAILER_HARDEN_BIN: ${{ vars.M80_JAILER_HARDEN_BIN || 'target/debug/m80-jailer-harden' }}
+  M80_JAILER_HARDEN_BIN: ${{ vars.M80_JAILER_HARDEN_BIN || format('{0}/target/release/m80-jailer-harden', github.workspace) }}
+  M80_NET_HELPER_BIN: ${{ vars.M80_NET_HELPER_BIN || format('{0}/target/release/m80-net-helper', github.workspace) }}
 
 jobs:
   privileged-e2e:
@@ -108,6 +109,8 @@ jobs:
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
             printf 'M80_KERNEL_IMAGE=%s\n' "$M80_KERNEL_IMAGE"
             printf 'M80_ROOTFS_IMAGE=%s\n' "$M80_ROOTFS_IMAGE"
+            printf 'M80_JAILER_HARDEN_BIN=%s\n' "$M80_JAILER_HARDEN_BIN"
+            printf 'M80_NET_HELPER_BIN=%s\n' "$M80_NET_HELPER_BIN"
           } >"$RUNNER_TEMP/m80-e2e-substrate.txt" 2>&1
 
       - name: Run privileged smoke

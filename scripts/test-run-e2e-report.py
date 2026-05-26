@@ -29,6 +29,7 @@ def valid_report() -> dict:
             "kvm_available": False,
             "artifacts_available": False,
             "jailer_harden_available": True,
+            "net_helper_available": True,
             "iproute2_available": True,
             "cgroup_v2_available": True,
             "loop_device_available": True,
@@ -45,6 +46,7 @@ def valid_report() -> dict:
             "kernel": "/tmp/m80-build-current/artifacts/vmlinux",
             "rootfs": "/tmp/m80-build-current/artifacts/output.ext4",
             "jailer_harden": "target/debug/m80-jailer-harden",
+            "net_helper": "target/debug/m80-net-helper",
         },
         "summary": {
             "passed": 0,
