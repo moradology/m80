@@ -15,6 +15,7 @@ mod launch;
 mod layout;
 mod lifecycle;
 mod network_helper;
+mod panic_payload;
 mod pmem;
 mod preboot;
 mod runroot;

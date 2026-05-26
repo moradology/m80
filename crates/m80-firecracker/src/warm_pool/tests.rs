@@ -271,6 +271,11 @@ fn fill_worker_panic_rolls_back_filling_count() {
     assert_eq!(snapshot.filling, 0);
     assert_eq!(snapshot.fill_failures_total, 1);
     assert_eq!(snapshot.discarded, 1);
+    let state = pool.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+    assert_eq!(
+        state.last_fill_error.as_deref(),
+        Some("panic: injected warm-pool launch_slot panic")
+    );
 }
 
 #[test]

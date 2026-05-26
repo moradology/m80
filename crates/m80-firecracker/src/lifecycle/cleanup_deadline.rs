@@ -7,6 +7,7 @@ use std::time::Duration;
 use m80_jailer::MaterializedJail;
 
 use crate::error::{CleanupDeadlinePhase, FcError};
+use crate::panic_payload;
 
 pub(crate) const WATCHER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 const JAIL_DROP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -15,8 +16,12 @@ pub(crate) const RUN_DIR_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) fn join_watcher_with_timeout(vm_id: &str, handle: JoinHandle<()>) {
     match join_thread_with_timeout(handle, WATCHER_JOIN_TIMEOUT) {
         JoinOutcome::Joined => {}
-        JoinOutcome::Panicked => {
-            tracing::error!(vm_id, "lifecycle watcher thread panicked during teardown");
+        JoinOutcome::Panicked(panic) => {
+            tracing::error!(
+                vm_id = %vm_id,
+                panic = %panic,
+                "lifecycle watcher thread panicked during teardown"
+            );
         }
         JoinOutcome::TimedOut => {
             tracing::error!(
@@ -75,20 +80,19 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum JoinOutcome {
     Joined,
-    Panicked,
+    Panicked(String),
     TimedOut,
 }
 
 fn join_thread_with_timeout(handle: JoinHandle<()>, timeout: Duration) -> JoinOutcome {
     let (done_tx, done_rx) = mpsc::channel();
     thread::spawn(move || {
-        let outcome = if handle.join().is_ok() {
-            JoinOutcome::Joined
-        } else {
-            JoinOutcome::Panicked
+        let outcome = match handle.join() {
+            Ok(()) => JoinOutcome::Joined,
+            Err(payload) => JoinOutcome::Panicked(panic_payload::describe(payload.as_ref())),
         };
         let _ = done_tx.send(outcome);
     });
@@ -103,6 +107,20 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::Instant;
+
+    #[test]
+    fn watcher_join_panic_reports_payload() {
+        let handle = thread::spawn(|| {
+            panic!("idle watcher payload");
+        });
+
+        let outcome = join_thread_with_timeout(handle, Duration::from_secs(1));
+
+        assert_eq!(
+            outcome,
+            JoinOutcome::Panicked("idle watcher payload".to_owned())
+        );
+    }
 
     #[test]
     fn watcher_join_timeout_returns_without_waiting_for_thread_exit() {

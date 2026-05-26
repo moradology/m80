@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::{discard_sandbox, duration_micros_u64, WarmPoolInner, FILL_BACKOFF};
+use crate::panic_payload;
 
 pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<String>) {
     // One guard covers thread::spawn panics before the closure starts; the
@@ -46,10 +47,12 @@ pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<S
             state.record_fill_attempt();
         }
         let fill_started = Instant::now();
-        let launched = inner.launch_slot(cpuset_cpus.clone());
+        let launched = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            inner.launch_slot(cpuset_cpus.clone())
+        }));
         let fill_duration_us = duration_micros_u64(fill_started.elapsed());
         let backoff = match launched {
-            Ok(slot) if inner.shutdown.load(std::sync::atomic::Ordering::Acquire) => {
+            Ok(Ok(slot)) if inner.shutdown.load(std::sync::atomic::Ordering::Acquire) => {
                 let discard_result = discard_sandbox(slot.sandbox);
                 let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
                 state.filling = state.filling.saturating_sub(1);
@@ -63,7 +66,7 @@ pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<S
                 }
                 return;
             }
-            Ok(slot) => {
+            Ok(Ok(slot)) => {
                 let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
                 state.filling = state.filling.saturating_sub(1);
                 state.ready.push_back(slot);
@@ -71,11 +74,26 @@ pub(super) fn spawn_fill_worker(inner: Arc<WarmPoolInner>, cpuset_cpus: Option<S
                 inner.changed.notify_all();
                 None
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
                 state.filling = state.filling.saturating_sub(1);
                 state.release_cpuset_cpus(cpuset_cpus);
                 state.record_fill_failure(e.to_string());
+                let idx = (state.consecutive_fill_errors as usize - 1).min(FILL_BACKOFF.len() - 1);
+                let delay = FILL_BACKOFF[idx];
+                inner.changed.notify_all();
+                Some(delay)
+            }
+            Err(payload) => {
+                let detail = format!("panic: {}", panic_payload::describe(payload.as_ref()));
+                tracing::error!(
+                    panic = %detail,
+                    "warm-pool fill worker panicked during slot launch"
+                );
+                let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                state.filling = state.filling.saturating_sub(1);
+                state.release_cpuset_cpus(cpuset_cpus);
+                state.record_fill_failure(detail);
                 let idx = (state.consecutive_fill_errors as usize - 1).min(FILL_BACKOFF.len() - 1);
                 let delay = FILL_BACKOFF[idx];
                 inner.changed.notify_all();
