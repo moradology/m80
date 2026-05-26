@@ -381,6 +381,160 @@ done
 }
 
 #[test]
+fn restore_probe_accepts_matching_request_id() {
+    let frame = exec_exit_frame(Some("vm-restore-probe-1"));
+
+    check_restore_probe_request_id(&frame, "vm-restore-probe-1").unwrap();
+}
+
+#[test]
+fn restore_probe_rejects_missing_request_id() {
+    let frame = exec_exit_frame(None);
+
+    let err = check_restore_probe_request_id(&frame, "vm-restore-probe-1").unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            FcError::Protocol(WireProtocolError::RequestIdMismatch {
+                context: "restore ready probe",
+                ref expected,
+                got: None,
+            }) if expected == "vm-restore-probe-1"
+        ),
+        "expected restore-probe request-id mismatch, got {err:?}"
+    );
+}
+
+#[test]
+fn restore_probe_rejects_mismatched_request_id() {
+    let frame = exec_exit_frame(Some("other-request"));
+
+    let err = check_restore_probe_request_id(&frame, "vm-restore-probe-1").unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            FcError::Protocol(WireProtocolError::RequestIdMismatch {
+                context: "restore ready probe",
+                ref expected,
+                got: Some(ref got),
+            }) if expected == "vm-restore-probe-1" && got == "other-request"
+        ),
+        "expected restore-probe request-id mismatch, got {err:?}"
+    );
+}
+
+#[test]
+fn restore_probe_retries_vsock_failures_until_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let mut attempts = Vec::new();
+    let mut sleeps = Vec::new();
+
+    phase_restore_probe_exec_channel_with(
+        &vsock_uds,
+        "vm-restore",
+        Duration::from_secs(1),
+        Duration::from_millis(7),
+        |path, vm_id, attempt, deadline| {
+            assert_eq!(path, vsock_uds);
+            assert_eq!(vm_id, "vm-restore");
+            assert!(deadline > Instant::now());
+            attempts.push(attempt);
+            if attempt == 1 {
+                Err(FcError::Vsock(VsockError::HandshakeFailed))
+            } else {
+                Ok(())
+            }
+        },
+        |duration| sleeps.push(duration),
+    )
+    .unwrap();
+
+    assert_eq!(attempts, vec![1, 2]);
+    assert_eq!(sleeps, vec![Duration::from_millis(7)]);
+}
+
+#[test]
+fn restore_probe_timeout_reports_guestd_ready_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let mut slept = false;
+
+    let err = phase_restore_probe_exec_channel_with(
+        &vsock_uds,
+        "vm-restore",
+        Duration::ZERO,
+        Duration::from_millis(7),
+        |_path, _vm_id, _attempt, _deadline| Err(FcError::Vsock(VsockError::HandshakeFailed)),
+        |_duration| slept = true,
+    )
+    .unwrap_err();
+
+    assert!(!slept, "timeout path must not sleep after the deadline");
+    assert!(
+        matches!(err, FcError::GuestdReadyTimeout { ref path, timeout }
+            if path == &vsock_uds && timeout == Duration::ZERO),
+        "expected restore probe timeout, got {err:?}"
+    );
+}
+
+#[test]
+fn restore_probe_does_not_retry_protocol_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let mut attempts = 0;
+
+    let err = phase_restore_probe_exec_channel_with(
+        &vsock_uds,
+        "vm-restore",
+        Duration::from_secs(1),
+        Duration::from_millis(7),
+        |_path, _vm_id, _attempt, _deadline| {
+            attempts += 1;
+            Err(FcError::Protocol(WireProtocolError::UnexpectedFrame {
+                context: "restore ready probe",
+                expected: "exec_exit",
+                got: "pong".to_owned(),
+            }))
+        },
+        |_duration| panic!("protocol errors must not sleep/retry"),
+    )
+    .unwrap_err();
+
+    assert_eq!(attempts, 1);
+    assert!(
+        matches!(
+            err,
+            FcError::Protocol(WireProtocolError::UnexpectedFrame { .. })
+        ),
+        "expected protocol error, got {err:?}"
+    );
+}
+
+fn exec_exit_frame(request_id: Option<&str>) -> RawEnvelope {
+    let exit = ExecExit {
+        status: m80_proto::ExecStatus::Completed,
+        exit_code: Some(0),
+        total_stdout_bytes: 0,
+        total_stderr_bytes: 0,
+        truncated: false,
+        timing: m80_proto::ExecTiming {
+            spawned_at_unix_ms: 1,
+            exited_at_unix_ms: 2,
+            spawn_ms: 1,
+            run_ms: 1,
+        },
+    };
+    let envelope = match request_id {
+        Some(request_id) => Envelope::with_request_id(exit, request_id),
+        None => Envelope::new(exit),
+    };
+    RawEnvelope::from_typed(&envelope)
+}
+
+#[test]
 fn no_egress_cold_launch_still_uses_hardener_private_netns() {
     let dir = tempfile::tempdir().unwrap();
 
@@ -389,6 +543,68 @@ fn no_egress_cold_launch_still_uses_hardener_private_netns() {
             .is_none()
     );
     assert!(private_vmm_netns(&crate::NetworkPolicy::NoEgress));
+}
+
+#[test]
+fn join_netns_guest_config_emits_stable_pid_one_tokens() {
+    let helper =
+        crate::network_helper::NetworkHelperClient::new(PathBuf::from("/unused/m80-net-helper"));
+    let network = RealizedNetwork::JoinNetns {
+        netns_path: PathBuf::from("/proc/self/ns/net"),
+        tap_name: "tap0".to_owned(),
+        guest_mac: "02:00:00:00:00:01".to_owned(),
+        guest_ipv4: "10.80.0.2/24".to_owned(),
+        gateway_ipv4: "10.80.0.1".to_owned(),
+        dns_resolvers: vec!["1.1.1.1".to_owned(), "9.9.9.9".to_owned()],
+    };
+
+    let args = phase_7_outbound_guest_config(&helper, &network, Path::new("/unused")).unwrap();
+
+    assert_eq!(
+        args,
+        vec![
+            "m80.net=join_netns",
+            "m80.net.iface=eth0",
+            "m80.net.mac=02:00:00:00:00:01",
+            "m80.net.ipv4=10.80.0.2/24",
+            "m80.net.gateway=10.80.0.1",
+            "m80.net.dns=1.1.1.1,9.9.9.9",
+        ]
+    );
+}
+
+#[test]
+fn cgroup_probe_disabled_skips_host_probe() {
+    phase_5_cgroup_probe(CgroupMode::Disabled).unwrap();
+}
+
+#[test]
+fn cgroup_probe_unsupported_host_mode_is_config_error() {
+    let err = map_cgroup_probe_error(m80_cgroup::CgroupError::UnsupportedHostMode);
+
+    assert!(
+        matches!(
+            err,
+            FcError::Config(ConfigError::InvalidValue {
+                field: "cgroup_mode",
+                ref reason,
+            }) if reason == "UnifiedV2 requested but host is not cgroup v2"
+        ),
+        "expected cgroup mode config error, got {err:?}"
+    );
+}
+
+#[test]
+fn cgroup_probe_other_errors_keep_cgroup_variant() {
+    let err = map_cgroup_probe_error(m80_cgroup::CgroupError::ControllerNotEnabled("memory"));
+
+    assert!(
+        matches!(
+            err,
+            FcError::Cgroup(m80_cgroup::CgroupError::ControllerNotEnabled("memory"))
+        ),
+        "expected non-host-mode cgroup errors to stay typed, got {err:?}"
+    );
 }
 
 #[test]

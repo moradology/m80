@@ -913,11 +913,29 @@ impl Sandbox {
 /// progress; we sleep 50 ms and retry. A 5 s cap is safe: empirically the
 /// settle time is < 1 s.
 fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(), FcError> {
-    let deadline = Instant::now() + RESTORE_PROBE_TIMEOUT;
+    phase_restore_probe_exec_channel_with(
+        vsock_uds,
+        vm_id,
+        RESTORE_PROBE_TIMEOUT,
+        RESTORE_PROBE_SLEEP,
+        try_restore_exec_probe,
+        std::thread::sleep,
+    )
+}
+
+fn phase_restore_probe_exec_channel_with(
+    vsock_uds: &Path,
+    vm_id: &str,
+    timeout: Duration,
+    retry_sleep: Duration,
+    mut try_probe: impl FnMut(&Path, &str, u32, Instant) -> Result<(), FcError>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), FcError> {
+    let deadline = Instant::now() + timeout;
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match try_restore_exec_probe(vsock_uds, vm_id, attempt, deadline) {
+        match try_probe(vsock_uds, vm_id, attempt, deadline) {
             Ok(()) => {
                 tracing::info!(vm_id, attempt, "restore probe: guestd exec round-trip live");
                 return Ok(());
@@ -932,7 +950,7 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(),
                     );
                     return Err(FcError::GuestdReadyTimeout {
                         path: vsock_uds.to_path_buf(),
-                        timeout: RESTORE_PROBE_TIMEOUT,
+                        timeout,
                     });
                 }
                 tracing::debug!(
@@ -941,7 +959,7 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(),
                     error = %e,
                     "restore probe: vsock attempt failed, retrying"
                 );
-                std::thread::sleep(RESTORE_PROBE_SLEEP);
+                sleep(retry_sleep);
             }
             Err(e) => return Err(e),
         }
@@ -1280,16 +1298,19 @@ fn private_vmm_netns(policy: &crate::NetworkPolicy) -> bool {
 fn phase_5_cgroup_probe(mode: CgroupMode) -> Result<(), FcError> {
     match mode {
         CgroupMode::Disabled => Ok(()),
-        CgroupMode::UnifiedV2 => match Subtree::probe() {
-            Ok(()) => Ok(()),
-            Err(m80_cgroup::CgroupError::UnsupportedHostMode) => {
-                Err(FcError::Config(ConfigError::InvalidValue {
-                    field: "cgroup_mode",
-                    reason: "UnifiedV2 requested but host is not cgroup v2".into(),
-                }))
-            }
-            Err(e) => Err(FcError::Cgroup(e)),
-        },
+        CgroupMode::UnifiedV2 => Subtree::probe().map_err(map_cgroup_probe_error),
+    }
+}
+
+fn map_cgroup_probe_error(error: m80_cgroup::CgroupError) -> FcError {
+    match error {
+        m80_cgroup::CgroupError::UnsupportedHostMode => {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "cgroup_mode",
+                reason: "UnifiedV2 requested but host is not cgroup v2".into(),
+            })
+        }
+        error => FcError::Cgroup(error),
     }
 }
 

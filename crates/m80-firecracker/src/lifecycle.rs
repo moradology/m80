@@ -1002,6 +1002,53 @@ mod tests {
         assert_invalid_snapshot_scope(err);
     }
 
+    #[test]
+    fn prepare_snapshot_paths_rejects_split_parent_pair() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let paths = SnapshotPaths {
+            vm_state: run_root.path().join("snapshot-a/vm.snap"),
+            mem: run_root.path().join("snapshot-b/mem.snap"),
+        };
+
+        let err = prepare_snapshot_paths(&paths, run_root.path(), false)
+            .expect_err("snapshot pair must live in one host directory");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "snapshot",
+                    ..
+                })
+            ),
+            "expected split snapshot parent error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_snapshot_paths_maps_pair_into_jail_snapshot_dir() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let snapshot_parent = run_root.path().join("warm/snapshot");
+        std::fs::create_dir_all(&snapshot_parent).expect("snapshot parent");
+        let paths = SnapshotPaths {
+            vm_state: snapshot_parent.join("vm.snap"),
+            mem: snapshot_parent.join("mem.snap"),
+        };
+
+        let prepared =
+            prepare_snapshot_paths(&paths, run_root.path(), false).expect("prepared paths");
+
+        assert_eq!(
+            prepared.host_parent,
+            snapshot_parent.canonicalize().unwrap()
+        );
+        assert_eq!(
+            prepared.jail_paths.vm_state,
+            PathBuf::from("/snapshot/vm.snap")
+        );
+        assert_eq!(prepared.jail_paths.mem, PathBuf::from("/snapshot/mem.snap"));
+    }
+
     fn assert_invalid_snapshot_scope(err: FcError) {
         assert!(
             matches!(
