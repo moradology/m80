@@ -38,6 +38,10 @@ All notable changes to m80 are documented here. Format roughly follows
   paths to the selected artifact directory, emit the matching
   `install-provenance.json`, and require the matching `m80-guestd` artifact
   before preflight.
+- Made privileged smoke reject stale guest-image caches by comparing the rootfs
+  manifest daemon hash with the `m80-guestd` binary built from the checkout,
+  rebuilding the image when they differ, and defaulted privileged CI to the
+  minimal image kind for fast self-contained refreshes.
 
 ### Added — stripped-kernel PVH direct boot note
 

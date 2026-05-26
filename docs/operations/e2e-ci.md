@@ -44,6 +44,7 @@ Repository or organization variables can override:
 
 - `M80_E2E_RUN_ROOT`
 - `M80_RUN_ROOT`
+- `M80_IMAGE_KIND`
 - `M80_ARTIFACT_DIR`
 - `M80_KERNEL_IMAGE`
 - `M80_ROOTFS_IMAGE`
@@ -56,8 +57,9 @@ Repository or organization variables can override:
 
 The job checks the substrate first: `/dev/kvm`, `sudo -n`, `ip`, `iptables`,
 `cargo`, `rustc`, `rg`, `unsquashfs`, KSM disabled, kernel/rootfs/seccomp
-artifact paths, the matching `m80-guestd` artifact, and the m80 host-binary
-paths. It then runs `scripts/smoke.sh`, followed by:
+artifact paths, and the m80 host-binary paths. It then runs `scripts/smoke.sh`,
+which refreshes `m80-guestd` from the checked-out commit and rebuilds the guest
+image when the manifest daemon hash is stale. The smoke is followed by:
 
 ```sh
 scripts/run-e2e.sh --package "$M80_E2E_PACKAGE" --timeout "$M80_E2E_TIMEOUT_SECONDS" --json

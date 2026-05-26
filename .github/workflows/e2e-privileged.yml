@@ -41,6 +41,7 @@ env:
   M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
   M80_E2E_RUN_ROOT: ${{ vars.M80_E2E_RUN_ROOT || '/var/lib/m80-r' }}
   M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
+  M80_IMAGE_KIND: ${{ vars.M80_IMAGE_KIND || 'minimal' }}
   M80_ARTIFACT_DIR: ${{ vars.M80_ARTIFACT_DIR || '/tmp/m80-build-current/artifacts' }}
   M80_KERNEL_IMAGE: ${{ vars.M80_KERNEL_IMAGE || '/tmp/m80-build-current/artifacts/vmlinux' }}
   M80_ROOTFS_IMAGE: ${{ vars.M80_ROOTFS_IMAGE || '/tmp/m80-build-current/artifacts/output.ext4' }}
@@ -77,6 +78,10 @@ jobs:
             full|launch-only) ;;
             *) echo "smoke_mode must be full or launch-only, got $M80_E2E_SMOKE_MODE" >&2; exit 2 ;;
           esac
+          case "$M80_IMAGE_KIND" in
+            ubuntu|minimal|minimal-erofs) ;;
+            *) echo "M80_IMAGE_KIND must be ubuntu|minimal|minimal-erofs, got $M80_IMAGE_KIND" >&2; exit 2 ;;
+          esac
           if ! [[ "$M80_E2E_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
             echo "timeout_seconds must be a positive integer, got $M80_E2E_TIMEOUT_SECONDS" >&2
             exit 2
@@ -108,10 +113,10 @@ jobs:
             fi
             test -f "$M80_KERNEL_IMAGE"
             test -f "$M80_ROOTFS_IMAGE"
-            test -f "$M80_ARTIFACT_DIR/m80-guestd"
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
+            printf 'M80_IMAGE_KIND=%s\n' "$M80_IMAGE_KIND"
             printf 'M80_ARTIFACT_DIR=%s\n' "$M80_ARTIFACT_DIR"
             printf 'M80_KERNEL_IMAGE=%s\n' "$M80_KERNEL_IMAGE"
             printf 'M80_ROOTFS_IMAGE=%s\n' "$M80_ROOTFS_IMAGE"

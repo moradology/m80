@@ -87,6 +87,7 @@ JAILER_BIN="${JAILER_BIN:-/opt/firecracker/bin/jailer}"
 M80_BIN="$(absolute_repo_path "${M80_BIN:-/opt/m80-ci/bin/m80}")"
 JAILER_HARDEN_BIN="$(absolute_repo_path "${M80_JAILER_HARDEN_BIN:-/opt/m80-ci/bin/m80-jailer-harden}")"
 NET_HELPER_BIN="$(absolute_repo_path "${M80_NET_HELPER_BIN:-/opt/m80-ci/bin/m80-net-helper}")"
+IMAGE_BUILD_DIR_FROM_ENV="${IMAGE_BUILD_DIR:-}"
 IMAGE_BUILD_DIR="${IMAGE_BUILD_DIR:-/tmp/m80-build/$IMAGE_KIND}"
 JAIL_UID="${M80_JAIL_UID:-$(id -u)}"
 JAIL_GID="${M80_JAIL_GID:-$(getent group kvm | cut -d: -f3 || id -g)}"
@@ -118,6 +119,21 @@ try:
 except Exception:
     raise SystemExit(1)
 raise SystemExit(0 if data.get("schema_version") == 5 else 1)
+PY
+}
+
+manifest_guestd_matches() {
+    local manifest_path="$1"
+    local guestd_path="$2"
+    python3 - "$manifest_path" "$guestd_path" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+digest = hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest()
+raise SystemExit(0 if manifest.get("daemon_binary_sha256") == digest else 1)
 PY
 }
 
@@ -161,6 +177,9 @@ else
     esac
 fi
 ARTIFACT_DIR="${M80_ARTIFACT_DIR:-$(dirname "$ROOTFS_IMAGE")}"
+if [[ -n "${M80_ROOTFS_IMAGE:-}" && -z "$IMAGE_BUILD_DIR_FROM_ENV" ]]; then
+    IMAGE_BUILD_DIR="$ARTIFACT_DIR"
+fi
 GUESTD_ARTIFACT="${M80_GUESTD_ARTIFACT:-$ARTIFACT_DIR/m80-guestd}"
 
 echo "=== smoke config ==="
@@ -200,15 +219,29 @@ if [[ "$IMAGE_KIND" == "minimal" || "$IMAGE_KIND" == "minimal-erofs" ]]; then
     cargo build --release --target x86_64-unknown-linux-musl -p m80-guestd
 fi
 
+GUESTD_BUILD_BIN="$(pwd)/target/release/m80-guestd"
+if [[ "$IMAGE_KIND" == "minimal" || "$IMAGE_KIND" == "minimal-erofs" ]]; then
+    GUESTD_BUILD_BIN="$(pwd)/target/x86_64-unknown-linux-musl/release/m80-guestd"
+fi
+if [[ ! -x "$GUESTD_BUILD_BIN" ]]; then
+    echo "missing built guestd binary: $GUESTD_BUILD_BIN" >&2
+    exit 1
+fi
+
 # --- build the guest image (full mode only) ---
 if [[ "$mode" == "full" ]]; then
-    if [[ ! -f "$ROOTFS_IMAGE" || ! -f "${ROOTFS_IMAGE}.manifest.json" ]] \
-        || ! manifest_schema_ok "${ROOTFS_IMAGE}.manifest.json"; then
+    guest_image_fresh=0
+    if [[ -f "$ROOTFS_IMAGE" && -f "${ROOTFS_IMAGE}.manifest.json" ]] \
+        && manifest_schema_ok "${ROOTFS_IMAGE}.manifest.json" \
+        && manifest_guestd_matches "${ROOTFS_IMAGE}.manifest.json" "$GUESTD_BUILD_BIN"; then
+        guest_image_fresh=1
+    fi
+
+    if [[ "$guest_image_fresh" -ne 1 ]]; then
         echo "=== build guest image ($IMAGE_KIND) ==="
         mkdir -p "$IMAGE_BUILD_DIR"
         case "$IMAGE_KIND" in
         ubuntu)
-            guestd_bin="$(pwd)/target/release/m80-guestd"
             cat > /tmp/m80-image-build.toml <<EOF
 [kernel]
 version = "$FIRECRACKER_VERSION"
@@ -219,18 +252,13 @@ arch = "x86_64"
 size = "1GiB"
 
 [guestd]
-binary = "$guestd_bin"
+binary = "$GUESTD_BUILD_BIN"
 
 [output]
 dir = "$IMAGE_BUILD_DIR"
 EOF
             ;;
         minimal|minimal-erofs)
-            guestd_bin="$(pwd)/target/x86_64-unknown-linux-musl/release/m80-guestd"
-            if [[ ! -x "$guestd_bin" ]]; then
-                echo "missing static guestd at $guestd_bin" >&2
-                exit 1
-            fi
             if [[ ! -x /bin/busybox ]]; then
                 echo "missing /bin/busybox; install busybox-static" >&2
                 exit 1
@@ -246,7 +274,7 @@ size = "256MiB"
 kind = "$IMAGE_KIND"
 
 [guestd]
-binary = "$guestd_bin"
+binary = "$GUESTD_BUILD_BIN"
 
 [output]
 dir = "$IMAGE_BUILD_DIR"
@@ -261,9 +289,16 @@ fi
 
 # --- normalize staged artifact manifests to this runner's paths ---
 echo "=== relocate artifact manifest ==="
-if [[ ! -f "$GUESTD_ARTIFACT" ]]; then
+if [[ "$mode" == "full" ]]; then
+    sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 "$ARTIFACT_DIR"
+    sudo install -o "$(id -u)" -g "$(id -g)" -m 0755 "$GUESTD_BUILD_BIN" "$GUESTD_ARTIFACT"
+elif [[ ! -f "$GUESTD_ARTIFACT" ]]; then
     echo "missing guestd artifact: $GUESTD_ARTIFACT" >&2
     echo "stage the m80-guestd binary that matches ${ROOTFS_IMAGE}.manifest.json" >&2
+    exit 1
+elif ! manifest_guestd_matches "${ROOTFS_IMAGE}.manifest.json" "$GUESTD_ARTIFACT"; then
+    echo "guestd artifact does not match ${ROOTFS_IMAGE}.manifest.json: $GUESTD_ARTIFACT" >&2
+    echo "run full smoke to rebuild the image or stage the matching m80-guestd" >&2
     exit 1
 fi
 relocated_manifest_tmp="$(mktemp)"
