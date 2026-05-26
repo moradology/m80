@@ -10,10 +10,12 @@ crates.
 ## Black-box contract
 
 `m80-test-helpers` provides deterministic, local-only fixtures for tests that
-need one of two things:
+need one of these things:
 
 - serialized environment-variable mutation with automatic restore;
 - a minimal HTTP fixture server over a Unix domain socket.
+- pure E2E leak-check snapshot/diff helpers that share the reaper's m80-owned
+  resource classifiers.
 
 The helpers are intentionally small and concrete. They do not hide real
 Firecracker, KVM, jailer, filesystem, or networking behavior behind mocks.
@@ -59,6 +61,21 @@ Firecracker, KVM, jailer, filesystem, or networking behavior behind mocks.
   - Builds a minimal `204 No Content` HTTP response.
 - `resp_400(body: &str) -> Vec<u8>`
   - Builds a `400 Bad Request` HTTP response with `body` as the JSON payload.
+
+### `leak_check`
+
+- `LeakSnapshot`
+  - Captures m80-owned links, iptables chains/rules, run-root children, and
+    cgroup leaves from caller-provided observations.
+- `LeakSnapshot::from_observations(...) -> LeakSnapshot`
+  - Builds a snapshot from `ip -o link show`, `iptables -S`, run-root entries,
+    and cgroup entries. Foreign resources and protected run-root directories
+    are ignored.
+- `LeakSnapshot::diff_new_resources(&self, after: &Self) -> LeakReport`
+  - Returns the m80-owned resources present after a test that were absent
+    before it.
+- `LeakReport::is_clean() -> bool`
+  - True when the test added no m80-owned residue.
 
 ## Dependencies
 

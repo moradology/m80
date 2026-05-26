@@ -8,4 +8,5 @@
 
 pub mod env;
 pub mod fixture_server;
+pub mod leak_check;
 pub mod reaper;

@@ -69,4 +69,8 @@ Before a real run, the wrapper invokes `scripts/e2e-reap.sh` to remove stale
 m80-owned residue from previous failed runs. Set `M80_E2E_SKIP_REAPER=1` only
 when debugging the reaper itself.
 
+After each passing test, the wrapper runs the before/after leak check described
+in [`e2e-leak-check.md`](e2e-leak-check.md). Set `M80_E2E_SKIP_LEAK_CHECK=1`
+only when debugging that leak checker.
+
 The JSON schema is documented in [`e2e-reporting.md`](e2e-reporting.md).

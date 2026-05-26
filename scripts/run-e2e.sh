@@ -27,6 +27,7 @@ Environment:
   M80_E2E_RUN_ROOT                 default /var/lib/m80-r
   M80_E2E_REAP_MIN_AGE_HOURS       default 1
   M80_E2E_SKIP_REAPER=1            skip stale-state cleanup before a run
+  M80_E2E_SKIP_LEAK_CHECK=1        skip post-test cleanup verification
   M80_E2E_TEST_TIMEOUT_SECONDS     default 180
   M80_KERNEL_IMAGE                 default /tmp/m80-build-current/artifacts/vmlinux
   M80_ROOTFS_IMAGE                 default /tmp/m80-build-current/artifacts/output.ext4
@@ -226,6 +227,16 @@ if entry["status"] == "fail":
 with open(sys.argv[1], "a", encoding="utf-8") as f:
     f.write(json.dumps(entry, sort_keys=True) + "\n")
 PY
+}
+
+cleanup_after_leak() {
+    if [[ "${M80_E2E_SKIP_REAPER:-0}" == "1" || "$have_sudo" -ne 1 ]]; then
+        return
+    fi
+    scripts/e2e-reap.sh \
+        --run-root "$run_root" \
+        --min-age-hours 0 \
+        >/dev/null 2>&1 || true
 }
 
 write_ignore_reason_map() {
@@ -527,6 +538,24 @@ while IFS= read -r exe; do
             continue
         fi
 
+        leak_before_path=""
+        leak_before_stderr_path=""
+        if [[ "${M80_E2E_SKIP_LEAK_CHECK:-0}" != "1" ]]; then
+            leak_before_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.before.json"
+            leak_before_stderr_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.before.stderr"
+            leak_status=0
+            scripts/e2e-reap.sh \
+                --dry-run \
+                --json \
+                --run-root "$run_root" \
+                --min-age-hours 0 \
+                >"$leak_before_path" 2>"$leak_before_stderr_path" || leak_status=$?
+            if [[ "$leak_status" -ne 0 ]]; then
+                record_result "fail" "$test_name" "$binary_name" "leak-check-error" 90 0 "$leak_before_path" "$leak_before_stderr_path"
+                continue
+            fi
+        fi
+
         stdout_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.stdout"
         stderr_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.stderr"
         start_ns="$(date +%s%N)"
@@ -565,6 +594,40 @@ while IFS= read -r exe; do
         end_ns="$(date +%s%N)"
         duration_ms=$(( (end_ns - start_ns) / 1000000 ))
         if [[ "$exit_code" -eq 0 ]]; then
+            if [[ "${M80_E2E_SKIP_LEAK_CHECK:-0}" != "1" ]]; then
+                leak_after_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.after.json"
+                leak_stderr_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.after.stderr"
+                leak_diff_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.diff.json"
+                leak_diff_stderr_path="$tmpdir/${binary_name}.${test_name//[^A-Za-z0-9_.-]/_}.leak.diff.stderr"
+                leak_status=0
+                scripts/e2e-reap.sh \
+                    --dry-run \
+                    --json \
+                    --run-root "$run_root" \
+                    --min-age-hours 0 \
+                    >"$leak_after_path" 2>"$leak_stderr_path" || leak_status=$?
+                if [[ "$leak_status" -ne 0 ]]; then
+                    record_result "fail" "$test_name" "$binary_name" "leak-check-error" 90 "$duration_ms" "$leak_after_path" "$leak_stderr_path"
+                    cleanup_after_leak
+                    continue
+                fi
+                leak_diff_status=0
+                python3 scripts/e2e-leak-diff.py \
+                    "$leak_before_path" \
+                    "$leak_after_path" \
+                    "$leak_diff_path" \
+                    2>"$leak_diff_stderr_path" || leak_diff_status=$?
+                if [[ "$leak_diff_status" -eq 1 ]]; then
+                    record_result "fail" "$test_name" "$binary_name" "leak-check" 91 "$duration_ms" "$leak_diff_path" "$leak_diff_stderr_path"
+                    cleanup_after_leak
+                    continue
+                fi
+                if [[ "$leak_diff_status" -ne 0 ]]; then
+                    record_result "fail" "$test_name" "$binary_name" "leak-check-error" 90 "$duration_ms" "$leak_diff_path" "$leak_diff_stderr_path"
+                    cleanup_after_leak
+                    continue
+                fi
+            fi
             record_result "pass" "$test_name" "$binary_name" "" "$exit_code" "$duration_ms" "$stdout_path" "$stderr_path"
         elif [[ "$exit_code" -eq 124 ]]; then
             record_result "fail" "$test_name" "$binary_name" "timeout" "$exit_code" "$duration_ms" "$stdout_path" "$stderr_path"

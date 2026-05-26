@@ -65,7 +65,10 @@ scripts/run-e2e.sh
 
 The wrapper uses the taxonomy in
 [`e2e-test-selection.md`](e2e-test-selection.md) and runs the stale-state
-reaper in [`e2e-reaper.md`](e2e-reaper.md) before real test execution.
+reaper in [`e2e-reaper.md`](e2e-reaper.md) before real test execution. After
+each passing test, it runs the leak check in
+[`e2e-leak-check.md`](e2e-leak-check.md) so newly leaked m80-owned host state
+turns the test into a `leak-check` failure.
 
 List what the wrapper would run or skip:
 
