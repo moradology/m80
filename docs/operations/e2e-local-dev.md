@@ -95,6 +95,9 @@ The wrapper detects missing `sudo`, `/dev/kvm`, kernel/rootfs artifacts,
 network opt-in. It reports skipped tests with explicit reason strings instead
 of leaving `#[ignore]` output for humans to reverse-engineer.
 
+For the self-hosted CI lane that runs the same wrapper, see
+[`e2e-ci.md`](e2e-ci.md).
+
 ## Cleanup Recipes
 
 Before a large local run, clear stale m80 residue from previous failed

@@ -144,6 +144,8 @@ Production operators should read:
   CPU governor, and network sysctl tuning.
 - [`docs/operations/e2e-local-dev.md`](docs/operations/e2e-local-dev.md) for
   running the privileged real-KVM test battery from a developer checkout.
+- [`docs/operations/e2e-ci.md`](docs/operations/e2e-ci.md) for the
+  self-hosted KVM workflow that runs the smoke and ignored-test battery.
 
 ## Diagnostics
 

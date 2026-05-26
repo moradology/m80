@@ -1,0 +1,182 @@
+name: Privileged E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Rust package to run through scripts/run-e2e.sh
+        required: false
+        default: m80-firecracker
+      timeout_seconds:
+        description: Per-test timeout passed to scripts/run-e2e.sh
+        required: false
+        default: "180"
+      run_smoke:
+        description: Run scripts/smoke.sh before ignored tests; use "false" only for wrapper debugging
+        required: false
+        default: "true"
+      smoke_mode:
+        description: "scripts/smoke.sh mode: full or launch-only"
+        required: false
+        default: full
+      upload_run_dirs:
+        description: Archive the run root when the job fails
+        required: false
+        default: "true"
+  schedule:
+    - cron: "17 4 * * 1"
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  M80_E2E_PACKAGE: ${{ inputs.package || 'm80-firecracker' }}
+  M80_E2E_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '180' }}
+  M80_E2E_RUN_SMOKE: ${{ inputs.run_smoke || 'true' }}
+  M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
+  M80_E2E_RUN_ROOT: ${{ vars.M80_E2E_RUN_ROOT || '/var/lib/m80-r' }}
+  M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
+  M80_KERNEL_IMAGE: ${{ vars.M80_KERNEL_IMAGE || '/tmp/m80-build-current/artifacts/vmlinux' }}
+  M80_ROOTFS_IMAGE: ${{ vars.M80_ROOTFS_IMAGE || '/tmp/m80-build-current/artifacts/output.ext4' }}
+  M80_JAILER_HARDEN_BIN: ${{ vars.M80_JAILER_HARDEN_BIN || 'target/debug/m80-jailer-harden' }}
+
+jobs:
+  privileged-e2e:
+    name: privileged e2e
+    runs-on: [self-hosted, kvm]
+    timeout-minutes: 180
+    if: >-
+      github.event_name != 'pull_request' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate operator inputs
+        run: |
+          set -euo pipefail
+          case "$M80_E2E_RUN_SMOKE" in
+            true|false) ;;
+            *) echo "run_smoke must be true or false, got $M80_E2E_RUN_SMOKE" >&2; exit 2 ;;
+          esac
+          case "$M80_E2E_SMOKE_MODE" in
+            full|launch-only) ;;
+            *) echo "smoke_mode must be full or launch-only, got $M80_E2E_SMOKE_MODE" >&2; exit 2 ;;
+          esac
+          if ! [[ "$M80_E2E_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "timeout_seconds must be a positive integer, got $M80_E2E_TIMEOUT_SECONDS" >&2
+            exit 2
+          fi
+
+      - name: Check KVM runner substrate
+        run: |
+          set -euo pipefail
+          {
+            date -u +"%Y-%m-%dT%H:%M:%SZ"
+            uname -a
+            id
+            ls -l /dev/kvm
+            test -r /dev/kvm
+            test -w /dev/kvm
+            sudo -n true
+            command -v ip
+            command -v iptables
+            test -f "$M80_KERNEL_IMAGE"
+            test -f "$M80_ROOTFS_IMAGE"
+            printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
+            printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
+            printf 'M80_KERNEL_IMAGE=%s\n' "$M80_KERNEL_IMAGE"
+            printf 'M80_ROOTFS_IMAGE=%s\n' "$M80_ROOTFS_IMAGE"
+          } >"$RUNNER_TEMP/m80-e2e-substrate.txt" 2>&1
+
+      - name: Run privileged smoke
+        run: |
+          set -euo pipefail
+          if [[ "$M80_E2E_RUN_SMOKE" == "false" ]]; then
+            echo "scripts/smoke.sh skipped by operator input" >"$RUNNER_TEMP/m80-smoke.log"
+            exit 0
+          fi
+          if [[ "$M80_E2E_SMOKE_MODE" == "full" ]]; then
+            scripts/smoke.sh >"$RUNNER_TEMP/m80-smoke.log" 2>&1
+          else
+            scripts/smoke.sh "$M80_E2E_SMOKE_MODE" >"$RUNNER_TEMP/m80-smoke.log" 2>&1
+          fi
+
+      - name: Run ignored privileged tests
+        run: |
+          set -euo pipefail
+          status=0
+          scripts/run-e2e.sh \
+            --package "$M80_E2E_PACKAGE" \
+            --timeout "$M80_E2E_TIMEOUT_SECONDS" \
+            --json \
+            >"$RUNNER_TEMP/m80-e2e-report.json" || status=$?
+          python3 scripts/validate-e2e-report.py "$RUNNER_TEMP/m80-e2e-report.json"
+          python3 - "$RUNNER_TEMP/m80-e2e-report.json" >"$RUNNER_TEMP/m80-e2e-summary.txt" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          report = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          summary = report["summary"]
+          print(
+              "summary: "
+              f"pass={summary['passed']} "
+              f"fail={summary['failed']} "
+              f"skip={summary['skipped']} "
+              f"list={summary['listed']} "
+              f"total={summary['total']}"
+          )
+          for item in report["results"]:
+              if item["status"] == "fail":
+                  print(f"fail: {item['binary']}::{item['test']} reason={item['reason']}")
+          PY
+          cat "$RUNNER_TEMP/m80-e2e-summary.txt"
+          exit "$status"
+
+      - name: Archive failed run root
+        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || inputs.upload_run_dirs != 'false') }}
+        run: |
+          set -euo pipefail
+          if [[ ! -d "$M80_E2E_RUN_ROOT" ]]; then
+            echo "run root missing: $M80_E2E_RUN_ROOT" >"$RUNNER_TEMP/m80-e2e-run-root-archive-error.txt"
+            exit 0
+          fi
+          sudo -n tar -C "$M80_E2E_RUN_ROOT" -czf "$RUNNER_TEMP/m80-e2e-run-root.tgz" . \
+            2>"$RUNNER_TEMP/m80-e2e-run-root-archive.stderr" || true
+
+      - name: Capture runner diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            date -u +"%Y-%m-%dT%H:%M:%SZ"
+            uname -a
+            id
+            ls -l /dev/kvm || true
+            sudo -n journalctl -n 1000 --no-pager || journalctl -n 1000 --no-pager || true
+          } >"$RUNNER_TEMP/m80-e2e-runner-diagnostics.txt" 2>&1
+
+      - name: Upload privileged E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-e2e-privileged-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/m80-e2e-*.json
+            ${{ runner.temp }}/m80-e2e-*.txt
+            ${{ runner.temp }}/m80-e2e-*.stderr
+            ${{ runner.temp }}/m80-smoke.log
+            ${{ runner.temp }}/m80-e2e-run-root.tgz
+          if-no-files-found: warn
+          retention-days: 14

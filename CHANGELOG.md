@@ -21,6 +21,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added post-test leak verification to `scripts/run-e2e.sh` so a passing
   privileged test that leaves m80-owned links, iptables state, run dirs, or
   cgroups is reported as a `leak-check` failure before the next test runs.
+- Added the self-hosted `kvm` privileged E2E workflow scaffold, including smoke
+  execution, structured report validation, failure artifact upload, and operator
+  documentation.
 
 ### Added — stripped-kernel PVH direct boot note
 

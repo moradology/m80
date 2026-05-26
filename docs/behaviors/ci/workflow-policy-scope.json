@@ -6,6 +6,10 @@
       "scope": "ordinary-ci"
     },
     {
+      "path": "e2e-privileged.yml",
+      "scope": "ordinary-ci"
+    },
+    {
       "path": "latest-freshness.yml",
       "scope": "latest-freshness"
     },
