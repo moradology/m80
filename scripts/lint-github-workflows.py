@@ -127,6 +127,8 @@ def lint_workflow_dir(
         errors.extend(lint_multiline_run_block_strictness(path, lines))
         if path.name == "ci.yml":
             errors.extend(lint_ci_changed_line_whitespace_check(path, lines))
+        if path.name == "e2e-privileged.yml":
+            errors.extend(lint_privileged_e2e_workflow(path, text, lines))
         if workflow_scope == "latest-freshness":
             errors.extend(lint_freshness_workflow(path, text, lines))
         if release_workflow:
@@ -730,6 +732,26 @@ def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str
                 errors.append(
                     f"{path}:{start + offset + 1}: freshness job {job_id} must stay hostless"
                 )
+    return errors
+
+
+def lint_privileged_e2e_workflow(path: Path, text: str, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    required_tokens = {
+        "runner_label:": "privileged E2E workflow must expose runner_label input",
+        "M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
+            "privileged E2E workflow must default runner label through inputs/vars/kvm",
+        "- self-hosted": "privileged E2E workflow must require the self-hosted label",
+        "- ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
+            "privileged E2E workflow must target the configured runner label",
+        '[[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]':
+            "privileged E2E workflow must validate runner_label syntax before running tests",
+        "printf 'M80_E2E_RUNNER_LABEL=%s\\n' \"$M80_E2E_RUNNER_LABEL\"":
+            "privileged E2E workflow must record the runner label in substrate diagnostics",
+    }
+    for token, message in required_tokens.items():
+        if token not in text:
+            errors.append(f"{path}: {message}")
     return errors
 
 

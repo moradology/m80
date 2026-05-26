@@ -138,6 +138,21 @@ class WorkflowPolicyTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_privileged_e2e_requires_ephemeral_runner_label_contract(self) -> None:
+        with workflow_dir("e2e-privileged.yml", privileged_e2e_workflow()) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        with workflow_dir(
+            "e2e-privileged.yml",
+            privileged_e2e_workflow().replace("runner_label:", "runner_slot:"),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must expose runner_label input", result.stderr)
+
     def test_workflow_scope_policy_rejects_duplicate_entries(self) -> None:
         with workflow_dir(
             "ci.yml",
@@ -1951,6 +1966,42 @@ def ci_diff_check_step() -> str:
         git cat-file -e "$BASE_SHA^{commit}"
         git diff --check "$BASE_SHA"...HEAD
     """
+
+
+def privileged_e2e_workflow() -> str:
+    return """
+name: Privileged E2E
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: Self-hosted runner label to target
+        required: false
+        default: kvm
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+permissions:
+  contents: read
+env:
+  M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+jobs:
+  privileged-e2e:
+    runs-on:
+      - self-hosted
+      - ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+    timeout-minutes: 120
+    steps:
+      - name: Validate operator inputs
+        run: |
+          set -euo pipefail
+          if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            exit 2
+          fi
+      - name: Check KVM runner substrate
+        run: |
+          set -euo pipefail
+          printf 'M80_E2E_RUNNER_LABEL=%s\\n' "$M80_E2E_RUNNER_LABEL"
+"""
 
 
 class workflow_dir:

@@ -27,6 +27,10 @@ on:
         description: Archive the run root when the job fails
         required: false
         default: "true"
+      runner_label:
+        description: Self-hosted runner label to target; use a unique ephemeral label for disposable L1 runs
+        required: false
+        default: kvm
   schedule:
     - cron: "17 4 * * 1"
   pull_request:
@@ -44,6 +48,7 @@ env:
   M80_E2E_RUN_SMOKE: ${{ inputs.run_smoke || 'true' }}
   M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
   M80_E2E_EXTERNAL_NETWORK: ${{ inputs.external_network || 'false' }}
+  M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
   M80_E2E_RUN_ROOT: ${{ vars.M80_E2E_RUN_ROOT || '/var/lib/m80-r' }}
   M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
   M80_IMAGE_KIND: ${{ vars.M80_IMAGE_KIND || 'minimal' }}
@@ -58,7 +63,9 @@ env:
 jobs:
   privileged-e2e:
     name: privileged e2e
-    runs-on: [self-hosted, kvm]
+    runs-on:
+      - self-hosted
+      - ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
     timeout-minutes: 180
     if: >-
       github.event_name != 'pull_request' ||
@@ -103,6 +110,10 @@ jobs:
             echo "timeout_seconds must be a positive integer, got $M80_E2E_TIMEOUT_SECONDS" >&2
             exit 2
           fi
+          if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+            echo "runner_label must match [A-Za-z0-9_.-]+, got $M80_E2E_RUNNER_LABEL" >&2
+            exit 2
+          fi
 
       - name: Check KVM runner substrate
         run: |
@@ -133,6 +144,7 @@ jobs:
             test -f "$M80_ROOTFS_IMAGE"
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
+            printf 'M80_E2E_RUNNER_LABEL=%s\n' "$M80_E2E_RUNNER_LABEL"
             printf 'M80_E2E_EXTERNAL_NETWORK=%s\n' "$M80_E2E_EXTERNAL_NETWORK"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
             printf 'M80_IMAGE_KIND=%s\n' "$M80_IMAGE_KIND"

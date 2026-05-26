@@ -127,6 +127,29 @@ Destroy the L1 and its local state:
 scripts/spawn-l1-runner.sh destroy
 ```
 
+## Register A Disposable GitHub Runner
+
+For GitHub Actions proof with a clean VM per run, create the L1 with a unique
+name and register it as an ephemeral repository runner:
+
+```sh
+label="m80-e2e-$(date -u +%Y%m%dT%H%M%SZ)"
+work_root="/tank/tmp/$label"
+
+scripts/spawn-l1-runner.sh create --name "$label" --work-root "$work_root"
+scripts/register-l1-github-runner.sh \
+  --l1-name "$label" \
+  --l1-work-root "$work_root" \
+  --runner-name "$label" \
+  --runner-label "$label"
+```
+
+Then dispatch `.github/workflows/e2e-privileged.yml` with
+`runner_label=$label`. The registration script uses GitHub's repository runner
+registration-token API through `gh`, runs `config.sh --ephemeral` inside the
+L1, and starts the one-job runner process. Destroy the L1 after the workflow
+finishes and the artifacts are uploaded.
+
 ## Validate A Public Release
 
 Local isolation levels A-C:

@@ -130,6 +130,11 @@ private Firecracker netns, and post-drop CAP_NET_ADMIN behavior. Proof artifacts
 `/tank/tmp/m80-vpw49-8-proof/m80-cap-net-admin-drop.log`, and
 `/tank/tmp/m80-vpw49-8-proof/m80-cap-drop-smoke.log`. The full GitHub
 Privileged E2E proof above also ran with `external_network=true`.
+`m80-25mdp` moves the privileged workflow toward untrusted-contribution safety:
+manual dispatch can target a unique runner label, and
+`scripts/register-l1-github-runner.sh` registers an existing L1 as a one-job
+ephemeral GitHub runner with that label. This is not full arbitrary-fork
+automation yet; runner creation remains a trusted operator/control-plane step.
 
 ## Long-run order
 
@@ -145,6 +150,8 @@ root causes.
    `185d88e9af22a3e6ec543ef6dccac3f540e98946`, the latest code/workflow commit
    in the E2E wiring line; follow-up proof-recording commit `fc64ba09` passed
    CI run `26455499511`.
+   For higher-risk PR proof, prefer the documented disposable L1 path with a
+   unique `runner_label` over the durable `kvm` runner.
 2. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
    external consumer integration has a concrete m80 gap.** The observability
    batch that was gating long-run diagnosis is complete enough for the next

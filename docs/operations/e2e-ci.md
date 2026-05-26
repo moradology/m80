@@ -42,6 +42,9 @@ Manual inputs:
   export `M80_RUN_EXTERNAL_NETWORK_E2E=1` and run tests tagged
   `requires-external-network`.
 - `upload_run_dirs`: archive the run root after failure; default `true`.
+- `runner_label`: self-hosted runner label to target; default `kvm`. For a
+  disposable L1 run, set this to the unique label used when registering the
+  ephemeral runner, for example `m80-e2e-20260526T190000Z`.
 
 Repository or organization variables can override:
 
@@ -55,6 +58,52 @@ Repository or organization variables can override:
 - `M80_BIN`
 - `M80_JAILER_HARDEN_BIN`
 - `M80_NET_HELPER_BIN`
+
+`M80_E2E_RUNNER_LABEL` can also override the default runner label for scheduled
+or tag-triggered runs. Keep this set to `kvm` unless a disposable runner has
+already been registered with a unique label.
+
+## Disposable L1 Runners
+
+The durable `kvm` runner is acceptable for maintainer-triggered proof, but it
+is not the end state for arbitrary external code. For untrusted or higher-risk
+runs, use a fresh L1 VM and a one-job GitHub runner label:
+
+```sh
+label="m80-e2e-$(date -u +%Y%m%dT%H%M%SZ)"
+work_root="/tank/tmp/$label"
+
+scripts/spawn-l1-runner.sh create \
+  --name "$label" \
+  --work-root "$work_root"
+
+scripts/register-l1-github-runner.sh \
+  --l1-name "$label" \
+  --l1-work-root "$work_root" \
+  --runner-name "$label" \
+  --runner-label "$label"
+
+gh workflow run e2e-privileged.yml \
+  -r main \
+  -f runner_label="$label" \
+  -f external_network=true \
+  -f run_smoke=true \
+  -f smoke_mode=full \
+  -f timeout_seconds=180
+
+run_id="$(gh run list --workflow e2e-privileged.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run watch "$run_id" --exit-status
+scripts/spawn-l1-runner.sh destroy --name "$label" --work-root "$work_root"
+```
+
+`scripts/register-l1-github-runner.sh` obtains a repository runner
+registration token through `gh`, installs the current `actions/runner` release
+inside the L1 if needed, registers with `config.sh --ephemeral`, and starts the
+runner process. GitHub deregisters an ephemeral runner after one job; destroying
+the L1 removes the working directory and VM disk. The registration-token call
+requires repository runner administration authority, so this is still an
+operator-mediated control-plane step rather than something arbitrary PR code can
+start by itself.
 
 ## What Runs
 
