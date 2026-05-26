@@ -182,9 +182,9 @@ impl RunningSandbox {
         event_rx: mpsc::Receiver<PtyHostEvent>,
         mut on_output: impl FnMut(PtyOutputChunk) -> Result<(), FcError>,
     ) -> Result<PtyExit, FcError> {
-        self.ensure_firecracker_live()?;
         self.claim_one_shot_exec()?;
         let _activity = self.begin_exec_activity()?;
+        self.ensure_firecracker_live()?;
 
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "pty");
@@ -323,11 +323,11 @@ impl RunningSandbox {
         consume_one_shot: bool,
         max_duration_ms: Option<u64>,
     ) -> Result<ExecExit, FcError> {
-        self.ensure_firecracker_live()?;
         if consume_one_shot {
             self.claim_one_shot_exec()?;
         }
         let _activity = self.begin_exec_activity()?;
+        self.ensure_firecracker_live()?;
 
         req.streaming = true;
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);

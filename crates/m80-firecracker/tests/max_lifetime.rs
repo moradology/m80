@@ -37,9 +37,9 @@ fn max_lifetime_fires_after_configured_duration_with_no_exec_in_flight() {
 
     std::thread::sleep(Duration::from_millis(1500));
 
-    let err = sandbox
-        .exec(true_request())
-        .expect_err("exec after max_lifetime must fail");
+    let result = sandbox.exec(true_request());
+    cleanup_running(sandbox);
+    let err = result.expect_err("exec after max_lifetime must fail");
     assert!(matches!(err, FcError::LifetimeExpired { .. }));
     wait_for_process_exit(firecracker_pid, Duration::from_secs(5));
 }
@@ -64,9 +64,9 @@ fn max_lifetime_expiring_during_exec_allows_in_flight_result_then_rejects_next_e
         .expect("in-flight exec should finish even when lifetime expires");
     assert_eq!(String::from_utf8_lossy(&response.stdout), "done\n");
 
-    let err = sandbox
-        .exec(true_request())
-        .expect_err("next exec after max_lifetime must fail");
+    let result = sandbox.exec(true_request());
+    cleanup_running(sandbox);
+    let err = result.expect_err("next exec after max_lifetime must fail");
     assert!(matches!(err, FcError::LifetimeExpired { .. }));
 }
 
@@ -82,6 +82,7 @@ fn max_lifetime_none_never_fires() {
     sandbox
         .exec(true_request())
         .expect("max_lifetime=None must not expire the sandbox");
+    sandbox.stop().expect("stop").delete().expect("delete");
 }
 
 #[test]
@@ -93,9 +94,9 @@ fn idle_timeout_wins_when_shorter_than_max_lifetime() {
 
     std::thread::sleep(Duration::from_millis(1500));
 
-    let err = sandbox
-        .exec(true_request())
-        .expect_err("shorter idle timeout must fire first");
+    let result = sandbox.exec(true_request());
+    cleanup_running(sandbox);
+    let err = result.expect_err("shorter idle timeout must fire first");
     assert!(matches!(err, FcError::IdleTimedOut));
 }
 
@@ -108,9 +109,9 @@ fn max_lifetime_wins_when_shorter_than_idle_timeout() {
 
     std::thread::sleep(Duration::from_millis(1500));
 
-    let err = sandbox
-        .exec(true_request())
-        .expect_err("shorter max_lifetime must fire first");
+    let result = sandbox.exec(true_request());
+    cleanup_running(sandbox);
+    let err = result.expect_err("shorter max_lifetime must fire first");
     assert!(matches!(err, FcError::LifetimeExpired { .. }));
 }
 
@@ -150,6 +151,14 @@ fn true_request() -> m80_proto::ExecRequest {
         timeout_ms: Some(5_000),
         streaming: false,
     }
+}
+
+fn cleanup_running(sandbox: m80_firecracker::RunningSandbox) {
+    sandbox
+        .force_kill()
+        .expect("force kill expired sandbox for cleanup")
+        .delete()
+        .expect("delete expired sandbox run dir");
 }
 
 fn firecracker_pid(run_dir: &std::path::Path) -> u32 {

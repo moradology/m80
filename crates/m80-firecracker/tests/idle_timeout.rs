@@ -251,17 +251,17 @@ fn idle_timeout_resets_on_exec() {
     std::thread::sleep(Duration::from_millis(2500));
 
     // Third exec — must return IdleTimedOut.
-    let err = sandbox
-        .exec(m80_proto::ExecRequest {
-            program: "/bin/true".into(),
-            args: vec![],
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(5000),
-            streaming: false,
-        })
-        .expect_err("exec after idle timeout must fail");
+    let result = sandbox.exec(m80_proto::ExecRequest {
+        program: "/bin/true".into(),
+        args: vec![],
+        cwd: None,
+        env: None,
+        stdin: None,
+        timeout_ms: Some(5000),
+        streaming: false,
+    });
+    cleanup_running(sandbox);
+    let err = result.expect_err("exec after idle timeout must fail");
     assert!(
         matches!(err, FcError::IdleTimedOut),
         "expected FcError::IdleTimedOut, got: {err:?}"
@@ -306,17 +306,17 @@ fn idle_timeout_fires_after_inactivity() {
     // Do not exec; just sleep past the timeout.
     std::thread::sleep(Duration::from_millis(3000));
 
-    let err = sandbox
-        .exec(m80_proto::ExecRequest {
-            program: "/bin/true".into(),
-            args: vec![],
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(5000),
-            streaming: false,
-        })
-        .expect_err("exec after idle timeout must fail");
+    let result = sandbox.exec(m80_proto::ExecRequest {
+        program: "/bin/true".into(),
+        args: vec![],
+        cwd: None,
+        env: None,
+        stdin: None,
+        timeout_ms: Some(5000),
+        streaming: false,
+    });
+    cleanup_running(sandbox);
+    let err = result.expect_err("exec after idle timeout must fail");
     assert!(
         matches!(err, FcError::IdleTimedOut),
         "expected FcError::IdleTimedOut, got: {err:?}"
@@ -347,6 +347,14 @@ fn wait_for_process_exit(pid: u32, timeout: Duration) {
         std::thread::sleep(Duration::from_millis(50));
     }
     panic!("process {pid} still running after {timeout:?}");
+}
+
+fn cleanup_running(sandbox: m80_firecracker::RunningSandbox) {
+    sandbox
+        .force_kill()
+        .expect("force kill expired sandbox for cleanup")
+        .delete()
+        .expect("delete expired sandbox run dir");
 }
 
 fn process_is_running(pid: u32, proc_path: &std::path::Path) -> bool {
