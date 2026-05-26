@@ -7,6 +7,7 @@ fn persistence_path_rejects_path_traversal_ids() {
     let bad_ids = [
         "",
         "../etc",
+        "../../etc",
         "/etc/passwd",
         "foo/bar",
         r"foo\bar",

@@ -4,6 +4,20 @@ mod common;
 
 use m80_image_manifest::KernelKind;
 
+/// `KernelKind::Stock` roundtrips through write -> read without loss.
+#[test]
+fn kernel_kind_stock_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = common::make_artifacts(dir.path());
+    m.kernel_kind = KernelKind::Stock;
+
+    let path = dir.path().join("stock.json");
+    m.write(&path).unwrap();
+
+    let m2 = m80_image_manifest::Manifest::read(&path).unwrap();
+    assert_eq!(m2.kernel_kind, KernelKind::Stock);
+}
+
 /// `KernelKind::Stripped` roundtrips through write → read without loss.
 #[test]
 fn kernel_kind_stripped_roundtrip() {

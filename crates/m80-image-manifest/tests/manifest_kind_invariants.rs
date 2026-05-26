@@ -43,6 +43,25 @@ fn ubuntu_with_source_rootfs_field_none_is_inconsistent() {
 }
 
 #[test]
+fn ubuntu_with_source_rootfs_sha256_none_is_inconsistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = common::make_artifacts(dir.path());
+    m.source_rootfs_sha256 = None;
+    let err = m.verify(dir.path()).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            ManifestError::InconsistentKind {
+                kind: ImageKind::Ubuntu,
+                field,
+                expected: "Some(_)",
+            } if field == "source_rootfs_sha256"
+        ),
+        "expected InconsistentKind(Ubuntu, source_rootfs_sha256, Some(_)), got {err:?}"
+    );
+}
+
+#[test]
 fn minimal_with_source_rootfs_set_is_inconsistent() {
     let dir = tempfile::tempdir().unwrap();
     let mut m = common::make_minimal_artifacts(dir.path());
@@ -58,6 +77,25 @@ fn minimal_with_source_rootfs_set_is_inconsistent() {
             } if field == "source_rootfs_image"
         ),
         "expected InconsistentKind(Minimal, source_rootfs_image, None), got {err:?}"
+    );
+}
+
+#[test]
+fn minimal_with_source_rootfs_sha256_set_is_inconsistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = common::make_minimal_artifacts(dir.path());
+    m.source_rootfs_sha256 = Some("aa".repeat(32));
+    let err = m.verify(dir.path()).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            ManifestError::InconsistentKind {
+                kind: ImageKind::Minimal,
+                field,
+                expected: "None",
+            } if field == "source_rootfs_sha256"
+        ),
+        "expected InconsistentKind(Minimal, source_rootfs_sha256, None), got {err:?}"
     );
 }
 

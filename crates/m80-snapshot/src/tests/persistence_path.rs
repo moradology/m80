@@ -25,8 +25,8 @@ fn exact_output_matches_documented_template() {
     );
 }
 
-/// Pure path construction — no I/O, no validation. Exotic IDs pass through
-/// unchanged (the caller is responsible for sane inputs).
+/// Pure path construction performs no I/O against the store root. Identifier
+/// validation still runs before any path joins.
 #[test]
 fn no_io_performed_on_nonexistent_root() {
     let result =

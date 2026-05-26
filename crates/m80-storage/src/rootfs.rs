@@ -387,6 +387,14 @@ struct TemplateLock {
 
 impl TemplateLock {
     fn acquire(path: &Path) -> Result<Self, StorageError> {
+        Self::acquire_with_policy(path, TEMPLATE_LOCK_TIMEOUT, Duration::from_millis(25))
+    }
+
+    fn acquire_with_policy(
+        path: &Path,
+        timeout: Duration,
+        retry_sleep: Duration,
+    ) -> Result<Self, StorageError> {
         let start = Instant::now();
         loop {
             match OpenOptions::new().write(true).create_new(true).open(path) {
@@ -396,7 +404,7 @@ impl TemplateLock {
                     })
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if start.elapsed() >= TEMPLATE_LOCK_TIMEOUT {
+                    if start.elapsed() >= timeout {
                         return Err(StorageError::OverlayTemplateCreateFailed {
                             path: path.to_path_buf(),
                             err: std::io::Error::new(
@@ -405,7 +413,7 @@ impl TemplateLock {
                             ),
                         });
                     }
-                    thread::sleep(Duration::from_millis(25));
+                    thread::sleep(retry_sleep);
                 }
                 Err(e) => {
                     return Err(StorageError::OverlayTemplateCreateFailed {
@@ -436,10 +444,13 @@ impl Drop for TemplateLock {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{
         expected_template_metadata, template_metadata_path, template_metadata_tmp_path,
-        write_template_metadata, BYTE_COPY_CLONE_ARGS, REFLINK_CLONE_ARGS,
+        write_template_metadata, TemplateLock, BYTE_COPY_CLONE_ARGS, REFLINK_CLONE_ARGS,
     };
+    use crate::StorageError;
 
     #[test]
     fn template_clone_commands_are_explicit() {
@@ -465,5 +476,61 @@ mod tests {
             !tmp.exists(),
             "metadata temp file must be renamed away after successful publish"
         );
+    }
+
+    fn expect_lock_error(result: Result<TemplateLock, StorageError>) -> StorageError {
+        match result {
+            Ok(lock) => {
+                drop(lock);
+                panic!("expected template lock acquisition to fail");
+            }
+            Err(err) => err,
+        }
+    }
+
+    #[test]
+    fn template_lock_timeout_returns_timed_out_error_without_removing_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir
+            .path()
+            .join(".rootfs-overlay-template-v1-4096.ext4.lock");
+        std::fs::write(&lock, b"held by another process").unwrap();
+
+        let err = expect_lock_error(TemplateLock::acquire_with_policy(
+            &lock,
+            Duration::from_millis(0),
+            Duration::from_millis(0),
+        ));
+
+        match err {
+            StorageError::OverlayTemplateCreateFailed { path, err } => {
+                assert_eq!(path, lock);
+                assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+            }
+            other => panic!("expected OverlayTemplateCreateFailed timeout, got {other:?}"),
+        }
+        assert!(
+            lock.exists(),
+            "timed-out waiter must not remove the holder's lock"
+        );
+    }
+
+    #[test]
+    fn template_lock_open_error_returns_original_io_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir
+            .path()
+            .join("missing-parent")
+            .join(".rootfs-overlay-template-v1-4096.ext4.lock");
+
+        let err = expect_lock_error(TemplateLock::acquire(&lock));
+
+        match err {
+            StorageError::OverlayTemplateCreateFailed { path, err } => {
+                assert_eq!(path, lock);
+                assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+            }
+            other => panic!("expected OverlayTemplateCreateFailed io error, got {other:?}"),
+        }
     }
 }

@@ -106,6 +106,10 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
         (1..=11).collect::<Vec<_>>(),
         "expected step numbers 1..=11 in order; got {observed:?}\nstderr:\n{stderr}"
     );
+    assert!(
+        stderr.contains("9. Compute sha256 of 4 artifacts"),
+        "Ubuntu dry-run must name the source-rootfs-inclusive sha256 step; stderr:\n{stderr}"
+    );
 
     // The output directory must not have been created.
     assert!(

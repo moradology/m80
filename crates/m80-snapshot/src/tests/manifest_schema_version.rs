@@ -23,6 +23,18 @@ fn wrong_schema_version_returns_unsupported() {
     );
 }
 
+#[test]
+fn malformed_json_returns_json_error_from_from_bytes() {
+    let err = SnapshotManifest::from_bytes(br#"{"schema_version":1,"artifacts":["#).unwrap_err();
+    let SchemaError::Json(json) = err else {
+        panic!("expected SchemaError::Json for malformed bytes, got {err:?}");
+    };
+    assert!(
+        json.is_eof() || json.is_syntax(),
+        "malformed JSON should surface as serde_json syntax/eof, got {json}"
+    );
+}
+
 /// Version 0 (predates v0.1 schema) is also rejected.
 #[test]
 fn version_zero_returns_unsupported() {
