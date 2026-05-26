@@ -56,9 +56,14 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-16hx7.7` + `m80-s3r28.2` — self-hosted CI workflow.** Wire the
+1. **`m80-16hx7.7` + `m80-s3r28.2` + `m80-16hx7.12` — self-hosted CI
+   workflow and battery convergence.** Wire the
    now-documented runner, cleanup, and JSON report into an operator-triggered
    privileged CI lane; close only after a verified self-hosted runner run.
+   Current state: the L1 self-hosted runner, substrate check, and real-KVM
+   `scripts/smoke.sh` path are proven green. The full ignored-test battery is
+   now the blocker; treat its JSON report as the source of truth for what to
+   fix next.
 2. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
    runtime improvement unless repeated real-KVM battery runs are too slow or
    too hand-wired to use without a reproducible cache.
@@ -72,6 +77,43 @@ real-host residue coverage. `m80-16hx7.6` now has a documented/validated JSON
 report schema for the wrapper output. `m80-16hx7.5` now adds per-test
 before/after leak diffs, reports newly leaked host state as `leak-check`, and
 has a live wrapper proof against the helper package's ignored reaper test.
+
+## Long-run order
+
+This is the working order when someone asks to keep pushing for a long stretch.
+Do not fan this into dozens of new leaves unless the report proves independent
+root causes.
+
+1. **Make the privileged battery converge.** Finish `m80-16hx7.7` /
+   `m80-s3r28.2` by driving the self-hosted workflow from "smoke green" to
+   "full report green or each remaining failure has a specific product/test
+   bead." Prefer fixing stale tests that contradict the current crate contract
+   over weakening the product. In particular, tests that assume root-capable
+   guest exec must either be rewritten around the documented non-root guestd
+   profile or moved into a dedicated root/probe harness with an explicit ignore
+   token.
+2. **Only then decide on artifact caching.** If the battery is green but reruns
+   are still slow or too hand-wired, claim `m80-16hx7.2`. If smoke's current
+   rebuild-on-stale-manifest path is sufficient, leave `.2` open as
+   operational polish rather than blocking v0.1.
+3. **Close cheap correctness/documentation P1 drift.** The next best no-KVM
+   wins are `m80-p4i52.1` and `m80-ij49d.{1,2,3}`: publish safety plus README
+   claims that disagree with code. These align with the "docs must always be
+   correct" rule and should be done before broad refactors.
+4. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
+   `m80-243wj.17`, and adjacent failure-path cleanup beads forward if the
+   real-KVM reports keep showing leaked processes, swallowed thread panics, or
+   missing preserved-run-dir evidence.
+5. **Improve production observability.** After the battery is trustworthy,
+   work `m80-9jfaz.2`, `m80-mrjqs.3`, and `m80-mrjqs.4` so future CI and
+   operator failures are diagnosable from structured events rather than local
+   archaeology.
+6. **Defer heavy refactors until the bar is green.** `m80-ezs0x.1` /
+   `m80-ezs0x.2` are real problems, but launch/exec refactors touch the most
+   failure-sensitive surface. Do them after the privileged battery gives a
+   reliable safety net.
+7. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
+   v0.1 gate. Resume it after smoke + full ignored battery are green.
 
 ## Deferred (not v0.1, no calendar)
 

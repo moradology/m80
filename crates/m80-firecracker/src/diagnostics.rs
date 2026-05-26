@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs;
 use std::io::Write as _;
 use std::os::unix::fs::OpenOptionsExt as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use m80_observability::{Diagnostics, ExitReason, Phase, PhaseOutcome, VmEvent};
@@ -160,15 +160,39 @@ pub(crate) fn record_failure_summary_best_effort(
     request_id: Option<&str>,
     error: &FcError,
 ) {
-    if let Err(write_err) = record_failure_summary(run_dir, vm_id, failed_phase, request_id, error)
+    let target = failure_summary_target_dir(run_dir, vm_id);
+    if let Err(write_err) = record_failure_summary(&target, vm_id, failed_phase, request_id, error)
     {
         tracing::warn!(
             vm_id,
-            path = %run_dir.join(FAILURE_SUMMARY_FILE_NAME).display(),
+            path = %target.join(FAILURE_SUMMARY_FILE_NAME).display(),
             error = %write_err,
             "failed to write launch failure summary"
         );
     }
+}
+
+fn failure_summary_target_dir(run_dir: &Path, vm_id: &str) -> PathBuf {
+    if run_dir.exists() {
+        return run_dir.to_path_buf();
+    }
+    let Some(run_root) = run_dir.parent() else {
+        return run_dir.to_path_buf();
+    };
+    let preserved_parent = run_root.join(".preserved");
+    let Ok(entries) = fs::read_dir(&preserved_parent) else {
+        return run_dir.to_path_buf();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(vm_id))
+        })
+        .max_by_key(|path| path.file_name().map(|name| name.to_os_string()))
+        .unwrap_or_else(|| run_dir.to_path_buf())
 }
 
 fn record_failure_summary(
@@ -480,6 +504,33 @@ mod tests {
                 .exists(),
             "temporary summary path must be renamed away"
         );
+    }
+
+    #[test]
+    fn failure_summary_best_effort_targets_preserved_run_dir_after_guard_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("api-sock-to-1234");
+        let preserved = dir.path().join(".preserved/123-api-sock-to-1234");
+        std::fs::create_dir_all(&preserved).unwrap();
+        let err = FcError::ApiSocketTimeout {
+            path: preserved.join("firecracker.sock"),
+            timeout: std::time::Duration::from_secs(5),
+        };
+
+        record_failure_summary_best_effort(
+            &run_dir,
+            "api-sock-to-1234",
+            "phase_10_open_uds",
+            None,
+            &err,
+        );
+
+        let text = std::fs::read_to_string(preserved.join(FAILURE_SUMMARY_FILE_NAME)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["vm_id"], "api-sock-to-1234");
+        assert_eq!(value["failed_phase"], "phase_10_open_uds");
+        assert_eq!(value["error_variant"], "ApiSocketTimeout");
+        assert!(!run_dir.join(FAILURE_SUMMARY_FILE_NAME).exists());
     }
 
     #[test]
