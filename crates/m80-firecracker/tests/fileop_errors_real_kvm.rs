@@ -3,10 +3,9 @@
 mod common;
 
 use std::cmp::Ordering;
-use std::io::{BufRead as _, BufReader, Write as _};
+use std::io::{BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 use m80_proto::GUEST_PORT_DEFAULT;
@@ -78,23 +77,7 @@ fn open_channel(run_dir: &Path, firecracker_bin: &Path, vm_id: &str) -> Channel 
 
 fn open_raw_stream(run_dir: &Path, firecracker_bin: &Path, vm_id: &str) -> BufReader<UnixStream> {
     let uds = vsock_uds(run_dir, firecracker_bin, vm_id);
-    let stream = UnixStream::connect(&uds).expect("connect raw vsock uds");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .expect("set read timeout");
-    stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
-        .expect("set write timeout");
-
-    let mut reader = BufReader::new(stream);
-    writeln!(reader.get_mut(), "CONNECT {GUEST_PORT_DEFAULT}").expect("write CONNECT");
-    let mut line = String::new();
-    reader.read_line(&mut line).expect("read CONNECT response");
-    assert!(
-        line.starts_with("OK "),
-        "unexpected vsock response: {line:?}"
-    );
-    reader
+    common::open_raw_vsock_stream_with_retry(&uds, GUEST_PORT_DEFAULT, "fileop error test")
 }
 
 fn encoded_body_len<T>(envelope: &Envelope<T>) -> usize

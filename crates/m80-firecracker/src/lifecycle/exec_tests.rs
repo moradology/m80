@@ -44,6 +44,16 @@ fn exec_open_retry_classifies_connection_refused_as_transient() {
 }
 
 #[test]
+fn exec_open_send_retry_budget_covers_guest_listener_settle_window() {
+    let budget_ms = EXEC_OPEN_SEND_RETRY_SLEEP.as_millis() * EXEC_OPEN_SEND_RETRIES as u128;
+
+    assert!(
+        budget_ms >= 5_000,
+        "exec open/send retry budget must cover delayed guest listener readiness"
+    );
+}
+
+#[test]
 fn exec_open_retry_does_not_retry_receive_style_timeouts() {
     let err = m80_vsock::VsockError::Io {
         path: std::path::PathBuf::new(),

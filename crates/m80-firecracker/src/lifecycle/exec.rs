@@ -25,7 +25,7 @@ use crate::lifecycle::monotonic_ns;
 use crate::runroot::unix_ms_now;
 use crate::types::{ExecChunk, PtyHostEvent, PtyOutputChunk, RunningSandbox};
 
-const EXEC_OPEN_SEND_RETRIES: usize = 25;
+const EXEC_OPEN_SEND_RETRIES: usize = 50;
 const EXEC_OPEN_SEND_RETRY_SLEEP: Duration = Duration::from_millis(100);
 const EXEC_BUFFER_LIMIT: usize = 1 << 20;
 const CANCEL_FORWARDER_POLL: Duration = Duration::from_millis(50);

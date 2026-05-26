@@ -8,8 +8,9 @@
 //! [`fake_discovery`], [`EnvRestore`], and [`env_lock`] are re-exported from
 //! `m80-test-helpers`.
 
-use std::io::{self, Write};
+use std::io::{self, BufRead as _, BufReader, Write};
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -234,6 +235,50 @@ pub(crate) fn open_vsock_channel_with_retry(
     }
 }
 
+#[allow(dead_code)]
+pub(crate) fn open_raw_vsock_stream_with_retry(
+    uds: &Path,
+    guest_port: u32,
+    context: &str,
+) -> BufReader<UnixStream> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match try_open_raw_vsock_stream(uds, guest_port) {
+            Ok(reader) => return reader,
+            Err(err) if is_transient_vsock_io_error(&err) => {
+                if Instant::now() >= deadline {
+                    panic!(
+                        "failed to open raw vsock stream for {context} before retry deadline: {err}"
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(err) => {
+                panic!("failed to open raw vsock stream for {context}: {err}");
+            }
+        }
+    }
+}
+
+fn try_open_raw_vsock_stream(uds: &Path, guest_port: u32) -> io::Result<BufReader<UnixStream>> {
+    let stream = UnixStream::connect(uds)?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+
+    let mut reader = BufReader::new(stream);
+    writeln!(reader.get_mut(), "CONNECT {guest_port}")?;
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    if line.starts_with("OK ") {
+        Ok(reader)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unexpected vsock response: {line:?}"),
+        ))
+    }
+}
+
 fn is_transient_vsock_open_error(err: &m80_vsock::VsockError) -> bool {
     match err {
         m80_vsock::VsockError::HandshakeFailed => true,
@@ -243,6 +288,17 @@ fn is_transient_vsock_open_error(err: &m80_vsock::VsockError) -> bool {
         ),
         _ => false,
     }
+}
+
+fn is_transient_vsock_io_error(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::BrokenPipe
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::NotConnected
+            | io::ErrorKind::UnexpectedEof
+    )
 }
 
 // ── RunDirDumpGuard ───────────────────────────────────────────────────────────
