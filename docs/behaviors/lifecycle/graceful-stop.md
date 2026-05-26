@@ -20,7 +20,8 @@ extraction, and let `StoppedSandbox::delete` remove it when the caller chooses.
 m80 v0.1 has no architecture-specific normal-stop split. Non-x86 hosts use the
 same guestd shutdown RPC plus Firecracker SIGKILL path as x86 hosts. The
 explicit force path is `RunningSandbox::force_kill`, which skips the guest RPC
-and SIGKILLs both the Firecracker and jailer pids immediately.
+and SIGKILLs the Firecracker pid plus the jailer pid when that pid is not the
+`0` no-live-jailer sentinel.
 
 ## Sigkill Escalation
 
@@ -56,4 +57,5 @@ run-root recovery.
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_normal_records_normal_stop`
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_force_records_force_kill`
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::forced_kill_ambiguous_blocks_release`
+- `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::kill_pid_best_effort_ignores_no_live_jailer_sentinel`
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete`

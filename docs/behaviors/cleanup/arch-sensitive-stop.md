@@ -11,7 +11,8 @@ stop is architecture-independent:
 4. SIGKILL the Firecracker pid after the RPC returns or fails
 
 `RunningSandbox::force_kill` is the explicit host-only path. It skips the guest
-RPC and SIGKILLs both the Firecracker and jailer pids.
+RPC and SIGKILLs the Firecracker pid plus the jailer pid when that pid is not
+the `0` no-live-jailer sentinel.
 
 This intentionally differs from the older predecessor arch-sensitive strategy. The
 behavior that matters for m80 is not "x86 graceful vs aarch64 unsupported"; it

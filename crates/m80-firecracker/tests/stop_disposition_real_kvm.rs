@@ -170,10 +170,18 @@ fn forced_kill_ambiguous_blocks_release() {
 
     drop(fault);
     kill_pid_best_effort(firecracker_pid);
-    if jailer_pid != firecracker_pid {
+    if jailer_pid != 0 && jailer_pid != firecracker_pid {
         kill_pid_best_effort(jailer_pid);
     }
-    let _ = std::fs::remove_dir_all(&run_dir);
+    let _ = std::fs::remove_file(run_dir.join(m80_firecracker::OWNERSHIP_LOCK));
+    backend
+        .recover_stale_run_root(true)
+        .expect("recover ambiguous force-kill residue");
+    assert!(
+        !run_dir.exists(),
+        "ambiguous force-kill harness cleanup must remove run-dir: {}",
+        run_dir.display()
+    );
 
     assert!(
         matches!(err, FcError::KillFailed { ref source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied),
@@ -294,6 +302,9 @@ fn assert_no_mountinfo_references(path: &Path) {
 }
 
 fn kill_pid_best_effort(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     let _ = nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(pid as i32),
         nix::sys::signal::Signal::SIGKILL,
@@ -305,6 +316,11 @@ fn kill_pid_best_effort(pid: u32) {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+#[test]
+fn kill_pid_best_effort_ignores_no_live_jailer_sentinel() {
+    kill_pid_best_effort(0);
 }
 
 fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str) {
