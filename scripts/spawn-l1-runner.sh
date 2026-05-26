@@ -185,14 +185,20 @@ EOF
 #cloud-config
 package_update: true
 packages:
+  - build-essential
+  - busybox-static
   - ca-certificates
   - curl
   - e2fsprogs
+  - git
   - iproute2
   - jq
   - openssh-server
+  - pkg-config
   - procps
   - python3
+  - ripgrep
+  - squashfs-tools
   - sudo
   - tar
   - util-linux
@@ -243,6 +249,8 @@ runcmd:
   - [ bash, -lc, 'modprobe vhost_vsock || true' ]
   - [ bash, -lc, 'modprobe tun || true' ]
   - [ bash, -lc, '/usr/local/sbin/install-firecracker-train.sh $FIRECRACKER_VERSION' ]
+  - [ bash, -lc, 'sudo -u $SSH_USER -H bash -lc "command -v cargo >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"' ]
+  - [ bash, -lc, 'ln -sf /home/$SSH_USER/.cargo/bin/cargo /usr/local/bin/cargo; ln -sf /home/$SSH_USER/.cargo/bin/rustc /usr/local/bin/rustc; ln -sf /home/$SSH_USER/.cargo/bin/rustup /usr/local/bin/rustup' ]
   - [ bash, -lc, 'test -e /dev/kvm && chmod 0660 /dev/kvm || true' ]
   - [ bash, -lc, 'test -e /dev/net/tun && chmod 0666 /dev/net/tun || true' ]
 EOF
@@ -342,6 +350,7 @@ wait_domain() {
     ssh_base "$ip" 'test -r /dev/kvm && test -w /dev/kvm'
     ssh_base "$ip" "grep -qw svm /proc/cpuinfo || grep -qw vmx /proc/cpuinfo"
     ssh_base "$ip" 'if test -r /sys/module/kvm_amd/parameters/nested; then grep -Eq "^(0|N|n)$" /sys/module/kvm_amd/parameters/nested; elif test -r /sys/module/kvm_intel/parameters/nested; then grep -Eq "^(0|N|n)$" /sys/module/kvm_intel/parameters/nested; else true; fi'
+    ssh_base "$ip" 'command -v cargo && command -v rustc && command -v rg && command -v unsquashfs'
     ssh_base "$ip" 'getent passwd 3000 >/dev/null && getent group 3000 >/dev/null'
     ssh_base "$ip" 'test -d /sys/module/nf_conntrack || grep -qw nf_conntrack /proc/modules'
     ssh_base "$ip" 'test -d /sys/module/br_netfilter || grep -qw br_netfilter /proc/modules'

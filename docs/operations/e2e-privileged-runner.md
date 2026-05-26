@@ -49,6 +49,10 @@ The setup script installs this Ubuntu package set when `--no-apt` is not used:
 `virtinst`, `cloud-image-utils`, `dnsmasq-base`, `bridge-utils`, `iproute2`,
 `iptables`, `ipset`, `linux-headers-generic`, and `build-essential`.
 
+Each spawned L1 installs the runtime/build tools used by the privileged
+workflow: stable Rust via rustup, `build-essential`, `busybox-static`,
+`ripgrep`, and `squashfs-tools`.
+
 For a read-only check:
 
 ```sh

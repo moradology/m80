@@ -28,6 +28,8 @@ All notable changes to m80 are documented here. Format roughly follows
   before real-KVM smoke starts.
 - Hardened L1 runner provisioning so the L1 exposes `/dev/kvm` to m80 while
   keeping the L1 KVM module's nested mode disabled for Firecracker guests.
+- Added Rust and smoke build-tool checks to the privileged workflow and L1
+  runner provisioning.
 
 ### Added — stripped-kernel PVH direct boot note
 
