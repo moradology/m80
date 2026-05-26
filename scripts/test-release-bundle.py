@@ -1374,9 +1374,11 @@ class ReleaseBundleTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("RUSTFLAGS: \"\"", workflow)
-        self.assertIn("rustup toolchain install 1.85 --profile minimal", workflow)
-        self.assertIn("cargo +1.85 install cargo-audit --version 0.22.1 --locked", workflow)
-        self.assertIn("cargo +1.85 audit", workflow)
+        self.assertIn("rustup toolchain install 1.88 --profile minimal", workflow)
+        self.assertIn("cargo +1.88 install cargo-deny --version 0.19.4 --locked", workflow)
+        self.assertIn("cargo +1.88 install cargo-audit --version 0.22.1 --locked", workflow)
+        self.assertIn("cargo +1.88 deny check advisories bans licenses sources", workflow)
+        self.assertIn("cargo +1.88 audit", workflow)
         self.assertNotIn("rustsec/audit-check", workflow)
 
     def test_release_workflow_publishes_and_verifies_proof_assets(self) -> None:
