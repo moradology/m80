@@ -1,6 +1,6 @@
 # Privileged E2E Workflow
 
-Beads: `m80-16hx7.7`, `m80-s3r28.2`, `m80-25mdp`
+Beads: `m80-16hx7.7`, `m80-s3r28.2`, `m80-25mdp`, `broker-jo7.2`
 
 The privileged E2E workflow is the self-hosted CI lane for real-KVM behavior.
 It targets runners labeled `self-hosted` plus the configured runner label
@@ -14,6 +14,13 @@ Contract:
   artifact paths before the battery runs;
 - `workflow_dispatch` accepts `runner_label`, validates it as
   `[A-Za-z0-9_.-]+`, and records the selected label in substrate diagnostics;
+- `workflow_dispatch` accepts optional `pull_number` and `target_sha` inputs
+  for disposable broker runs. `target_sha` must be a full 40-character hex SHA,
+  `pull_number` must be a positive integer when present, and the workflow checks
+  out the exact requested SHA after fetching either the public PR ref or the
+  direct SHA from the repository remote;
+- substrate diagnostics record the requested pull number, requested target SHA,
+  and actual checked-out SHA before smoke or ignored tests run;
 - `scripts/smoke.sh` runs before ignored tests unless an operator disables it
   for wrapper debugging;
 - `workflow_dispatch` has an `external_network` input that selects

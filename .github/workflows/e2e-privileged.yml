@@ -31,6 +31,14 @@ on:
         description: Self-hosted runner label to target; use a unique ephemeral label for disposable L1 runs
         required: false
         default: kvm
+      pull_number:
+        description: Pull request number whose head ref should be fetched before target_sha checkout
+        required: false
+        default: ""
+      target_sha:
+        description: Exact 40-character commit SHA to check out after fetching the public repository or PR ref
+        required: false
+        default: ""
   schedule:
     - cron: "17 4 * * 1"
   pull_request:
@@ -49,6 +57,8 @@ env:
   M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
   M80_E2E_EXTERNAL_NETWORK: ${{ inputs.external_network || 'false' }}
   M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+  M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}
+  M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}
   M80_E2E_RUN_ROOT: ${{ vars.M80_E2E_RUN_ROOT || '/var/lib/m80-r' }}
   M80_RUN_ROOT: ${{ vars.M80_RUN_ROOT || '/var/lib/m80-run' }}
   M80_IMAGE_KIND: ${{ vars.M80_IMAGE_KIND || 'minimal' }}
@@ -80,11 +90,35 @@ jobs:
           set -euo pipefail
           git init "$GITHUB_WORKSPACE"
           git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
-          git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
-            '+refs/heads/*:refs/remotes/origin/*' \
-            '+refs/tags/*:refs/tags/*' \
-            "+$GITHUB_REF:refs/remotes/origin/event"
-          git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"
+          if [[ -n "$M80_E2E_TARGET_SHA" ]]; then
+            if ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "target_sha must be a full 40-character hex SHA, got $M80_E2E_TARGET_SHA" >&2
+              exit 2
+            fi
+            target_sha="${M80_E2E_TARGET_SHA,,}"
+            if [[ -n "$M80_E2E_PULL_NUMBER" ]]; then
+              if ! [[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+                echo "pull_number must be a positive integer when target_sha is set, got $M80_E2E_PULL_NUMBER" >&2
+                exit 2
+              fi
+              git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
+                "+refs/pull/$M80_E2E_PULL_NUMBER/head:refs/remotes/origin/pr/$M80_E2E_PULL_NUMBER"
+            else
+              git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin "$target_sha"
+            fi
+            git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"
+            checked_out_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+            if [[ "$checked_out_sha" != "$target_sha" ]]; then
+              echo "checked out $checked_out_sha but target_sha requested $target_sha" >&2
+              exit 2
+            fi
+          else
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
+              '+refs/heads/*:refs/remotes/origin/*' \
+              '+refs/tags/*:refs/tags/*' \
+              "+$GITHUB_REF:refs/remotes/origin/event"
+            git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"
+          fi
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Validate operator inputs
@@ -112,6 +146,14 @@ jobs:
           fi
           if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]; then
             echo "runner_label must match [A-Za-z0-9_.-]+, got $M80_E2E_RUNNER_LABEL" >&2
+            exit 2
+          fi
+          if [[ -n "$M80_E2E_TARGET_SHA" ]] && ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "target_sha must be a full 40-character hex SHA, got $M80_E2E_TARGET_SHA" >&2
+            exit 2
+          fi
+          if [[ -n "$M80_E2E_PULL_NUMBER" ]] && ! [[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "pull_number must be a positive integer, got $M80_E2E_PULL_NUMBER" >&2
             exit 2
           fi
 
@@ -145,6 +187,10 @@ jobs:
             test -f "$M80_FIRECRACKER_SECCOMP_FILTER"
             printf 'M80_E2E_RUN_ROOT=%s\n' "$M80_E2E_RUN_ROOT"
             printf 'M80_E2E_RUNNER_LABEL=%s\n' "$M80_E2E_RUNNER_LABEL"
+            printf 'M80_E2E_PULL_NUMBER=%s\n' "$M80_E2E_PULL_NUMBER"
+            printf 'M80_E2E_TARGET_SHA=%s\n' "$M80_E2E_TARGET_SHA"
+            checked_out_sha="$(git rev-parse HEAD)"
+            printf 'M80_E2E_CHECKED_OUT_SHA=%s\n' "$checked_out_sha"
             printf 'M80_E2E_EXTERNAL_NETWORK=%s\n' "$M80_E2E_EXTERNAL_NETWORK"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
             printf 'M80_IMAGE_KIND=%s\n' "$M80_IMAGE_KIND"

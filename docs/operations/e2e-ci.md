@@ -45,6 +45,12 @@ Manual inputs:
 - `runner_label`: self-hosted runner label to target; default `kvm`. For a
   disposable L1 run, set this to the unique label used when registering the
   ephemeral runner, for example `m80-e2e-20260526T190000Z`.
+- `pull_number`: optional pull request number. When `target_sha` is set, the
+  workflow fetches `refs/pull/<pull_number>/head` before checking out the exact
+  target SHA. This is the preferred path for proving a fork PR commit.
+- `target_sha`: optional exact 40-character commit SHA to check out. Invalid
+  SHAs fail before tests run. If `pull_number` is omitted, the workflow tries a
+  direct public fetch of that SHA from the repository remote.
 
 Repository or organization variables can override:
 
@@ -86,6 +92,8 @@ scripts/register-l1-github-runner.sh \
 gh workflow run e2e-privileged.yml \
   -r main \
   -f runner_label="$label" \
+  -f pull_number=123 \
+  -f target_sha=0123456789abcdef0123456789abcdef01234567 \
   -f external_network=true \
   -f run_smoke=true \
   -f smoke_mode=full \

@@ -153,6 +153,26 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must expose runner_label input", result.stderr)
 
+    def test_privileged_e2e_requires_target_sha_checkout_contract(self) -> None:
+        workflow = privileged_e2e_workflow()
+        cases = [
+            ("target_sha:", "must expose target_sha input"),
+            ("M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}", "must pass through target_sha input"),
+            ('[[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]', "must validate target_sha"),
+            ("refs/pull/$M80_E2E_PULL_NUMBER/head", "must fetch PR head"),
+            ('git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"', "must check out the requested target_sha"),
+            ('checked_out_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"', "must verify the checked-out commit"),
+            ('checked_out_sha="$(git rev-parse HEAD)"', "must capture the checked-out SHA in diagnostics"),
+            ("printf 'M80_E2E_CHECKED_OUT_SHA=%s\\n' \"$checked_out_sha\"", "must record the checked-out SHA"),
+        ]
+        for token, expected_error in cases:
+            with self.subTest(token=token):
+                with workflow_dir("e2e-privileged.yml", workflow.replace(token, "")) as root:
+                    result = run_lint(root)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_error, result.stderr)
+
     def test_workflow_scope_policy_rejects_duplicate_entries(self) -> None:
         with workflow_dir(
             "ci.yml",
@@ -1978,12 +1998,22 @@ on:
         description: Self-hosted runner label to target
         required: false
         default: kvm
+      pull_number:
+        description: Pull request number whose head ref should be fetched before target_sha checkout
+        required: false
+        default: ""
+      target_sha:
+        description: Exact commit SHA to check out after fetching the public repository or PR ref
+        required: false
+        default: ""
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 permissions:
   contents: read
 env:
   M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+  M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}
+  M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}
 jobs:
   privileged-e2e:
     runs-on:
@@ -1991,16 +2021,45 @@ jobs:
       - ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
     timeout-minutes: 120
     steps:
+      - name: Checkout public repository
+        run: |
+          set -euo pipefail
+          if [[ -n "$M80_E2E_TARGET_SHA" ]]; then
+            if ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              exit 2
+            fi
+            target_sha="${M80_E2E_TARGET_SHA,,}"
+            if [[ -n "$M80_E2E_PULL_NUMBER" ]]; then
+              if ! [[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+                exit 2
+              fi
+              git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
+                "+refs/pull/$M80_E2E_PULL_NUMBER/head:refs/remotes/origin/pr/$M80_E2E_PULL_NUMBER"
+            else
+              git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin "$target_sha"
+            fi
+            git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"
+            checked_out_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+          fi
       - name: Validate operator inputs
         run: |
           set -euo pipefail
           if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]; then
             exit 2
           fi
+          if [[ -n "$M80_E2E_TARGET_SHA" ]] && ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            exit 2
+          fi
+          if [[ -n "$M80_E2E_PULL_NUMBER" ]] && ! [[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            exit 2
+          fi
       - name: Check KVM runner substrate
         run: |
           set -euo pipefail
           printf 'M80_E2E_RUNNER_LABEL=%s\\n' "$M80_E2E_RUNNER_LABEL"
+          printf 'M80_E2E_TARGET_SHA=%s\\n' "$M80_E2E_TARGET_SHA"
+          checked_out_sha="$(git rev-parse HEAD)"
+          printf 'M80_E2E_CHECKED_OUT_SHA=%s\\n' "$checked_out_sha"
 """
 
 

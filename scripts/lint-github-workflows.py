@@ -739,15 +739,39 @@ def lint_privileged_e2e_workflow(path: Path, text: str, lines: list[str]) -> lis
     errors: list[str] = []
     required_tokens = {
         "runner_label:": "privileged E2E workflow must expose runner_label input",
+        "pull_number:": "privileged E2E workflow must expose pull_number input for public PR-ref fetch",
+        "target_sha:": "privileged E2E workflow must expose target_sha input",
         "M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
             "privileged E2E workflow must default runner label through inputs/vars/kvm",
+        "M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}":
+            "privileged E2E workflow must pass through pull_number input",
+        "M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}":
+            "privileged E2E workflow must pass through target_sha input",
         "- self-hosted": "privileged E2E workflow must require the self-hosted label",
         "- ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
             "privileged E2E workflow must target the configured runner label",
         '[[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]':
             "privileged E2E workflow must validate runner_label syntax before running tests",
+        '[[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]':
+            "privileged E2E workflow must validate target_sha as a full SHA before checkout/tests",
+        '[[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]':
+            "privileged E2E workflow must validate pull_number syntax before using PR refs",
+        "refs/pull/$M80_E2E_PULL_NUMBER/head":
+            "privileged E2E workflow must fetch PR head through a validated numeric pull ref",
+        'git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin "$target_sha"':
+            "privileged E2E workflow must support direct exact-SHA fetch",
+        'git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"':
+            "privileged E2E workflow must check out the requested target_sha",
+        'checked_out_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"':
+            "privileged E2E workflow must verify the checked-out commit after target_sha checkout",
         "printf 'M80_E2E_RUNNER_LABEL=%s\\n' \"$M80_E2E_RUNNER_LABEL\"":
             "privileged E2E workflow must record the runner label in substrate diagnostics",
+        "printf 'M80_E2E_TARGET_SHA=%s\\n' \"$M80_E2E_TARGET_SHA\"":
+            "privileged E2E workflow must record the requested target SHA in diagnostics",
+        'checked_out_sha="$(git rev-parse HEAD)"':
+            "privileged E2E workflow must capture the checked-out SHA in diagnostics",
+        "printf 'M80_E2E_CHECKED_OUT_SHA=%s\\n' \"$checked_out_sha\"":
+            "privileged E2E workflow must record the checked-out SHA in diagnostics",
     }
     for token, message in required_tokens.items():
         if token not in text:
