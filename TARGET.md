@@ -56,21 +56,15 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
-   runtime improvement unless repeated real-KVM battery runs are too slow or
-   too hand-wired to use without a reproducible cache.
-2. **`m80-vpw49.{1,2,6,8}` — no-KVM coverage for recently touched behavior.**
+1. **`m80-vpw49.{1,2,6,8}` — no-KVM coverage for recently touched behavior.**
    These are the best next long-run lane because they harden launch,
    jailer/capability, storage, and outbound-network behavior before the next
    broad refactor.
-3. **`m80-9jfaz.2`, then `m80-mrjqs.{3,4}` — production observability.** Add
+2. **`m80-9jfaz.2`, then `m80-mrjqs.{3,4}` — production observability.** Add
    VM correlation to existing events before adding larger metrics and
    Firecracker `/logger` capture, so failures from future long runs are easier
    to diagnose.
-4. **`m80-16hx7.2` — artifact cache only if rerun friction becomes material.**
-   The privileged battery is already green; claim this when repeated reruns are
-   slow enough that cache work clearly buys back operator time.
-5. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
+3. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
 
@@ -95,6 +89,11 @@ with `pass=111 fail=0 skip=33 total=144`.
 `dcbea1b0`: the workspace is non-publishable, manifest metadata proves all 24
 packages have publishing disabled, and the firecracker/cgroup/CLI README drift
 found in those leaves is corrected with CLI parser regressions.
+`m80-16hx7` is closed as of 2026-05-26: runner setup, taxonomy/selective
+invocation, pre-test reaping, leak checks, JSON reporting, local-dev docs, and
+self-hosted CI are in place. `m80-16hx7.2` is intentionally deferred as artifact
+cache polish because the harness is usable without it; do not treat that cache
+as part of the v0.1 ship bar unless rerun friction becomes material.
 
 ## Long-run order
 
@@ -106,27 +105,23 @@ root causes.
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
    causes.
-2. **Decide on artifact caching.** If the battery is green but reruns
-   are still slow or too hand-wired, claim `m80-16hx7.2`. If smoke's current
-   rebuild-on-stale-manifest path is sufficient, leave `.2` open as
-   operational polish rather than blocking v0.1.
-3. **Close no-KVM coverage gaps before refactors.** Start with
+2. **Close no-KVM coverage gaps before refactors.** Start with
    `m80-vpw49.1` because it covers recently touched m80-firecracker behavior
    without KVM, then do `m80-vpw49.2`, `m80-vpw49.6`, and `m80-vpw49.8` in that
    order unless live source review shows a bead is stale or sweep-ineligible.
-4. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
+3. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
    `m80-243wj.17`, and adjacent failure-path cleanup beads forward if the
    real-KVM reports keep showing leaked processes, swallowed thread panics, or
    missing preserved-run-dir evidence.
-5. **Improve production observability.** Work `m80-9jfaz.2` first because it is
+4. **Improve production observability.** Work `m80-9jfaz.2` first because it is
    small and improves correlation in existing logs. Then work `m80-mrjqs.3` and
    `m80-mrjqs.4`, which are larger cross-crate changes.
-6. **Defer heavy refactors until the bar is green.** `m80-ezs0x.1` /
+5. **Defer heavy refactors until the coverage lane lands.** `m80-ezs0x.1` /
    `m80-ezs0x.2` are real problems, but launch/exec refactors touch the most
    failure-sensitive surface. Do them after the no-KVM coverage and
    observability lanes give a better safety net, and attach fresh real-KVM
    smoke evidence to the refactor commit.
-7. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
+6. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
    v0.1 gate. Resume it after smoke + full ignored battery are green.
 
 ## Deferred (not v0.1, no calendar)
@@ -137,6 +132,9 @@ Not abandoned — just not blocking the v0.1 bar.
   Important for the multi-tenant scale story but bench targets aren't ship
   gates; once smoke + battery are green, perf hardening continues against
   measured baselines.
+- **`m80-16hx7.2` — artifact build/cache.** Useful if repeated privileged
+  reruns become too slow, but explicitly not part of the v0.1 bar now that the
+  runner/reporting path is proven without it.
 - **`m80-g0v8` L11 (malicious-runner) and L12 (malicious-guestd).** Defense-
   in-depth security verification. Real value but the existing isolation
   claim from FC + the jailer + m80's preflight is sufficient for v0.1; the
