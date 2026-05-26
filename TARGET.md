@@ -56,14 +56,17 @@ what isn't. Don't add nice-to-haves before the bar is met.
 
 In priority order. Update freely as work lands.
 
-1. **`m80-vpw49.8` — no-KVM coverage for recently touched outbound-network behavior.**
-   This is the best next long-run lane because it hardens outbound-network
-   behavior before the next broad refactor. `m80-vpw49.1`, `.2`, and `.6` are
-   already closed.
-2. **`m80-9jfaz.2`, then `m80-mrjqs.{3,4}` — production observability.** Add
-   VM correlation to existing events before adding larger metrics and
-   Firecracker `/logger` capture, so failures from future long runs are easier
-   to diagnose.
+1. **`m80-vpw49.8` — outbound-network isolation coverage, pending KVM proof.**
+   Candidate commit `fe4fa943` scopes OutboundNat FORWARD entry rules by the
+   routed m80 bridge plus `--physdev-in <host_veth>` and adds no-KVM tests/docs.
+   Do not close until a self-hosted KVM run proves the egress peer/ICMP tests.
+   Local proof so far: `cargo fmt --all -- --check`,
+   `cargo test -p m80-net-outbound`, `git diff --check`, and
+   `iptables -m physdev -h`.
+2. **`m80-9jfaz.2`, then `m80-mrjqs.3` — production observability.** Add VM
+   correlation to existing events before adding the larger metrics surface, so
+   failures from future long runs are easier to diagnose. `m80-mrjqs.4`
+   (`/logger` capture) is already implemented and closed.
 3. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
@@ -106,6 +109,10 @@ scratch tests prove stale sidecar and symlink-image behavior, and absorbed
 snapshot/image leaves now cover malformed snapshot bytes, parent traversal
 rejection, source-rootfs sha256 half-None cases, Ubuntu dry-run sha256 labeling,
 and `KernelKind::Stock` manifest round-trip.
+`m80-mrjqs.4` is closed as already satisfied by current source: the client
+exposes `put_logger`, launch configures Firecracker's native logger before
+metrics, `docs/behaviors/diagnostics/fc-native-logger.md` records the contract,
+and focused logger tests pass.
 
 ## Long-run order
 
@@ -116,17 +123,19 @@ root causes.
 1. **Keep the privileged battery green.** The self-hosted workflow is now the
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
-   causes.
-2. **Close no-KVM coverage gaps before refactors.** Continue with
-   `m80-vpw49.8` unless live source review shows the bead is stale or
-   sweep-ineligible.
-3. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
-   `m80-243wj.17`, and adjacent failure-path cleanup beads forward if the
-   real-KVM reports keep showing leaked processes, swallowed thread panics, or
-   missing preserved-run-dir evidence.
-4. **Improve production observability.** Work `m80-9jfaz.2` first because it is
-   small and improves correlation in existing logs. Then work `m80-mrjqs.3` and
-   `m80-mrjqs.4`, which are larger cross-crate changes.
+   causes. Current blocker: GitHub returned HTTP 500 for `workflow_dispatch`
+   attempts after `fe4fa943`; retry before closing `m80-vpw49.8`.
+2. **Close the active network proof boundary.** `m80-vpw49.8` is the only
+   in-progress bead. If the KVM run is green, close it with the run URL/report
+   path. If it fails, fix only the report-proven rule/topology issue.
+3. **Do the observability batch.** Work `m80-9jfaz.2` first because it is small
+   and improves correlation in existing logs. Then work `m80-mrjqs.3` to expose
+   the production metrics surface. Treat `m80-f20y0.1` as strategic context, not
+   a code leaf, until the external consumer integration has a concrete m80 gap.
+4. **Harden failure visibility and cleanup if E2E reports regress.** Pull
+   `m80-wok08.3`, `m80-243wj.17`, and adjacent failure-path cleanup beads
+   forward only when the real-KVM reports show leaked processes, swallowed
+   thread panics, or missing preserved-run-dir evidence.
 5. **Defer heavy refactors until the coverage lane lands.** `m80-ezs0x.1` /
    `m80-ezs0x.2` are real problems, but launch/exec refactors touch the most
    failure-sensitive surface. Do them after the no-KVM coverage and
