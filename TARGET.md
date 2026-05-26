@@ -59,14 +59,20 @@ In priority order. Update freely as work lands.
 1. **`m80-16hx7.2` — artifact build/cache, conditional.** Keep this as a
    runtime improvement unless repeated real-KVM battery runs are too slow or
    too hand-wired to use without a reproducible cache.
-2. **`m80-p4i52.1` + `m80-ij49d.{1,2,3}` — publish safety and README drift.**
-   These are the next no-KVM P1 correctness leaves. Verify each bead against
-   current source before editing; some docs-drift findings may already be stale
-   after recent cleanup commits.
-3. **Failure-path cleanup and observability, report-driven.** Pull
-   `m80-wok08.3`, `m80-243wj.17`, and adjacent cleanup/visibility leaves forward
-   only when privileged reports, operator debugging, or code review expose a
-   concrete failure path.
+2. **`m80-vpw49.{1,2,6,8}` — no-KVM coverage for recently touched behavior.**
+   These are the best next long-run lane because they harden launch,
+   jailer/capability, storage, and outbound-network behavior before the next
+   broad refactor.
+3. **`m80-9jfaz.2`, then `m80-mrjqs.{3,4}` — production observability.** Add
+   VM correlation to existing events before adding larger metrics and
+   Firecracker `/logger` capture, so failures from future long runs are easier
+   to diagnose.
+4. **`m80-16hx7.2` — artifact cache only if rerun friction becomes material.**
+   The privileged battery is already green; claim this when repeated reruns are
+   slow enough that cache work clearly buys back operator time.
+5. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
+   These are real problems, but `launch.rs` and exec/lifecycle refactors touch
+   the most failure-sensitive paths and require real-KVM smoke evidence.
 
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
 produced the nested-KVM public-install smoke artifact for `v0.2.20`.
@@ -85,6 +91,10 @@ ignored privileged battery, report validation, and artifact upload. Validated
 report:
 `/tank/tmp/m80-e2e-gh-run-26443657120/m80-e2e-privileged-26443657120-1/m80-e2e-report.json`
 with `pass=111 fail=0 skip=33 total=144`.
+`m80-p4i52.1` and `m80-ij49d.{1,2,3}` are closed as of 2026-05-26 by
+`dcbea1b0`: the workspace is non-publishable, manifest metadata proves all 24
+packages have publishing disabled, and the firecracker/cgroup/CLI README drift
+found in those leaves is corrected with CLI parser regressions.
 
 ## Long-run order
 
@@ -100,22 +110,22 @@ root causes.
    are still slow or too hand-wired, claim `m80-16hx7.2`. If smoke's current
    rebuild-on-stale-manifest path is sufficient, leave `.2` open as
    operational polish rather than blocking v0.1.
-3. **Close cheap correctness/documentation P1 drift.** The next best no-KVM
-   wins are `m80-p4i52.1` and `m80-ij49d.{1,2,3}`: publish safety plus README
-   claims that disagree with code. These align with the "docs must always be
-   correct" rule and should be done before broad refactors.
+3. **Close no-KVM coverage gaps before refactors.** Start with
+   `m80-vpw49.1` because it covers recently touched m80-firecracker behavior
+   without KVM, then do `m80-vpw49.2`, `m80-vpw49.6`, and `m80-vpw49.8` in that
+   order unless live source review shows a bead is stale or sweep-ineligible.
 4. **Harden failure visibility and cleanup.** Pull `m80-wok08.3`,
    `m80-243wj.17`, and adjacent failure-path cleanup beads forward if the
    real-KVM reports keep showing leaked processes, swallowed thread panics, or
    missing preserved-run-dir evidence.
-5. **Improve production observability.** After the battery is trustworthy,
-   work `m80-9jfaz.2`, `m80-mrjqs.3`, and `m80-mrjqs.4` so future CI and
-   operator failures are diagnosable from structured events rather than local
-   archaeology.
+5. **Improve production observability.** Work `m80-9jfaz.2` first because it is
+   small and improves correlation in existing logs. Then work `m80-mrjqs.3` and
+   `m80-mrjqs.4`, which are larger cross-crate changes.
 6. **Defer heavy refactors until the bar is green.** `m80-ezs0x.1` /
    `m80-ezs0x.2` are real problems, but launch/exec refactors touch the most
-   failure-sensitive surface. Do them after the privileged battery gives a
-   reliable safety net.
+   failure-sensitive surface. Do them after the no-KVM coverage and
+   observability lanes give a better safety net, and attach fresh real-KVM
+   smoke evidence to the refactor commit.
 7. **Perf stays secondary.** `m80-jp6ik` remains valuable, but it is not the
    v0.1 gate. Resume it after smoke + full ignored battery are green.
 
