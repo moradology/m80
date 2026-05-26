@@ -12,7 +12,7 @@ from collections import Counter
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -31,6 +31,8 @@ ENVIRONMENT_FIELDS = {
     "sudo_available",
     "kvm_available",
     "artifacts_available",
+    "firecracker_seccomp_filter_available",
+    "host_binaries_manifest_available",
     "jailer_harden_available",
     "net_helper_available",
     "iproute2_available",
@@ -45,7 +47,15 @@ ENVIRONMENT_FIELDS = {
     "minimal_artifacts_available",
     "ubuntu_artifacts_available",
 }
-ARTIFACT_FIELDS = {"kernel", "rootfs", "jailer_harden", "net_helper"}
+ARTIFACT_FIELDS = {
+    "artifact_dir",
+    "kernel",
+    "rootfs",
+    "firecracker_seccomp_filter",
+    "host_binaries_manifest",
+    "jailer_harden",
+    "net_helper",
+}
 SUMMARY_FIELDS = {"passed", "failed", "skipped", "listed", "total"}
 RESULT_FIELDS = {
     "status",

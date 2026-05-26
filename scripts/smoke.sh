@@ -26,10 +26,16 @@
 #
 # Knobs (env vars):
 #   M80_RUN_ROOT              (default /var/lib/m80-run; do NOT use /tmp — nodev)
+#   M80_ARTIFACT_DIR          (default: directory containing the selected rootfs)
 #   FIRECRACKER_BIN           (default /opt/firecracker/bin/firecracker)
+#   M80_FIRECRACKER_SECCOMP_FILTER
+#                              (default /opt/firecracker/bin/firecracker-seccomp-filter.bin)
 #   JAILER_BIN                (default /opt/firecracker/bin/jailer)
-#   M80_JAILER_HARDEN_BIN     (default target/release/m80-jailer-harden)
-#   M80_NET_HELPER_BIN        (default target/release/m80-net-helper)
+#   M80_BIN                   (default /opt/m80-ci/bin/m80; installed from target/release/m80)
+#   M80_JAILER_HARDEN_BIN     (default /opt/m80-ci/bin/m80-jailer-harden)
+#   M80_NET_HELPER_BIN        (default /opt/m80-ci/bin/m80-net-helper)
+#   M80_KERNEL_IMAGE          (optional explicit kernel image)
+#   M80_ROOTFS_IMAGE          (optional explicit rootfs image)
 #   M80_JAIL_UID              (default = current user uid)
 #   M80_JAIL_GID              (default = `kvm` group gid, falls back to user gid)
 #   M80_IMAGE_KIND            (default ubuntu; "minimal" or "minimal-erofs")
@@ -76,9 +82,11 @@ esac
 
 RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-run}"
 FIRECRACKER_BIN="${FIRECRACKER_BIN:-/opt/firecracker/bin/firecracker}"
+FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
 JAILER_BIN="${JAILER_BIN:-/opt/firecracker/bin/jailer}"
-JAILER_HARDEN_BIN="$(absolute_repo_path "${M80_JAILER_HARDEN_BIN:-target/release/m80-jailer-harden}")"
-NET_HELPER_BIN="$(absolute_repo_path "${M80_NET_HELPER_BIN:-target/release/m80-net-helper}")"
+M80_BIN="$(absolute_repo_path "${M80_BIN:-/opt/m80-ci/bin/m80}")"
+JAILER_HARDEN_BIN="$(absolute_repo_path "${M80_JAILER_HARDEN_BIN:-/opt/m80-ci/bin/m80-jailer-harden}")"
+NET_HELPER_BIN="$(absolute_repo_path "${M80_NET_HELPER_BIN:-/opt/m80-ci/bin/m80-net-helper}")"
 IMAGE_BUILD_DIR="${IMAGE_BUILD_DIR:-/tmp/m80-build/$IMAGE_KIND}"
 JAIL_UID="${M80_JAIL_UID:-$(id -u)}"
 JAIL_GID="${M80_JAIL_GID:-$(getent group kvm | cut -d: -f3 || id -g)}"
@@ -117,7 +125,9 @@ PY
 # For stripped kernel kind, find the built artifact (requires prior
 # Docker build of the m80-image-build kernel pipeline; see
 # crates/m80-image-build/kernel-builder/ and m80-ci9i.2).
-if [[ "$KERNEL_KIND" == "stripped" ]]; then
+if [[ -n "${M80_KERNEL_IMAGE:-}" ]]; then
+    KERNEL_IMAGE="$M80_KERNEL_IMAGE"
+elif [[ "$KERNEL_KIND" == "stripped" ]]; then
     if [[ -n "${M80_STRIPPED_KERNEL_PATH:-}" ]]; then
         KERNEL_IMAGE="$M80_STRIPPED_KERNEL_PATH"
     else
@@ -142,17 +152,25 @@ else
     KERNEL_IMAGE="${IMAGE_BUILD_DIR}/vmlinux"
 fi
 
-case "$IMAGE_KIND" in
-    minimal-erofs) ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.erofs" ;;
-    *)             ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.ext4" ;;
-esac
+if [[ -n "${M80_ROOTFS_IMAGE:-}" ]]; then
+    ROOTFS_IMAGE="$M80_ROOTFS_IMAGE"
+else
+    case "$IMAGE_KIND" in
+        minimal-erofs) ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.erofs" ;;
+        *)             ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.ext4" ;;
+    esac
+fi
+ARTIFACT_DIR="${M80_ARTIFACT_DIR:-$(dirname "$ROOTFS_IMAGE")}"
 
 echo "=== smoke config ==="
 echo "  image-kind:  $IMAGE_KIND"
 echo "  kernel-kind: $KERNEL_KIND"
 echo "  run-root:    $RUN_ROOT"
+echo "  artifact-dir: $ARTIFACT_DIR"
 echo "  firecracker: $FIRECRACKER_BIN"
+echo "  seccomp:     $FIRECRACKER_SECCOMP_FILTER"
 echo "  jailer:      $JAILER_BIN"
+echo "  m80:         $M80_BIN"
 echo "  harden:      $JAILER_HARDEN_BIN"
 echo "  net-helper:  $NET_HELPER_BIN"
 echo "  kernel:      $KERNEL_IMAGE"
@@ -239,13 +257,109 @@ EOF
     fi
 fi
 
+# --- install host-side TCB binaries and write matching manifest ---
+echo "=== install host binaries ==="
+for built_binary in target/release/m80 target/release/m80-jailer-harden target/release/m80-net-helper; do
+    if [[ ! -x "$built_binary" ]]; then
+        echo "missing built binary: $built_binary" >&2
+        exit 1
+    fi
+done
+sudo install -d -o root -g root -m 0755 "$(dirname "$M80_BIN")"
+sudo install -d -o root -g root -m 0755 "$(dirname "$JAILER_HARDEN_BIN")"
+sudo install -d -o root -g root -m 0755 "$(dirname "$NET_HELPER_BIN")"
+sudo install -o root -g root -m 0755 target/release/m80 "$M80_BIN"
+sudo install -o root -g root -m 0755 target/release/m80-jailer-harden "$JAILER_HARDEN_BIN"
+sudo install -o root -g root -m 0755 target/release/m80-net-helper "$NET_HELPER_BIN"
+
+echo "=== write host-binaries manifest ==="
+host_manifest_tmp="$(mktemp)"
+python3 - \
+    "$host_manifest_tmp" \
+    "$FIRECRACKER_BIN" \
+    "$JAILER_BIN" \
+    "$M80_BIN" \
+    "$JAILER_HARDEN_BIN" \
+    "$NET_HELPER_BIN" \
+    "$FIRECRACKER_SECCOMP_FILTER" \
+    "$FIRECRACKER_VERSION" <<'PY'
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+
+out_path = pathlib.Path(sys.argv[1])
+firecracker, jailer, m80, harden, net_helper, seccomp, firecracker_version = sys.argv[2:]
+
+def sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def host_version(path: str) -> str:
+    return subprocess.check_output([path, "--version"], text=True).strip()
+
+manifest = {
+    "binaries": [
+        {
+            "name": "firecracker",
+            "path": firecracker,
+            "sha256": sha256(firecracker),
+            "version": firecracker_version,
+        },
+        {
+            "name": "jailer",
+            "path": jailer,
+            "sha256": sha256(jailer),
+            "version": firecracker_version,
+        },
+        {
+            "name": "m80",
+            "path": m80,
+            "sha256": sha256(m80),
+            "version": host_version(m80),
+        },
+        {
+            "name": "m80_jailer_harden",
+            "path": harden,
+            "sha256": sha256(harden),
+            "version": host_version(harden),
+        },
+        {
+            "name": "m80_net_helper",
+            "path": net_helper,
+            "sha256": sha256(net_helper),
+            "version": host_version(net_helper),
+        },
+    ],
+    "launch_material": [
+        {
+            "name": "firecracker_seccomp_filter",
+            "path": seccomp,
+            "sha256": sha256(seccomp),
+            "version": firecracker_version,
+        }
+    ],
+    "schema_version": 4,
+}
+out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+PY
+sudo install -d -o root -g root -m 0755 "$ARTIFACT_DIR"
+sudo install -o root -g root -m 0644 "$host_manifest_tmp" "$ARTIFACT_DIR/host-binaries.manifest.json"
+rm -f "$host_manifest_tmp"
+
 # --- ensure run-root exists and is writable by our uid ---
 sudo mkdir -p "$RUN_ROOT"
 sudo chown "$(id -u):$(id -g)" "$RUN_ROOT"
 
 # --- common env block ---
 M80_ENV=(
+    M80_ARTIFACT_DIR="$ARTIFACT_DIR"
     M80_FIRECRACKER_BIN="$FIRECRACKER_BIN"
+    M80_FIRECRACKER_SECCOMP_FILTER="$FIRECRACKER_SECCOMP_FILTER"
     M80_JAILER_BIN="$JAILER_BIN"
     M80_JAILER_HARDEN_BIN="$JAILER_HARDEN_BIN"
     M80_NET_HELPER_BIN="$NET_HELPER_BIN"
@@ -273,11 +387,11 @@ done
 
 # --- cleanup any prior run state ---
 echo "=== cleanup prior state ==="
-sudo env "${M80_ENV[@]}" ./target/release/m80 cleanup
+sudo env "${M80_ENV[@]}" "$M80_BIN" cleanup
 
 # --- preflight ---
 echo "=== preflight ==="
-sudo env "${M80_ENV[@]}" ./target/release/m80 preflight
+sudo env "${M80_ENV[@]}" "$M80_BIN" preflight
 
 out_file="$(mktemp)"
 trap 'rm -f "$out_file"' EXIT
@@ -364,7 +478,7 @@ fi
 # Default smoke: cold launch + exec + stop
 # =========================================================================
 echo "=== launch ==="
-if timeout 90 sudo env "${M80_ENV[@]}" ./target/release/m80 run \
+if timeout 90 sudo env "${M80_ENV[@]}" "$M80_BIN" run \
         --egress none -- /bin/echo smoke-passes \
         > "$out_file" 2>&1 \
         && rg -q "^smoke-passes$" "$out_file"; then

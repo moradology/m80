@@ -14,14 +14,14 @@ python3 scripts/validate-e2e-report.py /tank/tmp/m80-e2e-report.json
 
 ## Schema
 
-Current reports use `schema_version: 1`. Unknown fields are invalid; a future
+Current reports use `schema_version: 2`. Unknown fields are invalid; a future
 shape must bump `schema_version`.
 
 Top-level fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema_version` | integer | Must be `1`. |
+| `schema_version` | integer | Must be `2`. |
 | `generated_at` | string | UTC RFC3339 timestamp ending in `Z`. |
 | `package` | string | Cargo package whose integration tests were selected. |
 | `run_root` | string | Run root passed to tests as `M80_RUN_ROOT`. |
@@ -40,6 +40,8 @@ Top-level fields:
 | `sudo_available` | The wrapper can use root or passwordless `sudo -n`. |
 | `kvm_available` | `/dev/kvm` is readable and writable. |
 | `artifacts_available` | The default kernel/rootfs artifact paths exist. |
+| `firecracker_seccomp_filter_available` | The configured Firecracker seccomp filter exists. |
+| `host_binaries_manifest_available` | The selected artifact directory has `host-binaries.manifest.json`. |
 | `jailer_harden_available` | `m80-jailer-harden` exists and is executable. |
 | `net_helper_available` | `m80-net-helper` exists and is executable. |
 | `iproute2_available` | `ip` is on `PATH`. |
@@ -58,8 +60,11 @@ Top-level fields:
 
 | Field | Meaning |
 | --- | --- |
+| `artifact_dir` | `M80_ARTIFACT_DIR` path or the rootfs directory default. |
 | `kernel` | `M80_KERNEL_IMAGE` path or the wrapper default. |
 | `rootfs` | `M80_ROOTFS_IMAGE` path or the wrapper default. |
+| `firecracker_seccomp_filter` | `M80_FIRECRACKER_SECCOMP_FILTER` path or the wrapper default. |
+| `host_binaries_manifest` | `<artifact_dir>/host-binaries.manifest.json`. |
 | `jailer_harden` | `M80_JAILER_HARDEN_BIN` path or the wrapper default. |
 | `net_helper` | `M80_NET_HELPER_BIN` path or the wrapper default. |
 

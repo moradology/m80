@@ -29,8 +29,10 @@ Environment:
   M80_E2E_SKIP_REAPER=1            skip stale-state cleanup before a run
   M80_E2E_SKIP_LEAK_CHECK=1        skip post-test cleanup verification
   M80_E2E_TEST_TIMEOUT_SECONDS     default 180
+  M80_ARTIFACT_DIR                 default dirname of M80_ROOTFS_IMAGE
   M80_KERNEL_IMAGE                 default /tmp/m80-build-current/artifacts/vmlinux
   M80_ROOTFS_IMAGE                 default /tmp/m80-build-current/artifacts/output.ext4
+  M80_FIRECRACKER_SECCOMP_FILTER   default /opt/firecracker/bin/firecracker-seccomp-filter.bin
   M80_JAILER_HARDEN_BIN            default target/debug/m80-jailer-harden
   M80_NET_HELPER_BIN               default target/debug/m80-net-helper
   M80_JAIL_UID / M80_JAIL_GID       override test jail identity when 3000 is unavailable
@@ -73,6 +75,9 @@ done
 
 kernel_image="${M80_KERNEL_IMAGE:-/tmp/m80-build-current/artifacts/vmlinux}"
 rootfs_image="${M80_ROOTFS_IMAGE:-/tmp/m80-build-current/artifacts/output.ext4}"
+artifact_dir="${M80_ARTIFACT_DIR:-$(dirname "$rootfs_image")}"
+firecracker_seccomp_filter="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
+host_binaries_manifest="$artifact_dir/host-binaries.manifest.json"
 absolute_repo_path() {
     case "$1" in
         /*) printf '%s\n' "$1" ;;
@@ -100,6 +105,16 @@ fi
 have_artifacts=0
 if [[ -f "$kernel_image" && -f "$rootfs_image" ]]; then
     have_artifacts=1
+fi
+
+have_seccomp_filter=0
+if [[ -f "$firecracker_seccomp_filter" ]]; then
+    have_seccomp_filter=1
+fi
+
+have_host_manifest=0
+if [[ -f "$host_binaries_manifest" ]]; then
+    have_host_manifest=1
 fi
 
 have_harden=0
@@ -357,6 +372,14 @@ skip_reason_for() {
         echo "missing-m80-net-helper"
         return
     fi
+    if has_token requires-kvm && [[ "$have_seccomp_filter" -ne 1 ]]; then
+        echo "missing-firecracker-seccomp-filter"
+        return
+    fi
+    if has_token requires-kvm && [[ "$have_host_manifest" -ne 1 ]]; then
+        echo "missing-host-binaries-manifest"
+        return
+    fi
     if has_token requires-network-namespace && [[ "$have_ip" -ne 1 ]]; then
         echo "missing-iproute2"
         return
@@ -415,9 +438,11 @@ emit_report() {
     if [[ "$json" -eq 1 ]]; then
         python3 - \
             "$results" "$exit_code" "$package" "$run_root" \
-            "$kernel_image" "$rootfs_image" "$jailer_harden_bin" "$net_helper_bin" \
+            "$artifact_dir" "$kernel_image" "$rootfs_image" "$firecracker_seccomp_filter" \
+            "$host_binaries_manifest" "$jailer_harden_bin" "$net_helper_bin" \
             "$list_only" "$timeout_s" "$have_sudo" "$have_kvm" "$have_artifacts" \
-            "$have_harden" "$have_net_helper" "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
+            "$have_seccomp_filter" "$have_host_manifest" "$have_harden" "$have_net_helper" \
+            "$have_ip" "$have_cgroup_v2" "$have_loop_device" \
             "$have_debugfs" "$have_docker" "$measurement_enabled" \
             "$pmem_artifacts" "$external_network_enabled" "$malicious_artifacts" \
             "$minimal_artifacts" "$ubuntu_artifacts" <<'PY'
@@ -436,35 +461,40 @@ if path.exists():
     results = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 counts = Counter(item["status"] for item in results)
 report = {
-    "schema_version": 1,
+    "schema_version": 2,
     "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
     "package": sys.argv[3],
     "run_root": sys.argv[4],
-    "list_only": flag(9),
-    "timeout_seconds": int(sys.argv[10]),
+    "list_only": flag(12),
+    "timeout_seconds": int(sys.argv[13]),
     "environment": {
-        "sudo_available": flag(11),
-        "kvm_available": flag(12),
-        "artifacts_available": flag(13),
-        "jailer_harden_available": flag(14),
-        "net_helper_available": flag(15),
-        "iproute2_available": flag(16),
-        "cgroup_v2_available": flag(17),
-        "loop_device_available": flag(18),
-        "debugfs_available": flag(19),
-        "docker_available": flag(20),
-        "measurement_enabled": flag(21),
-        "pmem_artifacts_available": flag(22),
-        "external_network_enabled": flag(23),
-        "malicious_artifacts_available": flag(24),
-        "minimal_artifacts_available": flag(25),
-        "ubuntu_artifacts_available": flag(26),
+        "sudo_available": flag(14),
+        "kvm_available": flag(15),
+        "artifacts_available": flag(16),
+        "firecracker_seccomp_filter_available": flag(17),
+        "host_binaries_manifest_available": flag(18),
+        "jailer_harden_available": flag(19),
+        "net_helper_available": flag(20),
+        "iproute2_available": flag(21),
+        "cgroup_v2_available": flag(22),
+        "loop_device_available": flag(23),
+        "debugfs_available": flag(24),
+        "docker_available": flag(25),
+        "measurement_enabled": flag(26),
+        "pmem_artifacts_available": flag(27),
+        "external_network_enabled": flag(28),
+        "malicious_artifacts_available": flag(29),
+        "minimal_artifacts_available": flag(30),
+        "ubuntu_artifacts_available": flag(31),
     },
     "artifacts": {
-        "kernel": sys.argv[5],
-        "rootfs": sys.argv[6],
-        "jailer_harden": sys.argv[7],
-        "net_helper": sys.argv[8],
+        "artifact_dir": sys.argv[5],
+        "kernel": sys.argv[6],
+        "rootfs": sys.argv[7],
+        "firecracker_seccomp_filter": sys.argv[8],
+        "host_binaries_manifest": sys.argv[9],
+        "jailer_harden": sys.argv[10],
+        "net_helper": sys.argv[11],
     },
     "summary": {
         "passed": counts["pass"],
@@ -580,8 +610,10 @@ while IFS= read -r exe; do
         start_ns="$(date +%s%N)"
         exit_code=0
         run_env=(
+            M80_ARTIFACT_DIR="$artifact_dir"
             M80_KERNEL_IMAGE="$kernel_image"
             M80_ROOTFS_IMAGE="$rootfs_image"
+            M80_FIRECRACKER_SECCOMP_FILTER="$firecracker_seccomp_filter"
             M80_JAILER_HARDEN_BIN="$jailer_harden_bin"
             M80_NET_HELPER_BIN="$net_helper_bin"
             M80_RUN_ROOT="$run_root"

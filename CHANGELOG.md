@@ -30,8 +30,10 @@ All notable changes to m80 are documented here. Format roughly follows
   keeping the L1 KVM module's nested mode disabled for Firecracker guests.
 - Added Rust and smoke build-tool checks to the privileged workflow and L1
   runner provisioning.
-- Made privileged smoke build and pass the checked-out `m80-jailer-harden` and
-  `m80-net-helper` helper binaries into preflight and ignored E2E tests.
+- Made privileged smoke install the checked-out `m80`, `m80-jailer-harden`, and
+  `m80-net-helper` binaries as root-owned CI TCB files, write the matching
+  host-binaries manifest, and pass those paths into preflight and ignored E2E
+  tests.
 
 ### Added — stripped-kernel PVH direct boot note
 
