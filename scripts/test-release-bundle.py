@@ -1352,8 +1352,16 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertNotIn("\n          python3 scripts/verify-release-tracker-policy.py\n", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
-        self.assertIn("uses: actions/checkout@v6", workflow)
+        self.assertIn("- name: Checkout public repository", workflow)
+        self.assertIn('git init "$GITHUB_WORKSPACE"', workflow)
+        self.assertIn(
+            'git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"',
+            workflow,
+        )
+        self.assertIn('git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"', workflow)
+        self.assertIn('git config --global --add safe.directory "$GITHUB_WORKSPACE"', workflow)
         self.assertIn("uses: actions/cache@v5", workflow)
+        self.assertNotIn("uses: actions/checkout@", workflow)
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertNotIn("actions/cache@v4", workflow)
         self.assertIn("sudo apt-get install -y erofs-utils shellcheck", workflow)
