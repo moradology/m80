@@ -62,12 +62,12 @@ In priority order. Update freely as work lands.
    Do not close until a self-hosted KVM run proves the egress peer/ICMP tests.
    Local proof so far: `cargo fmt --all -- --check`,
    `cargo test -p m80-net-outbound`, `git diff --check`, and
-   `iptables -m physdev -h`.
-2. **`m80-mrjqs.3` — production metrics surface.** VM correlation for existing
-   lifecycle spans/events is now closed in `m80-9jfaz.2`; add the larger
-   metrics surface next so future long runs are easier to diagnose.
-   `m80-mrjqs.4` (`/logger` capture) is already implemented and closed.
-3. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
+   `iptables -m physdev -h`. The GitHub dispatch HTTP 500 cleared on
+   2026-05-26; run
+   `https://github.com/moradology/m80/actions/runs/26447668914` is queued
+   against commit `2d12982d86c433c04eb92392aeb23760f1e7e43b` for the external
+   network proof.
+2. **`m80-ezs0x.{1,2}` — file-size refactors after coverage/observability.**
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
 
@@ -118,6 +118,13 @@ warm-lease exec entrypoints open `vm_id` spans, per-VM teardown warning/error
 events carry structured `vm_id`, `MaterializedJail` and cgroup `Subtree` store
 VM ids for Drop logging, and the contract is pinned in
 `docs/behaviors/observability/vm-id-correlation.md`.
+`m80-mrjqs.3` is closed as of 2026-05-26 by `2d12982d`: the production metrics
+surface is ungated, `m80-firecracker` records process-local launches, phase
+failures, finite `FcError` variants, vsock disconnects, and idle timeouts,
+`m80 metrics` renders Prometheus text or a node-exporter textfile and includes
+active warm-owner slot metrics when present, and
+`docs/behaviors/observability/production-metrics-surface.md` records the
+process-local counter boundary.
 
 ## Long-run order
 
@@ -128,15 +135,16 @@ root causes.
 1. **Keep the privileged battery green.** The self-hosted workflow is now the
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
-   causes. Current blocker: GitHub returned HTTP 500 for `workflow_dispatch`
-   attempts after `fe4fa943`; retry before closing `m80-vpw49.8`.
+   causes. Current state: workflow dispatch now succeeds; run `26447668914` is
+   queued on the self-hosted privileged runner for the `m80-vpw49.8` external
+   network proof.
 2. **Close the active network proof boundary.** `m80-vpw49.8` is the only
    in-progress bead. If the KVM run is green, close it with the run URL/report
    path. If it fails, fix only the report-proven rule/topology issue.
-3. **Do the observability batch.** `m80-9jfaz.2` is complete; work
-   `m80-mrjqs.3` next to expose the production metrics surface. Treat
-   `m80-f20y0.1` as strategic context, not a code leaf, until the external
-   consumer integration has a concrete m80 gap.
+3. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
+   external consumer integration has a concrete m80 gap.** The observability
+   batch that was gating long-run diagnosis is complete enough for the next
+   proof/refactor work.
 4. **Harden failure visibility and cleanup if E2E reports regress.** Pull
    `m80-wok08.3`, `m80-243wj.17`, and adjacent failure-path cleanup beads
    forward only when the real-KVM reports show leaked processes, swallowed
