@@ -7,7 +7,7 @@
 mod common;
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -112,16 +112,16 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
 }
 
 #[test]
-#[ignore = "requires-kvm requires-artifacts"]
+#[ignore = "requires-kvm requires-artifacts requires-malicious-artifacts"]
 fn guestd_not_ready_timeout_cleans_partial_state() {
-    let discovery =
-        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let discovery = malicious_discovery()
+        .expect("preflight must pass on a KVM-capable host with malicious m80 artifacts");
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
     let vm_id = common::unique_vm_id("gnr-cold");
     let run_dir = discovery.run_root.join(&vm_id);
 
     let sandbox = backend
-        .admit(stalled_guestd_config(&vm_id))
+        .admit(no_ready_guestd_config(&vm_id))
         .expect("admit stalled cold launch");
     let err = match sandbox.launch() {
         Ok(running) => {
@@ -140,7 +140,10 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
     );
     assert_failed_launch_preserved(&discovery.run_root, &vm_id, "GuestdReadyTimeout");
 
-    let mut running = launch_healthy(&backend, "gnr-cold-r");
+    let healthy_discovery =
+        m80_preflight::run().expect("preflight must pass for healthy reuse launch");
+    let healthy_backend = Arc::new(Backend::new(make_backend_config(healthy_discovery)).unwrap());
+    let mut running = launch_healthy(&healthy_backend, "gnr-cold-r");
     assert_exec_ok(&mut running, "printf cold-reuse-ok");
     running
         .stop()
@@ -245,11 +248,33 @@ fn default_config(vm_id: &str) -> SandboxConfig {
     }
 }
 
-fn stalled_guestd_config(vm_id: &str) -> SandboxConfig {
+fn no_ready_guestd_config(vm_id: &str) -> SandboxConfig {
     SandboxConfig {
-        boot_args: Some("console=ttyS0 reboot=k panic=-1 pci=off init=/bin/sh".into()),
+        boot_args: Some("m80.malicious_attack=no_ready".into()),
         ..default_config(vm_id)
     }
+}
+
+fn malicious_discovery() -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
+    let artifact_dir = std::env::var_os("M80_MALICIOUS_ARTIFACT_DIR")
+        .map(PathBuf::from)
+        .expect("M80_MALICIOUS_ARTIFACT_DIR must point at no-ready guestd image artifacts");
+    m80_preflight::run_with_configs(
+        m80_preflight::BinaryDiscoveryConfig::from_env(),
+        m80_preflight::ArtifactPreflightConfig {
+            kernel_image: Some(artifact_dir.join("vmlinux")),
+            artifact_dir: artifact_dir.clone(),
+            rootfs_image: Some(artifact_dir.join("output.ext4")),
+            kernel_kind: None,
+            ..m80_preflight::ArtifactPreflightConfig::from_env()
+        },
+        m80_preflight::HostFeaturePreflightConfig {
+            cgroup_mode: m80_preflight::CgroupPreflightMode::Disabled,
+            jail_uid: jail_id_from_env("M80_JAIL_UID", 3000),
+            jail_gid: jail_id_from_env("M80_JAIL_GID", 3000),
+            expected_concurrent_vms: 1,
+        },
+    )
 }
 
 fn launch_healthy(backend: &Arc<Backend>, prefix: &str) -> m80_firecracker::RunningSandbox {
@@ -276,23 +301,17 @@ fn write_fake_firecracker(dir: &Path, name: &str) -> std::path::PathBuf {
     // fake would fail unless the jail root also carried `/bin/sh` and its
     // loader/libs. Compile a tiny static ELF that writes the same pid file
     // Firecracker writes inside the jail and then stays alive without creating
-    // the API socket.
+    // the API socket. The official jailer writes the host-visible
+    // `<exec-basename>.pid` before handing off to this binary.
     std::fs::write(
         &source,
         r#"#include <signal.h>
-#include <stdio.h>
-#include <unistd.h>
+	#include <unistd.h>
 
-int main(void) {
-    FILE *pid = fopen("/firecracker.pid", "w");
-    if (pid == NULL) {
-        return 111;
-    }
-    fprintf(pid, "%ld\n", (long)getpid());
-    fclose(pid);
-    for (;;) {
-        pause();
-    }
+	int main(void) {
+	    for (;;) {
+	        pause();
+	    }
 }
 "#,
     )

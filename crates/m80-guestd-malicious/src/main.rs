@@ -13,6 +13,7 @@ const UNSOLICITED_FLOOD_FRAMES: usize = 512;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Attack {
     Noop,
+    NoReady,
     OversizedLength,
     TruncatedFrame,
     UnknownVariant,
@@ -24,8 +25,9 @@ enum Attack {
 }
 
 impl Attack {
-    const ALL: [Attack; 9] = [
+    const ALL: [Attack; 10] = [
         Attack::Noop,
+        Attack::NoReady,
         Attack::OversizedLength,
         Attack::TruncatedFrame,
         Attack::UnknownVariant,
@@ -39,6 +41,7 @@ impl Attack {
     fn parse(raw: &str) -> anyhow::Result<Self> {
         match raw {
             "noop" => Ok(Attack::Noop),
+            "no_ready" => Ok(Attack::NoReady),
             "oversized_length" => Ok(Attack::OversizedLength),
             "truncated_frame" => Ok(Attack::TruncatedFrame),
             "unknown_variant" => Ok(Attack::UnknownVariant),
@@ -54,6 +57,7 @@ impl Attack {
     fn as_str(self) -> &'static str {
         match self {
             Attack::Noop => "noop",
+            Attack::NoReady => "no_ready",
             Attack::OversizedLength => "oversized_length",
             Attack::TruncatedFrame => "truncated_frame",
             Attack::UnknownVariant => "unknown_variant",
@@ -128,6 +132,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     match attack {
+        Attack::NoReady => run_no_ready(),
         Attack::Noop
         | Attack::OversizedLength
         | Attack::TruncatedFrame
@@ -137,6 +142,20 @@ fn run(args: Args) -> anyhow::Result<()> {
         | Attack::UnsolicitedResponse
         | Attack::UnsolicitedFlood
         | Attack::Slowloris => run_peer(attack),
+    }
+}
+
+fn run_no_ready() -> anyhow::Result<()> {
+    let _listener =
+        VsockListener::bind_with_cid_port(VMADDR_CID_ANY, m80_proto::GUEST_PORT_DEFAULT)
+            .with_context(|| {
+                format!(
+                    "failed to bind malicious guestd vsock listener on port {}",
+                    m80_proto::GUEST_PORT_DEFAULT
+                )
+            })?;
+    loop {
+        std::thread::park();
     }
 }
 
@@ -194,6 +213,7 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
     loop {
         let (mut stream, _addr) = listener.accept().context("malicious vsock accept failed")?;
         match attack {
+            Attack::NoReady => unreachable!("no_ready does not enter the peer accept loop"),
             Attack::Noop => drop(stream),
             Attack::OversizedLength => {
                 write_oversized_length(&mut stream)?;

@@ -73,7 +73,8 @@ impl MaterializedJail {
     /// Exec `firecracker` inside the jail via the official `jailer` binary
     /// and return both pids tracked.
     ///
-    /// Polls up to 1 s for `<jail_path>/firecracker.pid` to appear.
+    /// Polls up to 1 s for `<jail_path>/<firecracker-bin-basename>.pid` to
+    /// appear.
     pub fn launch(&self, api_socket: &Path) -> Result<JailedFirecracker, JailerError> {
         // run_dir is `<run_root>/<vm_id>` and api_socket is `firecracker.sock`
         // — both come from m80-firecracker's known shape, so a missing
@@ -103,8 +104,8 @@ impl MaterializedJail {
         // exits). Drop on `JailedFirecracker` is responsible for kill+reap.
         //
         // With `--daemonize` or `--new-pid-ns`, the official jailer parent
-        // exits after writing `firecracker.pid`; m80 records jailer_pid = 0 as
-        // the no-live-jailer-parent sentinel.
+        // exits after writing the executable-basename pid file; m80 records
+        // jailer_pid = 0 as the no-live-jailer-parent sentinel.
         //
         let (command_path, mut command) =
             if let Some(jailer_harden_bin) = &self.plan.config.jailer_harden_bin {
@@ -232,12 +233,12 @@ impl MaterializedJail {
 
         let jailer_pid = child.id();
 
-        let pid_file = self.jail_path.join("firecracker.pid");
+        let pid_file = jailer_pid_file_path(&self.jail_path, &self.plan.config.firecracker_bin);
         let deadline = Instant::now() + FIRECRACKER_PID_TIMEOUT;
         let Some(firecracker_pid) = wait_for_firecracker_pid_file(&pid_file, deadline)? else {
-            // Timeout: firecracker.pid never appeared. Kill the child
-            // (which may be jailer pre-exec or firecracker post-exec)
-            // and reap it before bailing.
+            // Timeout: the jailer/Firecracker pid file never appeared. Kill
+            // the child (which may be jailer pre-exec or firecracker
+            // post-exec) and reap it before bailing.
             let _ = child.kill();
             let _ = child.wait();
             return Err(JailerError::FirecrackerPidTimeout {
@@ -277,6 +278,13 @@ impl MaterializedJail {
             firecracker_pid,
         })
     }
+}
+
+fn jailer_pid_file_path(jail_path: &Path, firecracker_bin: &Path) -> PathBuf {
+    let exec_basename = firecracker_bin
+        .file_name()
+        .expect("validated firecracker_bin has a basename");
+    jail_path.join(format!("{}.pid", exec_basename.to_string_lossy()))
 }
 
 fn wait_for_firecracker_pid_file(
@@ -328,7 +336,7 @@ fn read_firecracker_pid_file(pid_file: &Path) -> Result<Option<u32>, JailerError
         path: pid_file.to_path_buf(),
         source: io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("firecracker.pid not a u32: {e}"),
+            format!("pid file not a u32: {e}"),
         ),
     })?;
     Ok(Some(pid))

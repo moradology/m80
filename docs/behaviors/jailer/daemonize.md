@@ -3,11 +3,12 @@
 `SandboxConfig::daemonize` and `JailerConfig::daemonize` map to Firecracker
 jailer's `--daemonize` flag. m80 does not implement its own double-fork path;
 the official jailer opens `/dev/null`, forks twice, calls `setsid`, redirects
-stdio, writes `firecracker.pid`, and execs Firecracker in the daemon process.
+stdio, writes `<firecracker-bin-basename>.pid`, and execs Firecracker in the
+daemon process.
 
-m80 waits for `firecracker.pid` and then reaps the short-lived jailer parent.
-The persisted `firecracker_pid` is the daemon process. The persisted
-`jailer_pid` is `0`, the same no-live-jailer-parent sentinel used by
+m80 waits for that executable-basename pid file and then reaps the short-lived
+jailer parent. The persisted `firecracker_pid` is the daemon process. The
+persisted `jailer_pid` is `0`, the same no-live-jailer-parent sentinel used by
 `new_pid_ns`.
 
 The Firecracker API socket remains the management surface for daemonized VMs.

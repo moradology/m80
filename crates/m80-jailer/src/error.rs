@@ -37,10 +37,11 @@ pub enum JailerError {
     /// pre-jailer bind plan.
     #[error("make host mount namespace private: {0}")]
     MountPropagationFailed(#[source] nix::Error),
-    /// `firecracker.pid` did not appear within the poll deadline after launch.
-    #[error("timed out waiting for firecracker.pid in {jail_path}", jail_path = jail_path.display())]
+    /// The jailer's executable-basename pid file did not appear within the poll
+    /// deadline after launch.
+    #[error("timed out waiting for Firecracker pid file in {jail_path}", jail_path = jail_path.display())]
     FirecrackerPidTimeout {
-        /// Jail path where `firecracker.pid` was expected.
+        /// Jail path where the pid file was expected.
         jail_path: PathBuf,
     },
     /// UID/GID was rejected (out of range or unknown).

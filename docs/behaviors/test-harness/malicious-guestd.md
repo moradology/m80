@@ -31,6 +31,11 @@ readiness signal to the host, and accepts connections without producing
 adversarial frames. It proves the artifact can replace production guestd inside
 the image and reach the host readiness path.
 
+`no_ready` binds the normal guest exec vsock port and then parks forever without
+sending the one-byte readiness signal. This mode is for launch-failure cleanup
+tests that need a valid non-production guest artifact but must exercise
+`GuestdReadyTimeout`.
+
 `oversized_length` writes only a four-byte length prefix larger than
 `m80_proto::MAX_FRAME_BYTES` on each accepted connection. This exercises the
 host framing guard before the host allocates a frame body.

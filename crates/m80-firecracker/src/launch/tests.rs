@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
@@ -716,6 +716,40 @@ fn wait_for_api_socket_create_returns_after_socket_appears() {
     ready_rx.recv().unwrap();
     let _listener = UnixListener::bind(api_socket).unwrap();
     waiter.join().unwrap().unwrap();
+}
+
+#[test]
+fn restore_probe_times_out_when_connected_peer_stalls() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&vsock).unwrap();
+    let handle = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert_eq!(line, format!("CONNECT {GUEST_PORT_DEFAULT}\n"));
+        let mut writer = stream;
+        writer
+            .write_all(format!("OK {GUEST_PORT_DEFAULT}\n").as_bytes())
+            .unwrap();
+        writer.flush().unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+    });
+
+    let err = try_restore_exec_probe(
+        &vsock,
+        "restore-stalled",
+        1,
+        Instant::now() + Duration::from_millis(20),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(err, FcError::GuestdReadyTimeout { .. }),
+        "expected GuestdReadyTimeout, got {err:?}"
+    );
+    handle.join().unwrap();
 }
 
 #[test]

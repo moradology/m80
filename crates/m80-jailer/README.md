@@ -65,9 +65,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   before launch.
   Without `new_pid_ns` or `daemonize`, jailer `exec()`s into firecracker, so
   `jailer_pid` and `firecracker_pid` refer to the same OS process. With
-  `new_pid_ns` or `daemonize`, the official jailer writes the Firecracker PID
-  file and exits; m80 reaps that parent and records `jailer_pid = 0` as the
-  no-live-jailer sentinel.
+  `new_pid_ns` or `daemonize`, the official jailer writes the
+  `<firecracker-bin-basename>.pid` file and exits; m80 reaps that parent and
+  records `jailer_pid = 0` as the no-live-jailer sentinel.
 - Mount namespace and `pivot_root` isolation, `/dev/{kvm,net/tun,urandom}`
   `mknod`, `/proc`/`/sys` omission, private copy of the Firecracker
   executable, startup environment clearing, and close-range hygiene are
@@ -164,7 +164,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `tests/jailer/jail_root_layout.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
 - `tests/jailer/pid_file_backoff.rs` — launch observes a delayed
-  `firecracker.pid` without paying the old fixed 25 ms wait floor.
+  `<firecracker-bin-basename>.pid` without paying the old fixed 25 ms wait
+  floor.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
   stdio log size capping, seccomp-filter forwarding, private network namespace

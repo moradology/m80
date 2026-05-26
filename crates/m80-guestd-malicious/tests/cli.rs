@@ -16,6 +16,7 @@ fn list_attacks_includes_every_attack_mode() {
         lines,
         [
             "noop",
+            "no_ready",
             "oversized_length",
             "truncated_frame",
             "unknown_variant",

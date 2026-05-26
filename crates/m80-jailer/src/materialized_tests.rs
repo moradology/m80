@@ -43,6 +43,17 @@ fn wait_for_log_contains(path: &Path, needles: &[&str]) -> String {
 }
 
 #[test]
+fn jailer_pid_file_uses_exec_basename() {
+    let jail_path = Path::new("/tmp/jail-root");
+    let firecracker_bin = Path::new("/opt/m80/fake-firecracker-special");
+
+    assert_eq!(
+        jailer_pid_file_path(jail_path, firecracker_bin),
+        jail_path.join("fake-firecracker-special.pid")
+    );
+}
+
+#[test]
 fn firecracker_pid_poll_backoff_starts_at_one_ms_and_caps_at_twenty_five_ms() {
     let mut delay = FIRECRACKER_PID_INITIAL_POLL;
     let mut delays = Vec::new();
@@ -123,7 +134,7 @@ fn firecracker_pid_wait_rejects_non_numeric_file() {
     .expect_err("non-numeric pid file must fail closed");
 
     assert!(
-        err.to_string().contains("firecracker.pid not a u32"),
+        err.to_string().contains("pid file not a u32"),
         "unexpected error: {err:?}"
     );
 }

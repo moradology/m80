@@ -917,7 +917,7 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(),
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match try_restore_exec_probe(vsock_uds, vm_id, attempt) {
+        match try_restore_exec_probe(vsock_uds, vm_id, attempt, deadline) {
             Ok(()) => {
                 tracing::info!(vm_id, attempt, "restore probe: guestd exec round-trip live");
                 return Ok(());
@@ -948,7 +948,12 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(),
     }
 }
 
-fn try_restore_exec_probe(vsock_uds: &Path, vm_id: &str, attempt: u32) -> Result<(), FcError> {
+fn try_restore_exec_probe(
+    vsock_uds: &Path,
+    vm_id: &str,
+    attempt: u32,
+    deadline: Instant,
+) -> Result<(), FcError> {
     let request_id = format!("{vm_id}-restore-probe-{attempt}");
     let req = ExecRequest {
         program: "/bin/true".into(),
@@ -964,7 +969,12 @@ fn try_restore_exec_probe(vsock_uds: &Path, vm_id: &str, attempt: u32) -> Result
     channel.send(&envelope)?;
 
     loop {
-        let frame = channel.recv_raw()?;
+        let Some(frame) = channel.recv_raw_with_deadline(deadline)? else {
+            return Err(FcError::GuestdReadyTimeout {
+                path: vsock_uds.to_path_buf(),
+                timeout: RESTORE_PROBE_TIMEOUT,
+            });
+        };
         check_restore_probe_request_id(&frame, &request_id)?;
         let kind = frame.kind.clone();
         match kind.as_str() {

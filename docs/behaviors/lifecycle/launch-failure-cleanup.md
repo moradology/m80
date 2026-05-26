@@ -32,8 +32,9 @@ real m80 artifacts. The API-socket case swaps in a fake Firecracker executable
 that never creates the REST socket. The cgroup-create case uses the same fake
 Firecracker plus a debug-build-only VM-id-scoped fault injection hook after
 phase 9, then asserts no fake Firecracker process remains. The cold-boot guestd
-case overrides kernel boot args so guestd never dials the inverted-readiness
-socket. The restore case captures a snapshot after stopping guestd, then
-verifies the restore probe times out. Each case asserts the typed error,
-asserts the failed run directory was removed, and verifies admission can
-proceed through the same one-permit backend.
+case uses a dedicated malicious `no_ready` guestd artifact so the guest binds
+the normal exec port but never dials the inverted-readiness socket. The restore
+case captures a snapshot while guestd is occupied and verifies the restore probe
+times out instead of waiting for guestd to drain the old request. Each case
+asserts the typed error, asserts the failed run directory was removed, and
+verifies admission can proceed through the same one-permit backend.

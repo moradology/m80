@@ -43,6 +43,8 @@ Current modes:
 
 - `noop` binds the standard guest vsock listener, sends the standard readiness
   byte to the host, and accepts connections without emitting adversarial frames.
+- `no_ready` binds the standard guest vsock listener but never sends the
+  readiness byte. It is only for host launch-time timeout and cleanup tests.
 - `oversized_length` binds the standard guest vsock listener, sends the
   readiness byte, and writes only a four-byte length prefix larger than
   `m80_proto::MAX_FRAME_BYTES` on each accepted connection.

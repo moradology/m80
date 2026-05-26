@@ -39,8 +39,8 @@ configured console log when present and `/dev/null` otherwise.
 `JailerConfig::new_pid_ns` maps directly to Firecracker-jailer
 `--new-pid-ns`. When disabled, the jailer process execs Firecracker and
 `jailer_pid == firecracker_pid`. When enabled, the jailer parent writes
-`firecracker.pid`, exits, and m80 records `jailer_pid = 0` as the
-no-live-jailer sentinel while tracking the live Firecracker PID normally.
+`<firecracker-bin-basename>.pid`, exits, and m80 records `jailer_pid = 0` as
+the no-live-jailer sentinel while tracking the live Firecracker PID normally.
 `m80-firecracker` enables this flag for its launch path by default.
 
 m80 rejects bind destinations that are absolute, empty, contain `..`, or start

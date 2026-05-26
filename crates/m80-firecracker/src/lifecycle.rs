@@ -891,10 +891,11 @@ fn poll_reap_pid(pid: u32) -> Result<ReapPoll, FcError> {
 
     let reap_pid = Pid::from_raw(pid as i32);
     match waitpid(reap_pid, Some(WaitPidFlag::WNOHANG)) {
-        Ok(WaitStatus::Exited(_, _))
-        | Ok(WaitStatus::Signaled(_, _, _))
-        | Err(Errno::ECHILD)
-        | Err(Errno::ESRCH) => Ok(ReapPoll::Reaped),
+        Ok(WaitStatus::Exited(_, _)) | Ok(WaitStatus::Signaled(_, _, _)) | Err(Errno::ESRCH) => {
+            Ok(ReapPoll::Reaped)
+        }
+        Err(Errno::ECHILD) if crate::runroot::pid_is_alive(pid) => Ok(ReapPoll::StillAlive),
+        Err(Errno::ECHILD) => Ok(ReapPoll::Reaped),
         Ok(WaitStatus::StillAlive) => Ok(ReapPoll::StillAlive),
         Ok(_) => Ok(ReapPoll::Reaped),
         Err(e) => Err(FcError::ReapFailed {
