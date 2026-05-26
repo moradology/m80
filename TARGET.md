@@ -140,8 +140,11 @@ root causes.
 1. **Keep the privileged battery green.** The self-hosted workflow is now the
    source of truth for kernel-touching confidence. If it fails, first preserve
    and validate the JSON report, then fix or file only report-proven root
-   causes. Current state: `m80-l1-runner` is online as a repo
-   `self-hosted,kvm` runner and run `26450809508` is green on current main.
+   causes. Current proof: `m80-l1-runner` is online as a repo
+   `self-hosted,kvm` runner; run `26450809508` is green on
+   `185d88e9af22a3e6ec543ef6dccac3f540e98946`, the latest code/workflow commit
+   in the E2E wiring line; follow-up proof-recording commit `fc64ba09` passed
+   CI run `26455499511`.
 2. **Treat `m80-f20y0.1` as strategic context, not a code leaf, until the
    external consumer integration has a concrete m80 gap.** The observability
    batch that was gating long-run diagnosis is complete enough for the next
