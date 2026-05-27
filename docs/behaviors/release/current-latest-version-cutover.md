@@ -42,20 +42,24 @@ install record remains available for rollback. `v0.2.22` fixes the legacy
 flat proof-cache bridge case found on vulcan, where an old nested symlink under
 `/opt/m80/artifacts/release-proof-cache/` made the `v0.2.21` rollback backup
 reject the install before activation. `v0.2.23` carries the systemd-first
-launch closeout and the Phase 2 final-exec investigation closeout; it does not
-change the installed artifact layout.
+launch closeout and the Phase 2 final-exec investigation closeout; scratch
+public-install proof found that it omitted the flat `m80-jailer-harden` wrapper
+on systemd-selected hosts. `v0.2.24` restores the hard cutover: the installer
+always hardlinks `m80-jailer-harden` into `<install-root>/bin`, always records
+it in the flat host-binaries manifest, and keeps `conditional_binaries` empty
+for installer-owned manifests.
 
-The current repair source therefore uses workspace package version `0.2.23`.
-The matching stable tag is `v0.2.23`; tags at or before the existing public
-latest `v0.2.22` are intentionally rejected as old-release backfill candidates
+The current repair source therefore uses workspace package version `0.2.24`.
+The matching stable tag is `v0.2.24`; tags at or before the existing public
+latest `v0.2.23` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.23-dev` and remains barred from
+so an unreleased local build now reports `0.2.24-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.23` as the packageable release
+Fixture and release-script coverage uses `v0.2.24` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,

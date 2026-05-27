@@ -16,6 +16,11 @@ Schema v5 has three lists:
   condition. Today the only valid production use is
   `m80_jailer_harden` with `absent_when: "systemd_path_chosen"`.
 
+The m80 installer emits the always-concrete form: `m80_jailer_harden` is in
+`binaries`, and `conditional_binaries` is empty. The conditional form exists
+only for external manifest producers that deliberately choose the systemd
+launch path without an m80 wrapper binary.
+
 Every entry carries `name`, absolute `path`, `sha256`, and `version`.
 Firecracker and jailer versions are the parsed official release strings from
 `--version`; m80 helpers report their own `--version`; the seccomp-filter

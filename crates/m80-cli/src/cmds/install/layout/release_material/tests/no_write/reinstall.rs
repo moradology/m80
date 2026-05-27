@@ -63,7 +63,7 @@ fn same_version_reinstall_with_identical_proof_material_is_idempotent() {
 }
 
 #[test]
-fn same_version_reinstall_with_systemd_conditional_flat_wrapper_is_idempotent() {
+fn same_version_reinstall_with_missing_flat_wrapper_refuses_explicit_repair() {
     let temp = tempfile::tempdir().unwrap();
     let install_root = temp.path().join("install-root");
     let bundle_bytes = write_installable_bundle_bytes(temp.path());
@@ -78,31 +78,33 @@ fn same_version_reinstall_with_systemd_conditional_flat_wrapper_is_idempotent() 
         &install_root.join("artifacts"),
         &install_root.join("bin"),
     );
-    remove_seed_profile_wrapper_field(&install_root);
-    let profile_before = fs::read(install_root.join("profiles/default.toml")).unwrap();
 
-    let second = install_layout_with_installable_bundle(
+    let err = install_layout_error_with_installable_bundle(
         &install_root,
         &bundle_bytes,
         ReleaseFixtureOptions::default(),
     );
+    let message = err.to_string();
 
-    let reinstall = second
-        .reinstall
-        .as_ref()
-        .expect("systemd conditional same-version reinstall should report idempotency");
-    assert_eq!(second.state, "already_installed");
-    assert_eq!(reinstall.status, "idempotent_same_material");
-    assert_eq!(second.files_copied, 0);
-    assert!(!second.profile_written);
+    assert!(
+        message.contains("installed flat projection target is unreadable")
+            && message.contains(
+                &install_root
+                    .join("bin/m80-jailer-harden")
+                    .display()
+                    .to_string()
+            ),
+        "missing flat wrapper error should name the unreadable wrapper: {message}"
+    );
+    assert!(
+        message.contains("repair_command=rm -rf --"),
+        "missing flat wrapper error should name exact repair command: {message}"
+    );
     assert!(
         !install_root.join("bin/m80-jailer-harden").exists(),
-        "same-version no-op must not recreate the omitted flat wrapper"
+        "failed reinstall must not recreate missing flat wrapper by default"
     );
-    assert_eq!(
-        fs::read(install_root.join("profiles/default.toml")).unwrap(),
-        profile_before
-    );
+    assert_no_layout_staging_dirs(&install_root, "missing flat wrapper reinstall");
 }
 
 #[test]
@@ -1011,16 +1013,4 @@ fn write_seed_profile_and_config(install_root: &Path) {
         ),
     )
     .expect("write seed config");
-}
-
-fn remove_seed_profile_wrapper_field(install_root: &Path) {
-    let profile_path = install_root.join("profiles/default.toml");
-    let profile = fs::read_to_string(&profile_path).expect("read seed profile");
-    let without_wrapper = profile
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("jailer_harden_bin ="))
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
-    fs::write(profile_path, without_wrapper).expect("rewrite seed profile without wrapper");
 }

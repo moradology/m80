@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::os::unix::fs::symlink;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use m80_firecracker::FcError;
 use m80_image_manifest::{
-    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, KernelKind, Manifest,
-    RootfsFormat, BUILD_RECEIPT_SCHEMA_VERSION, INSTALL_PROVENANCE_SCHEMA_VERSION,
+    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, HostBinariesManifest,
+    HostBinaryName, ImageKind, KernelKind, Manifest, RootfsFormat, BUILD_RECEIPT_SCHEMA_VERSION,
+    INSTALL_PROVENANCE_SCHEMA_VERSION,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -149,6 +149,71 @@ fn install_layout_success_with_installable_bundle(
             fixture.bundle_url
         )
     })
+}
+
+#[test]
+fn install_flat_projection_hardlinks_all_m80_binaries_even_when_systemd_is_available() {
+    let _guard = super::super::super::INSTALL_PREFLIGHT_ENV_LOCK
+        .lock()
+        .unwrap();
+    let _force_systemd = EnvVarGuard::set_value("M80_INSTALL_FORCE_SYSTEMD_FLAT_PROJECTION", "1");
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+
+    install_layout_success_with_installable_bundle(&install_root, "v0.0.0");
+
+    for name in ["m80", "m80-jailer-harden", "m80-net-helper"] {
+        assert_regular_hardlink(
+            &install_root.join("versions/v0.0.0/bin").join(name),
+            &install_root.join("bin").join(name),
+        );
+    }
+    let manifest =
+        HostBinariesManifest::read(&install_root.join("artifacts/host-binaries.manifest.json"))
+            .expect("read flat host-binaries manifest");
+    assert!(
+        manifest.conditional_binaries.is_empty(),
+        "installer-owned flat manifest must not use conditional binary omissions"
+    );
+    let wrapper = manifest
+        .binaries
+        .iter()
+        .find(|binary| binary.name == HostBinaryName::M80JailerHarden)
+        .expect("flat manifest records m80-jailer-harden");
+    assert_eq!(
+        wrapper.path,
+        install_root.join("bin/m80-jailer-harden"),
+        "flat manifest must point at the flat wrapper path"
+    );
+    let profile = fs::read_to_string(install_root.join("profiles/default.toml")).unwrap();
+    assert!(
+        profile.contains(&format!(
+            "jailer_harden_bin = '{}'",
+            install_root.join("bin/m80-jailer-harden").display()
+        )),
+        "installed default profile must point at the flat wrapper: {profile}"
+    );
+}
+
+fn assert_regular_hardlink(expected: &Path, observed: &Path) {
+    let expected_metadata = fs::symlink_metadata(expected).unwrap();
+    let observed_metadata = fs::symlink_metadata(observed).unwrap();
+    assert!(
+        expected_metadata.is_file()
+            && observed_metadata.is_file()
+            && !expected_metadata.file_type().is_symlink()
+            && !observed_metadata.file_type().is_symlink(),
+        "projection entries must be regular files: expected={} observed={}",
+        expected.display(),
+        observed.display()
+    );
+    assert_eq!(
+        (expected_metadata.dev(), expected_metadata.ino()),
+        (observed_metadata.dev(), observed_metadata.ino()),
+        "flat projection must hardlink {} to {}",
+        observed.display(),
+        expected.display()
+    );
 }
 
 #[test]

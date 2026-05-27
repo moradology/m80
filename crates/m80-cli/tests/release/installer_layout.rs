@@ -361,7 +361,7 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
 }
 
 #[test]
-fn install_bundle_layout_omits_flat_wrapper_when_systemd_launch_is_selected() {
+fn install_bundle_layout_keeps_flat_wrapper_when_systemd_launch_is_available() {
     let bundle = write_release_bundle(None);
     let host = HostPrereqFixture::new();
     let install_temp = tempfile::tempdir().unwrap();
@@ -386,9 +386,9 @@ fn install_bundle_layout_omits_flat_wrapper_when_systemd_launch_is_selected() {
         version_dir.join("bin/m80-jailer-harden").is_file(),
         "versioned rollback record should keep the packaged wrapper"
     );
-    assert!(
-        !install_root.join("bin/m80-jailer-harden").exists(),
-        "systemd-selected flat projection must omit the wrapper"
+    assert_hardlinked(
+        &version_dir.join("bin/m80-jailer-harden"),
+        &install_root.join("bin/m80-jailer-harden"),
     );
 
     let host_binaries_manifest = install_root
@@ -403,23 +403,23 @@ fn install_bundle_layout_omits_flat_wrapper_when_systemd_launch_is_selected() {
         .map(|entry| entry["path"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert!(
-        !binary_paths.contains(&install_root.join("bin/m80-jailer-harden").to_str().unwrap()),
+        binary_paths.contains(&install_root.join("bin/m80-jailer-harden").to_str().unwrap()),
         "{binary_paths:?}"
     );
     assert_eq!(
         host_manifest_json["conditional_binaries"],
-        serde_json::json!([
-            {
-                "name": "m80_jailer_harden",
-                "absent_when": "systemd_path_chosen"
-            }
-        ])
+        serde_json::json!([])
     );
 
     let profile = fs::read_to_string(install_root.join("profiles/default.toml")).unwrap();
     assert!(
-        !profile.contains("jailer_harden_bin = "),
-        "systemd-selected default profile must not name an absent wrapper: {profile}"
+        profile.contains(
+            &install_root
+                .join("bin/m80-jailer-harden")
+                .display()
+                .to_string()
+        ),
+        "installed default profile must name the flat wrapper: {profile}"
     );
     assert!(
         profile.contains(

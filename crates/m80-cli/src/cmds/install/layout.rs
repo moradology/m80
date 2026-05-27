@@ -261,7 +261,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         profile_dir: &selector_paths.profile_dir,
         config_path: &selector_paths.config_path,
         binary_config: flat_projection.binary_config.clone(),
-        include_jailer_harden: flat_projection.include_jailer_harden,
+        include_jailer_harden: true,
         release_tag: Some(metadata.release_tag.clone()),
         m80_version: plan.binary_version.clone(),
         host_binaries_manifest: &flat_projection.host_binaries_manifest,

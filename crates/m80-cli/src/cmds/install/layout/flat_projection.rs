@@ -13,7 +13,6 @@ pub(super) struct FlatProjection {
     pub(super) artifact_dir: PathBuf,
     pub(super) host_binaries_manifest: PathBuf,
     pub(super) binary_config: m80_preflight::BinaryDiscoveryConfig,
-    pub(super) include_jailer_harden: bool,
 }
 
 pub(super) fn publish_flat_projection(
@@ -32,19 +31,8 @@ pub(super) fn publish_flat_projection(
     prepare_flat_dir(&bin_dir)?;
     prepare_flat_dir(&artifact_dir)?;
 
-    let install_jailer_harden = selected_launch_path_for_flat_projection(versioned_binary_config)?
-        == m80_preflight::LaunchPath::Wrapper;
-
-    for name in ["m80", "m80-net-helper"] {
+    for name in ["m80", "m80-jailer-harden", "m80-net-helper"] {
         atomic_hardlink_replace(&final_dir.join("bin").join(name), &bin_dir.join(name))?;
-    }
-    if install_jailer_harden {
-        atomic_hardlink_replace(
-            &final_dir.join("bin/m80-jailer-harden"),
-            &bin_dir.join("m80-jailer-harden"),
-        )?;
-    } else {
-        remove_path_if_exists(&bin_dir.join("m80-jailer-harden"))?;
     }
     for name in ["m80-guestd", "output.ext4", "vmlinux"] {
         atomic_hardlink_replace(&versioned_artifacts.join(name), &artifact_dir.join(name))?;
@@ -74,39 +62,22 @@ pub(super) fn publish_flat_projection(
         net_helper_bin: bin_dir.join("m80-net-helper"),
         expected_firecracker_version: versioned_binary_config.expected_firecracker_version.clone(),
     };
-    let host_binaries_manifest = write_flat_host_binaries_manifest(
-        &artifact_dir,
-        &bin_dir,
-        &flat_binary_config,
-        install_jailer_harden,
-    )?;
+    let host_binaries_manifest =
+        write_flat_host_binaries_manifest(&artifact_dir, &bin_dir, &flat_binary_config)?;
     Ok((
         FlatProjection {
             artifact_dir,
             host_binaries_manifest,
             binary_config: flat_binary_config,
-            include_jailer_harden: install_jailer_harden,
         },
         guard,
     ))
-}
-
-fn selected_launch_path_for_flat_projection(
-    binary_config: &m80_preflight::BinaryDiscoveryConfig,
-) -> Result<m80_preflight::LaunchPath, FcError> {
-    #[cfg(debug_assertions)]
-    if std::env::var_os("M80_INSTALL_FORCE_SYSTEMD_FLAT_PROJECTION").is_some() {
-        return Ok(m80_preflight::LaunchPath::Systemd);
-    }
-
-    m80_preflight::select_host_launch_path(binary_config).map_err(FcError::Preflight)
 }
 
 fn write_flat_host_binaries_manifest(
     artifact_dir: &Path,
     bin_dir: &Path,
     binary_config: &m80_preflight::BinaryDiscoveryConfig,
-    include_jailer_harden: bool,
 ) -> Result<PathBuf, FcError> {
     let path = artifact_dir.join("host-binaries.manifest.json");
     let tmp = sibling_tmp_path(&path, "host-binaries.manifest.json");
@@ -116,7 +87,7 @@ fn write_flat_host_binaries_manifest(
         firecracker_seccomp_filter: binary_config.firecracker_seccomp_filter.clone(),
         jailer_bin: binary_config.jailer_bin.clone(),
         jailer_harden_bin: binary_config.jailer_harden_bin.clone(),
-        include_jailer_harden,
+        include_jailer_harden: true,
         net_helper_bin: binary_config.net_helper_bin.clone(),
         m80_bin: bin_dir.join("m80"),
         expected_firecracker_version: binary_config.expected_firecracker_version.clone(),

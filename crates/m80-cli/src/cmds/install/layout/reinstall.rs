@@ -4,8 +4,8 @@ use std::path::Path;
 
 use m80_firecracker::{ConfigError, FcError};
 use m80_image_manifest::{
-    HostBinariesManifest, HostBinaryAbsentWhen, HostBinaryEntry, HostBinaryName,
-    HostLaunchMaterialEntry, HostLaunchMaterialName, Manifest,
+    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
+    HostLaunchMaterialName, Manifest,
 };
 
 use super::super::InstallPlan;
@@ -74,23 +74,9 @@ pub(super) fn verify_same_version_reinstall(
     compare_expected_release_files(final_dir, expected_dir, &repair_command)?;
     verify_installed_bundle_metadata(final_dir, &repair_command)?;
     verify_default_config(install_root, &repair_command)?;
-    let expect_flat_jailer_harden =
-        flat_manifest_requires_jailer_harden(install_root, &repair_command)?;
-    let profile = verify_default_profile(
-        plan,
-        install_root,
-        release_tag,
-        expect_flat_jailer_harden,
-        &repair_command,
-    )?;
+    let profile = verify_default_profile(plan, install_root, release_tag, &repair_command)?;
     verify_flat_projection(install_root, final_dir, release_tag, &repair_command)?;
-    verify_host_binaries_manifest(
-        install_root,
-        final_dir,
-        &profile,
-        expect_flat_jailer_harden,
-        &repair_command,
-    )?;
+    verify_host_binaries_manifest(install_root, final_dir, &profile, &repair_command)?;
     Ok(SameVersionReinstallVerification { repair_command })
 }
 
@@ -208,58 +194,10 @@ fn verify_default_config(install_root: &Path, repair_command: &str) -> Result<()
     )
 }
 
-fn flat_manifest_requires_jailer_harden(
-    install_root: &Path,
-    repair_command: &str,
-) -> Result<bool, FcError> {
-    let path = install_root.join("artifacts/host-binaries.manifest.json");
-    host_manifest_requires_jailer_harden(&path, "installed host-binaries manifest", repair_command)
-}
-
-pub(super) fn host_manifest_requires_jailer_harden(
-    manifest_path: &Path,
-    label: &'static str,
-    repair_command: &str,
-) -> Result<bool, FcError> {
-    let manifest = HostBinariesManifest::read(manifest_path)
-        .map_err(|err| reinstall_error(format!("{label} is unreadable: {err}"), repair_command))?;
-    manifest_requires_jailer_harden(&manifest, label, repair_command)
-}
-
-fn manifest_requires_jailer_harden(
-    manifest: &HostBinariesManifest,
-    label: &'static str,
-    repair_command: &str,
-) -> Result<bool, FcError> {
-    let wrapper_rows = manifest
-        .binaries
-        .iter()
-        .filter(|binary| binary.name == HostBinaryName::M80JailerHarden)
-        .count();
-    let conditional_rows = manifest
-        .conditional_binaries
-        .iter()
-        .filter(|binary| {
-            binary.name == HostBinaryName::M80JailerHarden
-                && binary.absent_when == HostBinaryAbsentWhen::SystemdPathChosen
-        })
-        .count();
-
-    match (wrapper_rows, conditional_rows, manifest.conditional_binaries.len()) {
-        (1, 0, 0) => Ok(true),
-        (0, 1, 1) => Ok(false),
-        _ => Err(reinstall_error(
-            format!("{label} must either list m80_jailer_harden once or record exactly one systemd_path_chosen conditional absence"),
-            repair_command,
-        )),
-    }
-}
-
 fn verify_default_profile(
     plan: &InstallPlan,
     install_root: &Path,
     release_tag: &str,
-    expect_jailer_harden: bool,
     repair_command: &str,
 ) -> Result<InstalledProfilePaths, FcError> {
     let selector_paths = super::install_selector_paths(install_root);
@@ -352,39 +290,13 @@ fn verify_default_profile(
         }
     }
     let expected_jailer_harden = bin.join("m80-jailer-harden").display().to_string();
-    let observed_jailer_harden = optional_toml_string(
+    require_toml_string(
         &table,
         "jailer_harden_bin",
+        &expected_jailer_harden,
         "installed default profile",
         repair_command,
     )?;
-    match (expect_jailer_harden, observed_jailer_harden) {
-        (true, Some(observed)) if observed == expected_jailer_harden => {}
-        (true, Some(observed)) => {
-            return Err(reinstall_error(
-                format!(
-                    "installed default profile field jailer_harden_bin mismatch: expected={} observed={observed}",
-                    expected_jailer_harden
-                ),
-                repair_command,
-            ));
-        }
-        (true, None) => {
-            return Err(reinstall_error(
-                "installed default profile field jailer_harden_bin must be a string".to_owned(),
-                repair_command,
-            ));
-        }
-        (false, Some(observed)) => {
-            return Err(reinstall_error(
-                format!(
-                    "systemd-selected installed default profile must omit jailer_harden_bin: observed={observed}"
-                ),
-                repair_command,
-            ));
-        }
-        (false, None) => {}
-    }
     Ok(InstalledProfilePaths {
         firecracker_bin: toml_string(
             &table,
@@ -420,7 +332,6 @@ fn verify_host_binaries_manifest(
     install_root: &Path,
     final_dir: &Path,
     profile: &InstalledProfilePaths,
-    expect_jailer_harden: bool,
     repair_command: &str,
 ) -> Result<(), FcError> {
     let path = install_root.join("artifacts/host-binaries.manifest.json");
@@ -430,19 +341,13 @@ fn verify_host_binaries_manifest(
             repair_command,
         )
     })?;
-    if manifest_requires_jailer_harden(
-        &manifest,
-        "installed host-binaries manifest",
-        repair_command,
-    )? != expect_jailer_harden
-    {
+    if !manifest.conditional_binaries.is_empty() {
         return Err(reinstall_error(
-            "installed host-binaries manifest wrapper mode changed during reinstall verification"
-                .to_owned(),
+            "installed host-binaries manifest must not use conditional_binaries".to_owned(),
             repair_command,
         ));
     }
-    let expected_binary_count = if expect_jailer_harden { 5 } else { 4 };
+    let expected_binary_count = 5;
     if manifest.binaries.len() != expected_binary_count {
         return Err(reinstall_error(
             format!(
@@ -491,21 +396,19 @@ fn verify_host_binaries_manifest(
         Some(m80_sha256.as_str()),
         repair_command,
     )?;
-    if expect_jailer_harden {
-        let jailer_harden_sha256 = installed_binary_sha256(
-            final_dir,
-            "bin/m80-jailer-harden",
-            "m80-jailer-harden binary",
-            repair_command,
-        )?;
-        require_host_binary(
-            &manifest,
-            HostBinaryName::M80JailerHarden,
-            &install_root.join("bin/m80-jailer-harden"),
-            Some(jailer_harden_sha256.as_str()),
-            repair_command,
-        )?;
-    }
+    let jailer_harden_sha256 = installed_binary_sha256(
+        final_dir,
+        "bin/m80-jailer-harden",
+        "m80-jailer-harden binary",
+        repair_command,
+    )?;
+    require_host_binary(
+        &manifest,
+        HostBinaryName::M80JailerHarden,
+        &install_root.join("bin/m80-jailer-harden"),
+        Some(jailer_harden_sha256.as_str()),
+        repair_command,
+    )?;
     require_host_binary(
         &manifest,
         HostBinaryName::M80NetHelper,
@@ -760,22 +663,6 @@ fn toml_string<'a>(
                 repair_command,
             )
         })
-}
-
-fn optional_toml_string<'a>(
-    table: &'a toml::map::Map<String, toml::Value>,
-    field: &'static str,
-    label: &'static str,
-    repair_command: &str,
-) -> Result<Option<&'a str>, FcError> {
-    match table.get(field) {
-        Some(toml::Value::String(value)) => Ok(Some(value)),
-        Some(_) => Err(reinstall_error(
-            format!("{label} field {field} must be a string"),
-            repair_command,
-        )),
-        None => Ok(None),
-    }
 }
 
 fn require_absolute_manifest_path(
