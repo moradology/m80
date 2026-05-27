@@ -74,6 +74,15 @@ pub enum PrivilegeStatus {
     CapabilityBearing,
 }
 
+/// Host launch path selected by preflight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchPath {
+    /// Launch the official Firecracker jailer through a transient systemd unit.
+    Systemd,
+    /// Launch through `m80-jailer-harden` before the official jailer.
+    Wrapper,
+}
+
 /// Output of a successful preflight: every resolved path, version, and
 /// capability the rest of the system needs.
 #[derive(Debug, Clone)]
@@ -88,6 +97,10 @@ pub struct Discovery {
     pub firecracker_version: String,
     /// Observed official jailer version accepted by preflight.
     pub jailer_version: String,
+    /// Launch path selected from host capabilities.
+    pub chosen_launch_path: LaunchPath,
+    /// Resolved `systemd-run` path when [`LaunchPath::Systemd`] was selected.
+    pub systemd_run_bin: Option<PathBuf>,
     /// Resolved m80 jailer hardening wrapper path.
     pub jailer_harden_bin: PathBuf,
     /// Resolved m80 network helper path.
@@ -126,7 +139,7 @@ pub use binary::{
 pub use checks::{
     run, run_with_configs, verify_host_substrate, verify_host_substrate_fixture,
     CgroupPreflightMode, HostFeaturePreflightConfig, HostSubstrateDiscovery, HostSubstrateFixture,
-    HostSubstrateFixtureKvm, HostSubstrateProofKind,
+    HostSubstrateFixtureKvm, HostSubstrateProofKind, SYSTEMD_MIN_VERSION,
 };
 pub use cve_floor::{
     active_firecracker_cve_floors, FirecrackerCveFloor, FIRECRACKER_CVE_FLOOR_SOURCE,
@@ -443,6 +456,15 @@ pub enum PreflightError {
         actual: String,
         /// File/module that owns the pairing policy.
         policy_source: &'static str,
+    },
+
+    /// No supported host launch path is available.
+    #[error("no supported launch path available: systemd unavailable ({systemd_reason}); wrapper missing at {}", wrapper_path.display())]
+    LaunchPathUnavailable {
+        /// Why the systemd path was not usable.
+        systemd_reason: String,
+        /// Configured wrapper path that was missing.
+        wrapper_path: PathBuf,
     },
 
     /// `m80-jailer-harden` binary not found.
@@ -942,6 +964,9 @@ impl PreflightError {
             }
             Self::JailerVersionMismatch { .. } => {
                 "install the official jailer from the same Firecracker release train as the accepted firecracker binary; see docs/behaviors/release/host-prerequisite-policy.md"
+            }
+            Self::LaunchPathUnavailable { .. } => {
+                "install systemd >= 245 with a reachable root system bus, or install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden for the wrapper path"
             }
             Self::JailerHardenBinaryNotFound { .. } => {
                 "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"

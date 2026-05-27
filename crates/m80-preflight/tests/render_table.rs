@@ -2,7 +2,9 @@
 //! status markers for each fixture row.
 
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
-use m80_preflight::{CheckRow, Discovery, HostPrerequisiteCheckId, PinnedRootfs, PrivilegeStatus};
+use m80_preflight::{
+    CheckRow, Discovery, HostPrerequisiteCheckId, LaunchPath, PinnedRootfs, PrivilegeStatus,
+};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
@@ -42,6 +44,8 @@ fn fixture_discovery() -> Discovery {
         jailer_bin: PathBuf::from("/opt/firecracker/bin/jailer"),
         firecracker_version: "v1.15.1".to_owned(),
         jailer_version: "v1.15.1".to_owned(),
+        chosen_launch_path: LaunchPath::Wrapper,
+        systemd_run_bin: None,
         jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
         net_helper_bin: PathBuf::from("/opt/m80/bin/m80-net-helper"),
         kernel: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),

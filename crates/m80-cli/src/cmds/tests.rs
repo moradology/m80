@@ -20,7 +20,7 @@ use crate::profile::{self, ProfileBodySource, RuntimeProfile};
 use crate::release::VersionIdentity;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{
-    CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
+    CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, LaunchPath, PreflightError,
 };
 use m80_proto::ExecStatus;
 use serde::Serialize;
@@ -36,6 +36,8 @@ fn fake_discovery() -> Discovery {
         jailer_bin: "/tmp/jailer".into(),
         firecracker_version: "v1.0.0".to_owned(),
         jailer_version: "v1.0.0".to_owned(),
+        chosen_launch_path: LaunchPath::Wrapper,
+        systemd_run_bin: None,
         jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
         net_helper_bin: "/tmp/m80-net-helper".into(),
         kernel: "/tmp/vmlinux".into(),

@@ -48,12 +48,13 @@ for table readability without changing the machine identity. The registry is:
 
 `os_gate`, `host_kernel_floor`, `kvm`, `cgroup_mode`, `jailer_identity`,
 `privilege`, `host_substrate_proof`, `kvm_cpu_extensions`, `kernel_modules`,
-`transparent_hugepages`, `kvm_halt_polling`, `cpu_governor`,
-`cpu_microcode`, `cpu_vulnerabilities`, `conntrack_capacity`,
-`firecracker_binary`, `firecracker_seccomp_filter`, `jailer_binary`,
-`jailer_hardening_wrapper`, `network_helper`, `host_binary_manifest`,
-`kernel_image`, `rootfs_manifest`, `run_root`, `run_root_filesystem`, and
-`storage_helpers`.
+`ksm_disabled`, `smt_disabled`, `swap_disabled`, `nested_virt_disabled`,
+`kvm_timer_floor`, `cgroup_favordynmods`, `transparent_hugepages`,
+`kvm_halt_polling`, `cpu_governor`, `cpu_microcode`, `cpu_vulnerabilities`,
+`conntrack_capacity`, `firecracker_binary`, `firecracker_seccomp_filter`,
+`jailer_binary`, `systemd`, `jailer_hardening_wrapper`, `network_helper`,
+`host_binary_manifest`, `kernel_image`, `rootfs_manifest`, `run_root`,
+`run_root_filesystem`, and `storage_helpers`.
 
 Successful full-preflight JSON is stricter than ad hoc partial projections:
 `HostPrerequisiteResult::from_full_discovery()` validates that the emitted

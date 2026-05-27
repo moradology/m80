@@ -52,6 +52,8 @@ pub enum HostPrerequisiteCheckId {
     FirecrackerSeccompFilter,
     /// Official jailer binary identity check.
     JailerBinary,
+    /// systemd transient-unit launch path check.
+    Systemd,
     /// m80 jailer hardening wrapper identity check.
     JailerHardeningWrapper,
     /// m80 network helper identity check.
@@ -97,6 +99,7 @@ impl HostPrerequisiteCheckId {
         Self::FirecrackerBinary,
         Self::FirecrackerSeccompFilter,
         Self::JailerBinary,
+        Self::Systemd,
         Self::JailerHardeningWrapper,
         Self::NetworkHelper,
         Self::HostBinaryManifest,
@@ -135,6 +138,7 @@ impl HostPrerequisiteCheckId {
             Self::FirecrackerBinary => "Firecracker binary",
             Self::FirecrackerSeccompFilter => "Firecracker seccomp filter",
             Self::JailerBinary => "Jailer binary",
+            Self::Systemd => "systemd launch",
             Self::JailerHardeningWrapper => "Jailer hardening wrapper",
             Self::NetworkHelper => "Network helper",
             Self::HostBinaryManifest => "Host binary manifest",
@@ -174,6 +178,7 @@ impl HostPrerequisiteCheckId {
             Self::FirecrackerBinary => "firecracker_binary",
             Self::FirecrackerSeccompFilter => "firecracker_seccomp_filter",
             Self::JailerBinary => "jailer_binary",
+            Self::Systemd => "systemd",
             Self::JailerHardeningWrapper => "jailer_hardening_wrapper",
             Self::NetworkHelper => "network_helper",
             Self::HostBinaryManifest => "host_binary_manifest",

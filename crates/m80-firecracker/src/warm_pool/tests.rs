@@ -467,6 +467,8 @@ fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
         jailer_bin: "/tmp/jailer".into(),
         firecracker_version: "v1.0.0".to_owned(),
         jailer_version: "v1.0.0".to_owned(),
+        chosen_launch_path: m80_preflight::LaunchPath::Wrapper,
+        systemd_run_bin: None,
         jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
         net_helper_bin,
         kernel: "/tmp/vmlinux".into(),

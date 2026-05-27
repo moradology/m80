@@ -458,6 +458,7 @@ fn check_id_for_preflight_error(error: &PreflightError) -> HostPrerequisiteCheck
         | PreflightError::JailerVersionCommandFailed { .. }
         | PreflightError::JailerVersionOutputMalformed { .. }
         | PreflightError::JailerVersionMismatch { .. } => HostPrerequisiteCheckId::JailerBinary,
+        PreflightError::LaunchPathUnavailable { .. } => HostPrerequisiteCheckId::Systemd,
         PreflightError::JailerHardenBinaryNotFound { .. } => {
             HostPrerequisiteCheckId::JailerHardeningWrapper
         }
@@ -735,6 +736,17 @@ fn apply_preflight_error_fields(check: &mut HostPrerequisiteCheck, error: &Prefl
         PreflightError::CapabilityRead(source) => {
             check.expected_value = Some("capability state readable".to_string());
             check.actual_value = Some(source.to_string());
+        }
+        PreflightError::LaunchPathUnavailable {
+            systemd_reason,
+            wrapper_path,
+        } => {
+            check.final_path = Some(wrapper_path.clone());
+            check.expected_value =
+                Some("systemd transient units or m80-jailer-harden fallback".to_string());
+            check.actual_value = Some(format!(
+                "systemd unavailable: {systemd_reason}; wrapper missing"
+            ));
         }
         PreflightError::FirecrackerBinaryNotFound { path }
         | PreflightError::JailerBinaryNotFound { path }

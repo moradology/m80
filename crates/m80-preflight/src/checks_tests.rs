@@ -33,6 +33,92 @@ fn manifest_firecracker_train_rejects_mismatch() {
     }
 }
 
+fn systemd(version: u32) -> SystemdDiscovery {
+    SystemdDiscovery {
+        systemd_run_bin: PathBuf::from("/usr/bin/systemd-run"),
+        version,
+    }
+}
+
+#[test]
+fn systemd_version_parser_accepts_systemd_run_output() {
+    let output = "systemd 257 (257.5-2ubuntu1.1)\n+PAM +AUDIT\n";
+
+    assert_eq!(parse_systemd_version(output).unwrap(), 257);
+}
+
+#[test]
+fn systemd_version_parser_rejects_malformed_output() {
+    let err = parse_systemd_version("not systemd\n").unwrap_err();
+
+    assert!(err.contains("missing systemd version line"));
+}
+
+#[test]
+fn launch_path_prefers_systemd_when_wrapper_is_available() {
+    let selection = select_launch_path_from_probe(
+        Ok(systemd(257)),
+        true,
+        Path::new("/opt/m80/bin/m80-jailer-harden"),
+    )
+    .unwrap();
+
+    assert_eq!(selection.chosen_launch_path, LaunchPath::Systemd);
+    assert!(selection.systemd.is_some());
+    assert!(selection.detail.contains("wrapper fallback available"));
+}
+
+#[test]
+fn launch_path_uses_systemd_when_wrapper_is_absent() {
+    let selection = select_launch_path_from_probe(
+        Ok(systemd(257)),
+        false,
+        Path::new("/opt/m80/bin/m80-jailer-harden"),
+    )
+    .unwrap();
+
+    assert_eq!(selection.chosen_launch_path, LaunchPath::Systemd);
+    assert!(selection.detail.contains("wrapper fallback unavailable"));
+}
+
+#[test]
+fn launch_path_uses_wrapper_when_systemd_is_absent() {
+    let selection = select_launch_path_from_probe(
+        Err("systemd-run not found".to_string()),
+        true,
+        Path::new("/opt/m80/bin/m80-jailer-harden"),
+    )
+    .unwrap();
+
+    assert_eq!(selection.chosen_launch_path, LaunchPath::Wrapper);
+    assert!(selection.systemd.is_none());
+    assert!(selection.detail.contains("systemd unavailable"));
+}
+
+#[test]
+fn launch_path_rejects_host_without_systemd_or_wrapper() {
+    let err = select_launch_path_from_probe(
+        Err("systemd-run not found".to_string()),
+        false,
+        Path::new("/opt/m80/bin/m80-jailer-harden"),
+    )
+    .unwrap_err();
+
+    match err {
+        PreflightError::LaunchPathUnavailable {
+            systemd_reason,
+            wrapper_path,
+        } => {
+            assert_eq!(systemd_reason, "systemd-run not found");
+            assert_eq!(
+                wrapper_path,
+                PathBuf::from("/opt/m80/bin/m80-jailer-harden")
+            );
+        }
+        other => panic!("expected LaunchPathUnavailable, got {other:?}"),
+    }
+}
+
 #[test]
 fn cgroup_mode_parser_accepts_unified_v2() {
     let mode = parse_cgroup_mode("unified-v2").unwrap();

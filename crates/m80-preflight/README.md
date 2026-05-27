@@ -271,10 +271,10 @@ which is the right place for a security review to start.
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
 - `Discovery { firecracker_bin, firecracker_seccomp_filter, jailer_bin,
-  firecracker_version, jailer_version, jailer_harden_bin, net_helper_bin,
-  kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
-  manifest: m80_image_manifest::Manifest, run_root: PathBuf,
-  privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
+  firecracker_version, jailer_version, chosen_launch_path, systemd_run_bin,
+  jailer_harden_bin, net_helper_bin, kernel: PathBuf, rootfs: PathBuf,
+  pinned_rootfs: PinnedRootfs, manifest: m80_image_manifest::Manifest,
+  run_root: PathBuf, privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `PinnedRootfs::from_file(path, file) -> PinnedRootfs`,
   `PinnedRootfs::path() -> &Path`, and
   `PinnedRootfs::proc_fd_path() -> PathBuf`.
@@ -282,6 +282,9 @@ which is the right place for a security review to start.
 - `CheckRow { check_id, label, passed, detail }`; `check_id` is stable for
   machine consumers and `label` is human presentation text.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
+- `LaunchPath { Systemd, Wrapper }` and `SYSTEMD_MIN_VERSION` — the selected
+  host launch path and the pinned minimum systemd version for transient-unit
+  launch.
 - `FirecrackerTrainPolicy::from_expected_firecracker_version`, plus
   `expected_firecracker_version()`, `jailer_pairing_rule()`, `cve_floor()`,
   `source()`, `cve_floor_source()`, and `policy_doc()` — the shared source for
@@ -327,6 +330,7 @@ which is the right place for a security review to start.
   `JailerVersionCommandFailed { path, status }`,
   `JailerVersionOutputMalformed { actual, policy_source }`,
   `JailerVersionMismatch { expected, actual, policy_source }`,
+  `LaunchPathUnavailable { systemd_reason, wrapper_path }`,
   `JailerHardenBinaryNotFound`,
   `HostBinaryManifest(m80_image_manifest::ManifestError)`,
   `HostBinaryMissing { name }`, `HostBinaryDuplicate { name }`,

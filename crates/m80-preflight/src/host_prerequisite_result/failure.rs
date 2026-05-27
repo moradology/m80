@@ -80,6 +80,8 @@ pub enum HostPrerequisiteFailureKind {
     JailerVersionOutputMalformed,
     /// Jailer version did not match Firecracker.
     JailerVersionMismatch,
+    /// Neither systemd transient launch nor the wrapper fallback is usable.
+    LaunchPathUnavailable,
     /// m80 jailer hardening wrapper is missing.
     JailerHardenBinaryNotFound,
     /// m80 network helper is missing.
@@ -179,6 +181,7 @@ impl HostPrerequisiteFailureKind {
                 Self::JailerVersionOutputMalformed
             }
             PreflightError::JailerVersionMismatch { .. } => Self::JailerVersionMismatch,
+            PreflightError::LaunchPathUnavailable { .. } => Self::LaunchPathUnavailable,
             PreflightError::JailerHardenBinaryNotFound { .. } => Self::JailerHardenBinaryNotFound,
             PreflightError::NetHelperBinaryNotFound { .. } => Self::NetHelperBinaryNotFound,
             PreflightError::HostBinaryManifest(_) => Self::HostBinaryManifest,

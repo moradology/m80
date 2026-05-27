@@ -105,6 +105,8 @@ mod tests {
             jailer_bin: PathBuf::from("/bin/jailer"),
             firecracker_version: "v1.10.0".to_owned(),
             jailer_version: "v1.10.0".to_owned(),
+            chosen_launch_path: m80_preflight::LaunchPath::Wrapper,
+            systemd_run_bin: None,
             jailer_harden_bin: PathBuf::from("/bin/m80-jailer-harden"),
             net_helper_bin: PathBuf::from("/bin/m80-net-helper"),
             kernel: PathBuf::from("/artifacts/vmlinux"),

@@ -1,15 +1,18 @@
 //! The ordered preflight checks that populate a [`Discovery`].
 
 use std::collections::HashSet;
+use std::env;
 use std::fs;
 use std::io;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
 use crate::binary::{discover_binaries, verify_host_binaries, BinaryDiscoveryConfig};
 use crate::cache::PreflightCache;
 use crate::firecracker_train::enforce_firecracker_version;
-use crate::{CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError};
+use crate::{CheckRow, Discovery, HostPrerequisiteCheckId, LaunchPath, PreflightError};
 
 #[path = "substrate.rs"]
 mod substrate;
@@ -57,6 +60,8 @@ const ENV_SKIP_SWAP: &str = "M80_SKIP_CHECK_SWAP";
 const ENV_SKIP_NESTED_VIRT: &str = "M80_SKIP_CHECK_NESTED_VIRT";
 const ENV_SKIP_KVM_TIMER: &str = "M80_SKIP_CHECK_KVM_TIMER";
 const ENV_SKIP_CGROUP_FAVORDYNMODS: &str = "M80_SKIP_CHECK_CGROUP_FAVORDYNMODS";
+/// Minimum systemd version accepted for transient-unit launch.
+pub const SYSTEMD_MIN_VERSION: u32 = 245;
 const NF_CONNTRACK_ENTRIES_PER_VM: u64 = 1_000;
 const NF_CONNTRACK_HEADROOM_MULTIPLIER: u64 = 2;
 
@@ -100,6 +105,19 @@ const CPU_VULNERABILITY_CHECKS: &[CpuVulnerabilityCheck] = &[
 struct CpuVulnerabilityCheck {
     id: &'static str,
     hard_fail_on_vulnerable: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SystemdDiscovery {
+    systemd_run_bin: PathBuf,
+    version: u32,
+}
+
+#[derive(Debug, Clone)]
+struct LaunchPathSelection {
+    chosen_launch_path: LaunchPath,
+    systemd: Option<SystemdDiscovery>,
+    detail: String,
 }
 
 /// Run all checks in order, deriving binary and artifact config from env.
@@ -155,6 +173,7 @@ pub fn run_with_configs(
     check_nf_conntrack_capacity(host_feature_config.expected_concurrent_vms, &mut report)?;
 
     let privilege = substrate.privilege;
+    let launch_path = select_launch_path(&binary_config)?;
 
     let cache = PreflightCache::load(&binary_config, &artifact_config);
 
@@ -193,6 +212,10 @@ pub fn run_with_configs(
             binaries.jailer_version,
             binaries.firecracker_version
         ),
+    ));
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::Systemd,
+        launch_path.detail.clone(),
     ));
     report.push(CheckRow::pass(
         HostPrerequisiteCheckId::JailerHardeningWrapper,
@@ -261,6 +284,8 @@ pub fn run_with_configs(
         jailer_bin: binaries.jailer_bin,
         firecracker_version: binaries.firecracker_version,
         jailer_version: binaries.jailer_version,
+        chosen_launch_path: launch_path.chosen_launch_path,
+        systemd_run_bin: launch_path.systemd.map(|systemd| systemd.systemd_run_bin),
         jailer_harden_bin: binaries.jailer_harden_bin,
         net_helper_bin: binaries.net_helper_bin,
         kernel: artifacts.kernel,
@@ -278,6 +303,164 @@ fn check_manifest_firecracker_train(
     actual_firecracker_version: &str,
 ) -> Result<(), PreflightError> {
     enforce_firecracker_version(expected_firecracker_version, actual_firecracker_version)
+}
+
+fn select_launch_path(
+    config: &BinaryDiscoveryConfig,
+) -> Result<LaunchPathSelection, PreflightError> {
+    select_launch_path_from_probe(
+        check_systemd(),
+        config.jailer_harden_bin.exists(),
+        &config.jailer_harden_bin,
+    )
+}
+
+fn select_launch_path_from_probe(
+    systemd: Result<SystemdDiscovery, String>,
+    wrapper_available: bool,
+    wrapper_path: &Path,
+) -> Result<LaunchPathSelection, PreflightError> {
+    match (systemd, wrapper_available) {
+        (Ok(systemd), true) => Ok(LaunchPathSelection {
+            chosen_launch_path: LaunchPath::Systemd,
+            detail: format!(
+                "systemd selected: {} (systemd {}); wrapper fallback available at {}",
+                systemd.systemd_run_bin.display(),
+                systemd.version,
+                wrapper_path.display()
+            ),
+            systemd: Some(systemd),
+        }),
+        (Ok(systemd), false) => Ok(LaunchPathSelection {
+            chosen_launch_path: LaunchPath::Systemd,
+            detail: format!(
+                "systemd selected: {} (systemd {}); wrapper fallback unavailable at {}",
+                systemd.systemd_run_bin.display(),
+                systemd.version,
+                wrapper_path.display()
+            ),
+            systemd: Some(systemd),
+        }),
+        (Err(systemd_reason), true) => Ok(LaunchPathSelection {
+            chosen_launch_path: LaunchPath::Wrapper,
+            systemd: None,
+            detail: format!(
+                "wrapper selected: {}; systemd unavailable: {systemd_reason}",
+                wrapper_path.display()
+            ),
+        }),
+        (Err(systemd_reason), false) => Err(PreflightError::LaunchPathUnavailable {
+            systemd_reason,
+            wrapper_path: wrapper_path.to_path_buf(),
+        }),
+    }
+}
+
+fn check_systemd() -> Result<SystemdDiscovery, String> {
+    let systemd_run_bin = resolve_systemd_run_bin()?;
+    let output = Command::new(&systemd_run_bin)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|source| {
+            format!(
+                "{} --version failed to spawn: {source}",
+                systemd_run_bin.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "{} --version exited {}",
+            systemd_run_bin.display(),
+            output.status
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version = parse_systemd_version(&stdout)?;
+    if version < SYSTEMD_MIN_VERSION {
+        return Err(format!(
+            "systemd {version} is below required {SYSTEMD_MIN_VERSION}"
+        ));
+    }
+    probe_systemd_transient_unit(&systemd_run_bin)?;
+
+    Ok(SystemdDiscovery {
+        systemd_run_bin,
+        version,
+    })
+}
+
+fn resolve_systemd_run_bin() -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Some(paths) = env::var_os("PATH") {
+        candidates.extend(env::split_paths(&paths).map(|dir| dir.join("systemd-run")));
+    }
+    candidates.extend(
+        [
+            "/usr/bin/systemd-run",
+            "/bin/systemd-run",
+            "/usr/local/bin/systemd-run",
+        ]
+        .into_iter()
+        .map(PathBuf::from),
+    );
+
+    for candidate in candidates {
+        if executable_file(&candidate) {
+            return fs::canonicalize(&candidate).map_err(|source| {
+                format!("{} failed to canonicalize: {source}", candidate.display())
+            });
+        }
+    }
+    Err("systemd-run not found on PATH or standard locations".to_string())
+}
+
+fn executable_file(path: &Path) -> bool {
+    path.metadata()
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+fn parse_systemd_version(output: &str) -> Result<u32, String> {
+    let Some(line) = output.lines().find(|line| line.starts_with("systemd ")) else {
+        return Err("systemd-run --version output missing systemd version line".to_string());
+    };
+    let Some(version) = line.split_whitespace().nth(1) else {
+        return Err("systemd-run --version output missing version token".to_string());
+    };
+    version
+        .parse::<u32>()
+        .map_err(|source| format!("systemd version token {version:?} did not parse: {source}"))
+}
+
+fn probe_systemd_transient_unit(systemd_run_bin: &Path) -> Result<(), String> {
+    let output = Command::new(systemd_run_bin)
+        .args([
+            "--quiet",
+            "--collect",
+            "--wait",
+            "--pipe",
+            "--property=NoNewPrivileges=yes",
+            "/bin/true",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|source| {
+            format!(
+                "{} transient unit probe failed to spawn: {source}",
+                systemd_run_bin.display()
+            )
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(format!(
+        "{} transient unit probe exited {}: {}",
+        systemd_run_bin.display(),
+        output.status,
+        stderr.trim()
+    ))
 }
 
 fn check_kvm_cpu_extensions(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {

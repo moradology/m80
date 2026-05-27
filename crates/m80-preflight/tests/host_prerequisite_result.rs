@@ -6,7 +6,7 @@ use m80_preflight::{
     HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
     HostPrerequisiteOwner, HostPrerequisiteRemediation, HostPrerequisiteResult,
     HostPrerequisiteResultError, HostPrerequisiteStatus, HostSubstrateFixture, PreflightError,
-    HOST_PREREQUISITE_RESULT_SCHEMA_VERSION, REPAIR_CGROUP_MODE,
+    HOST_PREREQUISITE_RESULT_SCHEMA_VERSION, REPAIR_CGROUP_MODE, REPAIR_HOST_SETUP,
     REPAIR_INSTALL_FIRECRACKER_PREREQUISITES, REPAIR_KVM, REPAIR_PRIVILEGE,
     REPAIR_UPGRADE_FIRECRACKER_CVE_FLOOR,
 };
@@ -96,7 +96,7 @@ fn full_report_rows_name_first_missing_check_id() {
             expected_index,
         } => {
             assert_eq!(check_id, "rootfs_manifest");
-            assert_eq!(expected_index, 28);
+            assert_eq!(expected_index, 29);
         }
         other => panic!("expected missing check_id, got {other:?}"),
     }
@@ -129,7 +129,7 @@ fn full_report_rows_name_first_duplicate_check_id() {
 #[test]
 fn full_report_rows_name_first_out_of_order_check_id() {
     let mut rows = full_report_rows();
-    rows.swap(27, 28);
+    rows.swap(28, 29);
 
     let err = HostPrerequisiteResult::from_full_report_rows(&rows).unwrap_err();
 
@@ -141,7 +141,7 @@ fn full_report_rows_name_first_out_of_order_check_id() {
         } => {
             assert_eq!(expected_check_id, "kernel_image");
             assert_eq!(actual_check_id, "rootfs_manifest");
-            assert_eq!(index, 27);
+            assert_eq!(index, 28);
         }
         other => panic!("expected out-of-order check_id, got {other:?}"),
     }
@@ -176,6 +176,7 @@ fn stable_check_registry_keeps_expected_order() {
             HostPrerequisiteCheckId::FirecrackerBinary,
             HostPrerequisiteCheckId::FirecrackerSeccompFilter,
             HostPrerequisiteCheckId::JailerBinary,
+            HostPrerequisiteCheckId::Systemd,
             HostPrerequisiteCheckId::JailerHardeningWrapper,
             HostPrerequisiteCheckId::NetworkHelper,
             HostPrerequisiteCheckId::HostBinaryManifest,
@@ -492,6 +493,13 @@ fn failure_kind_maps_host_feature_preflight_errors() {
             },
             HostPrerequisiteFailureKind::KvmTimerFloorUnset,
         ),
+        (
+            PreflightError::LaunchPathUnavailable {
+                systemd_reason: "systemd-run not found".to_owned(),
+                wrapper_path: "/opt/m80/bin/m80-jailer-harden".into(),
+            },
+            HostPrerequisiteFailureKind::LaunchPathUnavailable,
+        ),
     ];
 
     for (error, expected) in cases {
@@ -569,6 +577,15 @@ fn diagnostic_maps_host_verifier_failures_to_expected_actual_values() {
             HostPrerequisiteCheckId::KvmTimerFloor,
             Some(">= 500"),
             Some("0"),
+        ),
+        (
+            PreflightError::LaunchPathUnavailable {
+                systemd_reason: "systemd-run not found".to_owned(),
+                wrapper_path: "/opt/m80/bin/m80-jailer-harden".into(),
+            },
+            HostPrerequisiteCheckId::Systemd,
+            Some("systemd transient units or m80-jailer-harden fallback"),
+            Some("systemd unavailable: systemd-run not found; wrapper missing"),
         ),
     ];
 
@@ -836,6 +853,16 @@ fn host_prerequisite_repair_catalog_covers_public_first_run_failures() {
             HostPrerequisiteCheckId::JailerBinary,
             REPAIR_INSTALL_FIRECRACKER_PREREQUISITES,
             "docs/behaviors/release/host-prerequisite-policy.md",
+        ),
+        (
+            "no launch path",
+            PreflightError::LaunchPathUnavailable {
+                systemd_reason: "systemd-run not found".into(),
+                wrapper_path: "/opt/m80/bin/m80-jailer-harden".into(),
+            },
+            HostPrerequisiteCheckId::Systemd,
+            REPAIR_HOST_SETUP,
+            "docs/ops/host-setup.md",
         ),
         (
             "missing seccomp filter",

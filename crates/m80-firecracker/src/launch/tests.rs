@@ -105,6 +105,8 @@ fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
         jailer_bin: PathBuf::from("/tmp/jailer"),
         firecracker_version: "v1.0.0".to_owned(),
         jailer_version: "v1.0.0".to_owned(),
+        chosen_launch_path: m80_preflight::LaunchPath::Wrapper,
+        systemd_run_bin: None,
         jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
         net_helper_bin,
         kernel: PathBuf::from("/tmp/vmlinux"),
