@@ -48,19 +48,21 @@ on systemd-selected hosts. `v0.2.24` restores the hard cutover: the installer
 always hardlinks `m80-jailer-harden` into `<install-root>/bin`, always records
 it in the flat host-binaries manifest, and keeps `conditional_binaries` empty
 for installer-owned manifests. `v0.2.25` carries the same public installer
-contract forward from the proved post-release source state.
+contract forward from the proved post-release source state. `v0.2.26` carries
+the release-notes pipeline proof release while preserving the same public
+installer contract.
 
-The current repair source therefore uses workspace package version `0.2.25`.
-The matching stable tag is `v0.2.25`; tags at or before the existing public
-latest `v0.2.24` are intentionally rejected as old-release backfill candidates
+The current repair source therefore uses workspace package version `0.2.26`.
+The matching stable tag is `v0.2.26`; tags at or before the existing public
+latest `v0.2.25` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.25-dev` and remains barred from
+so an unreleased local build now reports `0.2.26-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.25` as the packageable release
+Fixture and release-script coverage uses `v0.2.26` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,
