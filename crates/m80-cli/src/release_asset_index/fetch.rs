@@ -14,6 +14,7 @@ static DOWNLOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 10;
 const DEFAULT_MAX_TIME_SECONDS: u64 = 120;
+const INTEGRITY_NAME: &str = "m80-release-integrity.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AssetIndexDownloadBounds {
@@ -71,7 +72,7 @@ pub(super) fn fetch_verified_asset_index(
     request: AssetIndexFetchRequest<'_>,
 ) -> Result<VerifiedAssetIndex, AssetIndexFetchError> {
     let context = AssetIndexFetchContext::new(request);
-    let checksum_url = checksum_url_for_index(request.index_url);
+    let checksum_url = integrity_url_for_index(request.index_url);
     let index_bytes = fetch_asset_index_bytes(request.index_url, request.release_tag, &context)?;
     let checksum_bytes = fetch_asset_index_bytes(&checksum_url, request.release_tag, &context)?;
     let checksum_context = context.after_checksum_verification();
@@ -141,8 +142,11 @@ pub(super) fn fetch_verified_asset_index(
     })
 }
 
-fn checksum_url_for_index(index_url: &str) -> String {
-    format!("{index_url}.sha256")
+fn integrity_url_for_index(index_url: &str) -> String {
+    match index_url.rsplit_once('/') {
+        Some((prefix, _)) => format!("{prefix}/{INTEGRITY_NAME}"),
+        None => INTEGRITY_NAME.to_owned(),
+    }
 }
 
 fn fetch_asset_index_bytes(
@@ -261,25 +265,53 @@ fn read_expected_index_sha256(
     checksum_bytes: &[u8],
     context: &AssetIndexFetchContext,
 ) -> Result<String, AssetIndexFetchError> {
-    let text = std::str::from_utf8(checksum_bytes).map_err(|source| {
-        AssetIndexFetchError::ChecksumInvalid {
-            checksum_url: checksum_url.to_owned(),
-            detail: format!("checksum sidecar is not UTF-8: {source}"),
-            context: context.clone(),
-        }
-    })?;
-    let expected =
-        text.split_whitespace()
-            .next()
-            .ok_or_else(|| AssetIndexFetchError::ChecksumInvalid {
+    let predicate =
+        serde_json::from_slice::<serde_json::Value>(checksum_bytes).map_err(|source| {
+            AssetIndexFetchError::ChecksumInvalid {
                 checksum_url: checksum_url.to_owned(),
-                detail: "checksum sidecar is empty".to_owned(),
+                detail: format!("release integrity predicate JSON invalid: {source}"),
                 context: context.clone(),
-            })?;
+            }
+        })?;
+    if predicate
+        .get("release_tag")
+        .and_then(serde_json::Value::as_str)
+        != Some(context.release_tag.as_str())
+    {
+        return Err(AssetIndexFetchError::ChecksumInvalid {
+            checksum_url: checksum_url.to_owned(),
+            detail: format!(
+                "release integrity predicate release_tag mismatch: expected {}",
+                context.release_tag
+            ),
+            context: context.clone(),
+        });
+    }
+    let subjects = predicate
+        .get("subjects")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| AssetIndexFetchError::ChecksumInvalid {
+            checksum_url: checksum_url.to_owned(),
+            detail: "release integrity predicate subjects missing".to_owned(),
+            context: context.clone(),
+        })?;
+    let expected = subjects
+        .iter()
+        .find(|subject| {
+            subject.get("name").and_then(serde_json::Value::as_str) == Some(ASSET_INDEX_NAME)
+                && subject.get("kind").and_then(serde_json::Value::as_str) == Some("asset-index")
+        })
+        .and_then(|subject| subject.get("sha256").and_then(serde_json::Value::as_str))
+        .ok_or_else(|| AssetIndexFetchError::ChecksumInvalid {
+            checksum_url: checksum_url.to_owned(),
+            detail: "release integrity predicate missing asset-index subject".to_owned(),
+            context: context.clone(),
+        })?;
     if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(AssetIndexFetchError::ChecksumInvalid {
             checksum_url: checksum_url.to_owned(),
-            detail: "checksum sidecar must start with a 64-hex sha256 digest".to_owned(),
+            detail: "release integrity asset-index subject must carry a 64-hex sha256 digest"
+                .to_owned(),
             context: context.clone(),
         });
     }
@@ -698,9 +730,10 @@ fn validate_final_index_url(
 
 fn is_github_release_asset_index_url(url: &RemoteUrl, release_tag: &str) -> bool {
     let release_path = crate::release_urls::release_asset_path(release_tag, ASSET_INDEX_NAME);
+    let integrity_path = crate::release_urls::release_asset_path(release_tag, INTEGRITY_NAME);
     url.scheme == "https"
         && url.host == "github.com"
-        && (url.path == release_path || url.path == format!("{release_path}.sha256"))
+        && (url.path == release_path || url.path == integrity_path)
 }
 
 fn is_github_asset_redirect_host(host: &str) -> bool {

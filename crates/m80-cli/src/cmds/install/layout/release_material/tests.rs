@@ -68,7 +68,7 @@ fn direct_plan_lists_same_tag_urls_and_expected_identity_before_fetch() {
         "https://github.com/moradology/m80/releases/download/v0.0.0/m80-release-attestation.json",
         true,
     );
-    assert_eq!(plan.materials.len(), 16);
+    assert_eq!(plan.materials.len(), 9);
 }
 
 #[test]
@@ -131,10 +131,7 @@ fn official_release_missing_material_fails_before_staging_or_bundle_download() {
     let message = err.to_string();
     assert!(message.contains("release material"), "{message}");
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
-    assert!(
-        message.contains("material_class=release-integrity-predicate"),
-        "{message}"
-    );
+    assert!(message.contains("material_class=asset-index"), "{message}");
     assert!(message.contains("m80-release-integrity.json"), "{message}");
     assert!(
         !install_root.exists(),
@@ -262,7 +259,8 @@ fn official_release_verifier_rejects_tampered_bundle_bytes() {
 
     let message = err.to_string();
     assert!(
-        message.contains("bundle digest mismatch") || message.contains("sidecar digest mismatch"),
+        message.contains("bundle digest mismatch")
+            || message.contains("release integrity sha256 mismatch"),
         "{message}"
     );
     assert!(message.contains("bundle"), "{message}");
@@ -277,10 +275,10 @@ fn official_release_verifier_rejects_wrong_bundle_checksum_row() {
 
     let message = err.to_string();
     assert!(
-        message.contains("checksum mismatch") || message.contains("sidecar digest mismatch"),
+        message.contains("release integrity sha256 mismatch"),
         "{message}"
     );
-    assert!(message.contains("bundle-checksum"), "{message}");
+    assert!(message.contains("material_class=bundle"), "{message}");
 }
 
 #[test]
@@ -291,11 +289,8 @@ fn official_release_verifier_rejects_stale_asset_index_row() {
     });
 
     let message = err.to_string();
-    assert!(
-        message.contains("bundle digest mismatch") || message.contains("checksum mismatch"),
-        "{message}"
-    );
-    assert!(message.contains("bundle-checksum"), "{message}");
+    assert!(message.contains("bundle digest mismatch"), "{message}");
+    assert!(message.contains("material_class=bundle"), "{message}");
 }
 
 #[test]
@@ -417,7 +412,7 @@ fn official_release_verifier_rejects_missing_install_sh_digest() {
     });
 
     let message = err.to_string();
-    assert!(message.contains("public SHA256SUMS"), "{message}");
+    assert!(message.contains("subject set mismatch"), "{message}");
     assert!(message.contains("install.sh"), "{message}");
 }
 
@@ -444,9 +439,7 @@ fn official_release_verifier_rejects_github_cdn_redirect_with_wrong_role_bytes()
 
     let message = err.to_string();
     assert!(
-        message.contains("release material public SHA256SUMS mismatch")
-            || message.contains("release integrity sha256 mismatch")
-            || message.contains("release material sidecar digest mismatch"),
+        message.contains("release integrity sha256 mismatch"),
         "{message}"
     );
     assert!(

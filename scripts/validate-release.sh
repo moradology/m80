@@ -86,18 +86,11 @@ asset_url() {
 required_assets() {
     cat <<'EOF'
 install.sh
-install.sh.sha256
-SHA256SUMS
 m80-linux-x86_64.tar.gz
-m80-linux-x86_64.tar.gz.sha256
 m80-linux-x86_64.bundle.json
-m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
-m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
-m80-bootstrap-selector.tsv.sha256
 m80-release-build.json
-m80-release-build.json.sha256
 m80-release-integrity.json
 m80-release-integrity.attestation.jsonl
 m80-release-attestation.json
@@ -137,19 +130,6 @@ precheck_asset_set() {
     if [[ "${#missing[@]}" -gt 0 ]]; then
         die "missing public release asset(s) in $dist: ${missing[*]}"
     fi
-
-    local sidecar target expected actual
-    for sidecar in "$dist"/*.sha256; do
-        [[ -f "$sidecar" ]] || continue
-        read -r expected target <"$sidecar"
-        [[ -n "${expected:-}" && -n "${target:-}" ]] || die "malformed checksum sidecar: $sidecar"
-        [[ "$target" != /* && "$target" != *..* ]] || die "unsafe checksum sidecar target in $sidecar: $target"
-        [[ -f "$dist/$target" ]] || die "checksum sidecar $sidecar names missing target: $target"
-        actual="$(sha256sum "$dist/$target" | awk '{print $1}')"
-        if [[ "$actual" != "$expected" ]]; then
-            die "sha256 mismatch for $target from $(basename "$sidecar"): expected $expected got $actual"
-        fi
-    done
 }
 
 level_a() {

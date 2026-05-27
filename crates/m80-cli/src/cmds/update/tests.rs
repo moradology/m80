@@ -613,7 +613,7 @@ fn proof_cache_report(artifacts_dir: &std::path::Path, tag: &str) -> ProofCacheR
             m80_version: tag.to_owned(),
             attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
-            asset_index_schema_version: 1,
+            asset_index_schema_version: 2,
         },
     }
 }

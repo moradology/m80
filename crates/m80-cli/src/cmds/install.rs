@@ -764,10 +764,6 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
             release_material.install_sh_sha256
         ));
         lines.push(format!(
-            "public_sha256s_sha256={}",
-            release_material.public_sha256s_sha256
-        ));
-        lines.push(format!(
             "asset_index_sha256={}",
             release_material.asset_index_sha256
         ));

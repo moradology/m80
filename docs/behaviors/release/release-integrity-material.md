@@ -25,24 +25,16 @@ The predicate records:
 
 Each subject records `name`, `kind`, `sha256`, and `size_bytes`. The subject
 set is derived from `m80-release-assets.json`: every row contributes its
-bundle, bundle checksum sidecar, metadata sidecar, metadata checksum sidecar,
-and any named detached signature. The current single-row default Linux subject
-set is:
+bundle, metadata sidecar, and any named detached signature. The current
+single-row default Linux subject set is:
 
 ```text
 m80-linux-x86_64.tar.gz
-m80-linux-x86_64.tar.gz.sha256
 install.sh
-install.sh.sha256
 m80-linux-x86_64.bundle.json
-m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
-m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
-m80-bootstrap-selector.tsv.sha256
 m80-release-build.json
-m80-release-build.json.sha256
-SHA256SUMS
 ```
 
 There are no detached signature files in v1. If a future asset-index row names
@@ -50,9 +42,8 @@ There are no detached signature files in v1. If a future asset-index row names
 must be added as a subject in the same predicate before signed release
 verification accepts the row.
 
-The public `SHA256SUMS` contains every release-integrity subject except
-`SHA256SUMS` itself. The GitHub attestation bundle is checked as the proof for
-the predicate and is intentionally not a predicate subject.
+The GitHub attestation bundle is checked as the proof for the predicate and is
+intentionally not a predicate subject.
 
 The v1 asset index still carries both proof-reference fields. Official signed
 release rows must set `attestation_name` to
@@ -61,8 +52,8 @@ a detached signature file is actually published. Signed verification rejects
 missing proof-reference fields, empty attestation names, stale attestation
 bundle names, absent signature files, stale row release tags or m80 versions,
 signature names that collide with built-in subject names, any named signature
-file that is not a predicate subject, and any asset-index row missing from the
-public checksum manifest.
+file that is not a predicate subject, and any installer-consumed asset-index
+row missing from the signed predicate.
 
 The bundle metadata hash is duplicated as `bundle_metadata_sha256` because
 installers and human verifiers need to bind the tarball metadata before
@@ -155,16 +146,16 @@ substitute.
 
 [`release-integrity-contract.json`](release-integrity-contract.json) is the
 checked shared contract fixture for the default Linux tuple. It names the
-required release material files, role classes, predicate subject kinds,
-`SHA256SUMS` membership, and attestation signer/issuer/keyset constants that
-both the human/public installer verifier and the Rust direct-URL verifier must honor.
+required release material files, role classes, predicate subject kinds, and
+attestation signer/issuer/keyset constants that both the human/public installer
+verifier and the Rust direct-URL verifier must honor.
 Changing a required material role or subject kind must update that fixture and
 the paired verifier tests in the same diff; otherwise one verifier lane can
 silently become weaker than the other.
 
 `scripts/verify-release-bundle.py --verify-integrity` is the one-command human
 verifier for a downloaded public release dist directory. It first verifies the
-tarball contract plus adjacent public checksum sidecars, then invokes
+tarball contract and bundle-internal checksums, then invokes
 `scripts/verify-release-integrity.py` as the shared trust-anchor loader for
 human verification and installer verification. The integrity verifier checks
 the predicate, trust policy, and attestation metadata against the same release
@@ -224,9 +215,8 @@ The lower-level `m80 install --bundle-url
 https://github.com/moradology/m80/releases/download/<tag>/<bundle>.tar.gz`
 path is not a weaker direct-artifact trust mode. For concrete official
 `moradology/m80` bundle URLs, the CLI verifies the same-tag asset index row,
-bundle checksum sidecar, bundle bytes, bundle metadata sidecar, `install.sh`
-and sidecar, bootstrap selector and sidecar, build manifest and sidecar, public
-`SHA256SUMS`, release-integrity predicate subjects, and normalized attestation
+bundle bytes, bundle metadata sidecar, `install.sh`, bootstrap selector, build
+manifest, release-integrity predicate subjects, and normalized attestation
 metadata before creating the install-root staging directory or listing the
 tarball. It also parses `m80-release-integrity.attestation.jsonl` as a native
 Sigstore/DSSE/SLSA bundle scoped to the same repository, signer workflow, tag
@@ -242,10 +232,10 @@ expected asset name. If curl reports a final GitHub release-asset URL, that
 final URL must carry the same repository, tag, and asset name. Opaque GitHub
 asset CDN URLs are accepted only as final redirects for that exact requested
 release asset, and the downloaded bytes remain untrusted until the material's
-checksum sidecar, public `SHA256SUMS` row, predicate subject, or asset-index
-identity check succeeds. Foreign repositories, wrong tags, wrong asset names,
-host lookalikes, and digest-matching wrong-role release paths fail closed with
-the material role, requested URL, final URL, expected asset name, and rejected
+predicate subject, asset-index digest, or GitHub release metadata identity
+check succeeds. Foreign repositories, wrong tags, wrong asset names, host
+lookalikes, and digest-matching wrong-role release paths fail closed with the
+material role, requested URL, final URL, expected asset name, and rejected
 identity field in the diagnostic.
 
 Any digest, subject, asset-index, attestation-metadata,
@@ -261,12 +251,12 @@ do not claim official release trust.
 
 `scripts/verify-install-handoff.py` is the narrower pre-root gate for
 automation that already has a trusted m80 checkout. It downloads no assets by
-itself; given local `install.sh`, `install.sh.sha256`,
-`m80-release-integrity.json`, `m80-release-integrity.attestation.jsonl`, and
-`m80-release-attestation.json`, it verifies the installer checksum and the
-signed predicate subject before printing the local `sudo sh <tmp>/install.sh`
-handoff command. The full installer still verifies the complete bundle and
-asset-index contract before extraction or active-state writes.
+itself; given local `install.sh`, `m80-release-integrity.json`,
+`m80-release-integrity.attestation.jsonl`, and `m80-release-attestation.json`,
+it verifies the installer digest through the signed predicate before printing
+the local `sudo sh <tmp>/install.sh` handoff command. The full installer still
+verifies the complete bundle and asset-index contract before extraction or
+active-state writes.
 
 ## Human Command
 
@@ -295,11 +285,10 @@ python3 scripts/verify-release-bundle.py \
 
 The command is read-only and does not require root.
 
-`--verify-integrity` implies public sidecar verification. It checks the bundle
-tar internals, bundle checksum, installer checksum, metadata sidecar, asset
-index, bootstrap selector, build manifest, public `SHA256SUMS`, signed
-predicate, attestation metadata, native attestation bundle, and tag
-identity before printing success.
+`--verify-integrity` checks the bundle tar internals, bundle-internal
+`SHA256SUMS`, installer digest, metadata sidecar, asset index, bootstrap
+selector, build manifest, signed predicate, attestation metadata, native
+attestation bundle, and tag identity before printing success.
 
 If this command fails before reading release files with an attestation-verifier
 error, run it from a current m80 checkout or installed verifier distribution.
@@ -314,7 +303,6 @@ error, run it from a current m80 checkout or installed verifier distribution.
 - `test_human_release_dist_verifier_rejects_tampered_install_sh`;
 - `test_human_release_dist_verifier_rejects_wrong_tag`;
 - `test_human_release_dist_verifier_rejects_missing_attestation`;
-- `test_human_release_dist_verifier_rejects_missing_sidecar`;
 - `test_release_integrity_material_rejects_missing_asset_index_attestation_ref`;
 - `test_release_integrity_material_rejects_empty_asset_index_attestation_ref`;
 - `test_release_integrity_material_rejects_stale_asset_index_attestation_ref`;
@@ -347,14 +335,19 @@ error, run it from a current m80 checkout or installed verifier distribution.
 - `official_release_missing_material_fails_before_staging_or_bundle_download`;
 - `missing_integrity_predicate_aborts_before_install_root_mutation`;
 - `missing_attestation_bundle_aborts_before_install_root_mutation`;
+- `missing_attestation_metadata_aborts_before_install_root_mutation`;
 - `missing_asset_index_aborts_before_install_root_mutation`;
-- `missing_public_sha256s_aborts_before_install_root_mutation`;
-- `missing_checksum_sidecar_aborts_before_install_root_mutation`;
+- `missing_bundle_metadata_aborts_before_install_root_mutation`;
+- `missing_bootstrap_selector_aborts_before_install_root_mutation`;
+- `missing_install_script_aborts_before_install_root_mutation`;
 - `trust_policy_signer_mismatch_aborts_before_install_root_mutation`;
-- `public_sha256s_digest_mismatch_aborts_before_install_root_mutation`;
+- `integrity_subject_digest_mismatch_aborts_before_install_root_mutation`;
 - `integrity_predicate_digest_mismatch_aborts_before_install_root_mutation`;
 - `asset_index_digest_mismatch_aborts_before_install_root_mutation`;
+- `indexed_bundle_size_mismatch_aborts_before_install_root_mutation`;
 - `native_attestation_bundle_failure_aborts_before_install_root_mutation`;
+- `repository_mismatch_aborts_before_install_root_mutation`;
+- `release_tag_mismatch_aborts_before_install_root_mutation`;
 - `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
 - `test_package_rejects_extra_tuple_name_collision_before_copy`;
 - `test_package_rejects_extra_tuple_metadata_sidecar_mismatch`;

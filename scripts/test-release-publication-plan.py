@@ -56,7 +56,7 @@ class ReleasePublicationPlanTest(unittest.TestCase):
             plan = json.loads((root / "plan.json").read_text())
             self.assertEqual(plan["action"], "fail_manual_recovery_required")
             self.assertEqual(plan["release_state"], "draft")
-            self.assertEqual(plan["missing_assets"], ["SHA256SUMS"])
+            self.assertEqual(plan["missing_assets"], ["m80-release-integrity.json"])
             self.assertEqual(plan["manual_recovery"], f"gh release delete {RELEASE_TAG} --yes")
 
     def test_existing_public_release_missing_asset_fails_without_clobber(self) -> None:
@@ -69,7 +69,7 @@ class ReleasePublicationPlanTest(unittest.TestCase):
             self.assertIn("asset metadata mismatch", result.stderr)
             plan = json.loads((root / "plan.json").read_text())
             self.assertEqual(plan["action"], "fail_manual_recovery_required")
-            self.assertEqual(plan["missing_assets"], ["SHA256SUMS"])
+            self.assertEqual(plan["missing_assets"], ["m80-release-integrity.json"])
             self.assertIn("will not clobber public assets", plan["manual_recovery"])
 
     def test_existing_public_release_size_mismatch_fails_before_upload(self) -> None:
@@ -118,8 +118,8 @@ def write_release_metadata(
     assets: list[str] | None = None,
     size_updates: dict[str, int] | None = None,
 ) -> None:
-    names = assets or ["install.sh", "SHA256SUMS"]
-    sizes = {"install.sh": 7, "SHA256SUMS": 11}
+    names = assets or ["install.sh", "m80-release-integrity.json"]
+    sizes = {"install.sh": 7, "m80-release-integrity.json": 11}
     sizes.update(size_updates or {})
     write_json(
         path,
@@ -153,8 +153,8 @@ def write_manifest(root: Path) -> None:
                     "integrity_subject": True,
                 },
                 {
-                    "name": "SHA256SUMS",
-                    "kind": "checksum-manifest",
+                    "name": "m80-release-integrity.json",
+                    "kind": "release-integrity-predicate",
                     "sha256": "1" * 64,
                     "size_bytes": 11,
                     "integrity_subject": True,

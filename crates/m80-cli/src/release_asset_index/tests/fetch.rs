@@ -14,20 +14,23 @@ use super::super::fetch::{
     fetch_verified_asset_index, github_release_asset_index_url, sha256_bytes,
     AssetIndexDownloadBounds, AssetIndexFetchError, AssetIndexFetchRequest,
 };
-use super::super::ASSET_INDEX_NAME;
+use super::super::{ASSET_INDEX_NAME, ASSET_INDEX_SCHEMA_VERSION};
 use super::{asset_json, index_json, index_json_with_schema, linux_x86_64};
 use crate::test_support::PROCESS_ENV_LOCK;
 
 #[test]
-fn verified_file_index_fetch_accepts_valid_checksum_before_parse() {
+fn verified_file_index_fetch_accepts_valid_integrity_digest_before_parse() {
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(temp.path(), &index_json_with_schema(1));
+    let index_url = write_index_with_integrity(
+        temp.path(),
+        &index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION),
+    );
 
     let fetched = fetch_verified_asset_index(fetch_request(&index_url)).unwrap();
 
     assert_eq!(fetched.index.release_tag, "v0.0.0");
     assert_eq!(fetched.index_url, index_url);
-    assert_eq!(fetched.checksum_url, format!("{index_url}.sha256"));
+    assert_eq!(fetched.checksum_url, sibling_integrity_url(&index_url));
     assert_eq!(fetched.expected_sha256, fetched.observed_sha256);
     assert_eq!(fetched.index.assets[0].name, "m80-linux-x86_64.tar.gz");
 }
@@ -56,19 +59,16 @@ fn verified_file_index_fetch_names_missing_index_with_context() {
 }
 
 #[test]
-fn verified_file_index_fetch_names_missing_checksum_sidecar() {
+fn verified_file_index_fetch_names_missing_integrity_material() {
     let temp = tempfile::tempdir().unwrap();
     let index = temp.path().join(ASSET_INDEX_NAME);
-    fs::write(&index, index_json_with_schema(1)).unwrap();
+    fs::write(&index, index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION)).unwrap();
     let index_url = file_url(&index);
 
     let err = fetch_verified_asset_index(fetch_request(&index_url)).unwrap_err();
 
     let message = err.to_string();
-    assert!(
-        message.contains("m80-release-assets.json.sha256"),
-        "{message}"
-    );
+    assert!(message.contains("m80-release-integrity.json"), "{message}");
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
     assert!(
         message.contains("checksum_verification=before"),
@@ -77,13 +77,13 @@ fn verified_file_index_fetch_names_missing_checksum_sidecar() {
 }
 
 #[test]
-fn verified_file_index_fetch_rejects_bad_checksum_before_json_parse() {
+fn verified_file_index_fetch_rejects_bad_integrity_digest_before_json_parse() {
     let temp = tempfile::tempdir().unwrap();
     let index = temp.path().join(ASSET_INDEX_NAME);
     fs::write(&index, "{not json").unwrap();
     fs::write(
-        temp.path().join(format!("{ASSET_INDEX_NAME}.sha256")),
-        format!("{}  {ASSET_INDEX_NAME}\n", "0".repeat(64)),
+        temp.path().join("m80-release-integrity.json"),
+        integrity_json("v0.0.0", &"0".repeat(64)),
     )
     .unwrap();
     let index_url = file_url(&index);
@@ -100,9 +100,9 @@ fn verified_file_index_fetch_rejects_bad_checksum_before_json_parse() {
 }
 
 #[test]
-fn verified_file_index_fetch_rejects_invalid_json_after_valid_checksum() {
+fn verified_file_index_fetch_rejects_invalid_json_after_valid_integrity_digest() {
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(temp.path(), "{not json");
+    let index_url = write_index_with_integrity(temp.path(), "{not json");
 
     let err = fetch_verified_asset_index(fetch_request(&index_url)).unwrap_err();
 
@@ -122,15 +122,15 @@ fn verified_file_index_fetch_rejects_invalid_json_after_valid_checksum() {
 }
 
 #[test]
-fn verified_file_index_fetch_rejects_stale_schema_after_valid_checksum() {
+fn verified_file_index_fetch_rejects_stale_schema_after_valid_integrity_digest() {
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(temp.path(), &index_json_with_schema(999));
+    let index_url = write_index_with_integrity(temp.path(), &index_json_with_schema(999));
 
     let err = fetch_verified_asset_index(fetch_request(&index_url)).unwrap_err();
 
     let message = err.to_string();
     assert!(
-        message.contains("schema mismatch: expected 1, got 999"),
+        message.contains("schema mismatch: expected 2, got 999"),
         "{message}"
     );
     assert!(message.contains("expected_sha256="), "{message}");
@@ -142,7 +142,7 @@ fn verified_file_index_fetch_rejects_stale_schema_after_valid_checksum() {
 #[test]
 fn verified_file_index_fetch_rejects_index_release_tag_mismatch() {
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json(
             "v9.9.9",
@@ -168,7 +168,7 @@ fn remote_index_fetch_times_out_with_bounded_context() {
     let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let server = HttpFixture::new([(
         "/m80-release-assets.json",
-        TestResponse::slow_ok(index_json_with_schema(1).into_bytes()),
+        TestResponse::slow_ok(index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION).into_bytes()),
     )]);
     let index_url = server.url("/m80-release-assets.json");
 
@@ -187,12 +187,12 @@ fn remote_index_fetch_times_out_with_bounded_context() {
 #[test]
 fn remote_checksum_fetch_times_out_with_bounded_context() {
     let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
-    let index = index_json_with_schema(1).into_bytes();
-    let checksum = checksum_sidecar_for(&index);
+    let index = index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION).into_bytes();
+    let checksum = integrity_json("v0.0.0", &sha256_bytes(&index)).into_bytes();
     let server = HttpFixture::new([
         ("/m80-release-assets.json", TestResponse::ok(index)),
         (
-            "/m80-release-assets.json.sha256",
+            "/m80-release-integrity.json",
             TestResponse::slow_ok(checksum),
         ),
     ]);
@@ -201,17 +201,14 @@ fn remote_checksum_fetch_times_out_with_bounded_context() {
     let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
 
     assert!(matches!(err, AssetIndexFetchError::DownloadFailed { .. }));
-    let checksum_url = format!("{index_url}.sha256");
+    let checksum_url = sibling_integrity_url(&index_url);
     let diagnostic = err.clone().into_diagnostic("v0.0.0");
     assert_eq!(diagnostic.index_url.as_deref(), Some(index_url.as_str()));
     assert_eq!(diagnostic.fetch_url.as_deref(), Some(checksum_url.as_str()));
     assert_eq!(diagnostic.checksum_verification.as_deref(), Some("before"));
     let message = err.to_string();
     assert!(message.contains("failure=timeout"), "{message}");
-    assert!(
-        message.contains("m80-release-assets.json.sha256"),
-        "{message}"
-    );
+    assert!(message.contains("m80-release-integrity.json"), "{message}");
     assert_fetch_context(&message, &index_url, "before");
 }
 
@@ -255,7 +252,7 @@ fn remote_index_fetch_rejects_unsupported_redirect_with_context() {
         ),
         (
             "/redirected-index",
-            TestResponse::ok(index_json_with_schema(1).into_bytes()),
+            TestResponse::ok(index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION).into_bytes()),
         ),
     ]);
     let index_url = server.url("/m80-release-assets.json");
@@ -303,12 +300,12 @@ fn fetch_request_with_bounds(
     }
 }
 
-fn write_index_with_sidecar(root: &Path, json: &str) -> String {
+fn write_index_with_integrity(root: &Path, json: &str) -> String {
     let index = root.join(ASSET_INDEX_NAME);
     fs::write(&index, json).unwrap();
     fs::write(
-        root.join(format!("{ASSET_INDEX_NAME}.sha256")),
-        format!("{}  {ASSET_INDEX_NAME}\n", sha256_bytes(json.as_bytes())),
+        root.join("m80-release-integrity.json"),
+        integrity_json("v0.0.0", &sha256_bytes(json.as_bytes())),
     )
     .unwrap();
     file_url(&index)
@@ -318,8 +315,25 @@ fn file_url(path: &Path) -> String {
     format!("file://{}", path.display())
 }
 
-fn checksum_sidecar_for(index: &[u8]) -> Vec<u8> {
-    format!("{}  {ASSET_INDEX_NAME}\n", sha256_bytes(index)).into_bytes()
+fn sibling_integrity_url(index_url: &str) -> String {
+    let (prefix, _) = index_url.rsplit_once('/').unwrap();
+    format!("{prefix}/m80-release-integrity.json")
+}
+
+fn integrity_json(release_tag: &str, index_sha256: &str) -> String {
+    format!(
+        r#"{{
+  "release_tag": "{release_tag}",
+  "subjects": [
+    {{
+      "name": "{ASSET_INDEX_NAME}",
+      "kind": "asset-index",
+      "sha256": "{index_sha256}",
+      "size_bytes": 1
+    }}
+  ]
+}}"#
+    )
 }
 
 fn assert_fetch_context(message: &str, index_url: &str, checksum_verification: &str) {

@@ -50,7 +50,7 @@ fn release_tag_source_selects_index_bundle_for_tagged_binary() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(asset_json("linux", "x86_64", "minimal", "v1.2.3")),
     );
@@ -74,7 +74,7 @@ fn bootstrap_tag_source_selects_index_bundle_for_tagged_binary() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(asset_json("linux", "x86_64", "minimal", "v1.2.3")),
     );
@@ -98,7 +98,7 @@ fn release_tag_source_rejects_missing_default_index_entry() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(temp.path(), &index_json_with_assets(String::new()));
+    let index_url = write_index_with_integrity(temp.path(), &index_json_with_assets(String::new()));
 
     let err =
         source_plan_from_test_index(InstallSource::ReleaseTag("v1.2.3"), &identity, &index_url)
@@ -122,7 +122,7 @@ fn release_tag_source_rejects_duplicate_default_index_entry() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(format!(
             "{},{}",
@@ -153,7 +153,7 @@ fn release_tag_source_rejects_wrong_arch_index_entry() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(asset_json("linux", "aarch64", "minimal", "v1.2.3")),
     );
@@ -184,7 +184,7 @@ fn release_tag_source_rejects_wrong_image_kind_index_entry() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(asset_json("linux", "x86_64", "ubuntu", "v1.2.3")),
     );
@@ -213,7 +213,7 @@ fn release_tag_source_rejects_stale_index_version_with_code() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json_with_assets(asset_json_with_m80_version(
             "linux", "x86_64", "minimal", "v1.2.3", "v9.9.9",
@@ -248,7 +248,7 @@ fn release_tag_source_rejects_wrong_tag_index_entry() {
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(
+    let index_url = write_index_with_integrity(
         temp.path(),
         &index_json("v1.2.3", asset_json("linux", "x86_64", "minimal", "v9.9.9")),
     );
@@ -957,7 +957,7 @@ fn seed_active_release(install_root: &Path, tag: &str) {
 
 fn source_plan_error_from_index(identity: &VersionIdentity, json: String) -> InstallError {
     let temp = tempfile::tempdir().unwrap();
-    let index_url = write_index_with_sidecar(temp.path(), &json);
+    let index_url = write_index_with_integrity(temp.path(), &json);
     source_plan_from_test_index(InstallSource::ReleaseTag("v1.2.3"), identity, &index_url)
         .unwrap_err()
 }
@@ -974,14 +974,26 @@ fn source_plan_from_test_index(
     })
 }
 
-fn write_index_with_sidecar(root: &Path, json: &str) -> String {
+fn write_index_with_integrity(root: &Path, json: &str) -> String {
     let index = root.join("m80-release-assets.json");
     fs::write(&index, json).unwrap();
-    fs::write(
-        root.join("m80-release-assets.json.sha256"),
-        format!("{}  m80-release-assets.json\n", sha256(json.as_bytes())),
-    )
-    .unwrap();
+    let integrity = format!(
+        r#"{{
+  "schema_version": 1,
+  "release_tag": "v1.2.3",
+  "subjects": [
+    {{
+      "name": "m80-release-assets.json",
+      "kind": "asset-index",
+      "sha256": "{}",
+      "size_bytes": {}
+    }}
+  ]
+}}"#,
+        sha256(json.as_bytes()),
+        json.len()
+    );
+    fs::write(root.join("m80-release-integrity.json"), integrity).unwrap();
     format!("file://{}", index.display())
 }
 
@@ -996,7 +1008,7 @@ fn index_json_with_assets(assets: String) -> String {
 fn index_json(release_tag: &str, assets: String) -> String {
     format!(
         r#"{{
-  "schema_version": 1,
+  "schema_version": 2,
   "release_tag": "{release_tag}",
   "assets": [{assets}]
 }}"#
@@ -1023,7 +1035,6 @@ fn asset_json_with_m80_version(
   "size_bytes": 42,
   "metadata_name": "m80-{target}.bundle.json",
   "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "checksum_name": "m80-{target}.tar.gz.sha256",
   "signature_name": "m80.sig",
   "attestation_name": "m80.intoto.jsonl",
   "target": "{target}",

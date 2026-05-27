@@ -23,7 +23,7 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) wrong_repository: bool,
     pub(super) wrong_release_tag: bool,
     pub(super) missing_install_digest: bool,
-    pub(super) stale_public_sha256s: bool,
+    pub(super) stale_integrity_subjects: bool,
     pub(super) bad_predicate_subject: bool,
     pub(super) gh_failure: bool,
     pub(super) gh_omit_subject: bool,
@@ -143,7 +143,7 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     write_material(material_dir, metadata_name, &metadata_bytes, options.omit);
 
     let index = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "release_tag": release_tag,
         "assets": [{
             "name": bundle_name,
@@ -152,7 +152,6 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
             "size_bytes": row_bundle_size,
             "metadata_name": metadata_name,
             "metadata_sha256": metadata_sha256.as_str(),
-            "checksum_name": format!("{bundle_name}.sha256"),
             "signature_name": null,
             "attestation_name": "m80-release-integrity.attestation.jsonl",
             "target": "linux-x86_64",
@@ -176,7 +175,7 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
         b"#!/bin/sh\nexit 0\n"
     };
     let selector_bytes = format!(
-        "schema_version\t1\nrelease_tag\t{release_tag}\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t{bundle_name}.sha256\t-\tm80-release-integrity.attestation.jsonl\t{release_tag}\n"
+        "schema_version\t2\nrelease_tag\t{release_tag}\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t-\tm80-release-integrity.attestation.jsonl\t{release_tag}\n"
     );
     let commit_sha = if options.wrong_commit_sha {
         "1111111111111111111111111111111111111111"
@@ -203,51 +202,13 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     let install_sha256 = sha256_bytes(install_bytes);
     let selector_sha256 = sha256_bytes(selector_bytes.as_bytes());
     let build_sha256 = sha256_bytes(&build_bytes);
-    let metadata_sidecar_name = format!("{metadata_name}.sha256");
-    let bundle_checksum_name = format!("{bundle_name}.sha256");
-    let bundle_checksum_sha = if options.wrong_bundle_checksum {
-        "e".repeat(64)
-    } else {
-        bundle_sha256.clone()
-    };
-    let bundle_checksum_bytes = format!("{bundle_checksum_sha}  {bundle_name}\n");
-    let metadata_checksum_bytes = format!("{metadata_sha256}  {metadata_name}\n");
-    let index_checksum_bytes = format!("{index_sha256}  m80-release-assets.json\n");
-    let install_checksum_bytes = format!("{install_sha256}  install.sh\n");
-    let selector_checksum_bytes = format!("{selector_sha256}  m80-bootstrap-selector.tsv\n");
-    let build_checksum_bytes = format!("{build_sha256}  m80-release-build.json\n");
-
-    write_material(
-        material_dir,
-        &bundle_checksum_name,
-        bundle_checksum_bytes.as_bytes(),
-        options.omit,
-    );
-    write_material(
-        material_dir,
-        &metadata_sidecar_name,
-        metadata_checksum_bytes.as_bytes(),
-        options.omit,
-    );
     write_material(
         material_dir,
         "m80-release-assets.json",
         &index_bytes,
         options.omit,
     );
-    write_material(
-        material_dir,
-        "m80-release-assets.json.sha256",
-        index_checksum_bytes.as_bytes(),
-        options.omit,
-    );
     write_material(material_dir, "install.sh", install_bytes, options.omit);
-    write_material(
-        material_dir,
-        "install.sh.sha256",
-        install_checksum_bytes.as_bytes(),
-        options.omit,
-    );
     write_material(
         material_dir,
         "m80-bootstrap-selector.tsv",
@@ -256,95 +217,28 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     );
     write_material(
         material_dir,
-        "m80-bootstrap-selector.tsv.sha256",
-        selector_checksum_bytes.as_bytes(),
-        options.omit,
-    );
-    write_material(
-        material_dir,
         "m80-release-build.json",
         &build_bytes,
         options.omit,
     );
-    write_material(
-        material_dir,
-        "m80-release-build.json.sha256",
-        build_checksum_bytes.as_bytes(),
-        options.omit,
-    );
 
-    let public_rows = vec![
-        (bundle_name.to_owned(), bundle_sha256.clone()),
-        (
-            bundle_checksum_name.clone(),
-            sha256_bytes(bundle_checksum_bytes.as_bytes()),
-        ),
-        (metadata_name.to_owned(), metadata_sha256.clone()),
-        (
-            metadata_sidecar_name.clone(),
-            sha256_bytes(metadata_checksum_bytes.as_bytes()),
-        ),
-        ("m80-release-assets.json".to_owned(), index_sha256.clone()),
-        (
-            "m80-release-assets.json.sha256".to_owned(),
-            sha256_bytes(index_checksum_bytes.as_bytes()),
-        ),
-        ("install.sh".to_owned(), install_sha256.clone()),
-        (
-            "install.sh.sha256".to_owned(),
-            sha256_bytes(install_checksum_bytes.as_bytes()),
-        ),
-        (
-            "m80-bootstrap-selector.tsv".to_owned(),
-            selector_sha256.clone(),
-        ),
-        (
-            "m80-bootstrap-selector.tsv.sha256".to_owned(),
-            sha256_bytes(selector_checksum_bytes.as_bytes()),
-        ),
-        ("m80-release-build.json".to_owned(), build_sha256.clone()),
-        (
-            "m80-release-build.json.sha256".to_owned(),
-            sha256_bytes(build_checksum_bytes.as_bytes()),
-        ),
-    ];
-    let mut public_sha256s = String::new();
-    for (name, digest) in public_rows {
-        if options.missing_install_digest && name == "install.sh" {
-            continue;
-        }
-        let digest = if options.stale_public_sha256s && name == "install.sh" {
-            "f".repeat(64)
+    let install_subject_sha256 =
+        if options.bad_predicate_subject || options.stale_integrity_subjects {
+            "e".repeat(64)
         } else {
-            digest
+            install_sha256.clone()
         };
-        public_sha256s.push_str(&format!("{digest}  {name}\n"));
-    }
-    let public_sha256s_sha = sha256_bytes(public_sha256s.as_bytes());
-    write_material(
-        material_dir,
-        "SHA256SUMS",
-        public_sha256s.as_bytes(),
-        options.omit,
-    );
-
-    let install_subject_sha256 = if options.bad_predicate_subject {
+    let bundle_subject_sha256 = if options.wrong_bundle_checksum {
         "e".repeat(64)
     } else {
-        install_sha256.clone()
+        bundle_sha256.clone()
     };
-    let subjects = [
+    let mut subjects = vec![
         subject(
             bundle_name,
             "release-bundle",
-            &bundle_sha256,
+            &bundle_subject_sha256,
             bundle_bytes.len(),
-        ),
-        subject(
-            &bundle_checksum_name,
-            "checksum-sidecar",
-            &sha256_bytes(bundle_checksum_bytes.as_bytes()),
-            bundle_checksum_bytes.len(),
         ),
         subject(
             metadata_name,
@@ -353,34 +247,10 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
             metadata_bytes.len(),
         ),
         subject(
-            &metadata_sidecar_name,
-            "checksum-sidecar",
-            &sha256_bytes(metadata_checksum_bytes.as_bytes()),
-            metadata_checksum_bytes.len(),
-        ),
-        subject(
             "m80-release-assets.json",
             "asset-index",
             &index_sha256,
             index_bytes.len(),
-        ),
-        subject(
-            "m80-release-assets.json.sha256",
-            "checksum-sidecar",
-            &sha256_bytes(index_checksum_bytes.as_bytes()),
-            index_checksum_bytes.len(),
-        ),
-        subject(
-            "install.sh",
-            "installer",
-            &install_subject_sha256,
-            install_bytes.len(),
-        ),
-        subject(
-            "install.sh.sha256",
-            "checksum-sidecar",
-            &sha256_bytes(install_checksum_bytes.as_bytes()),
-            install_checksum_bytes.len(),
         ),
         subject(
             "m80-bootstrap-selector.tsv",
@@ -389,30 +259,20 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
             selector_bytes.len(),
         ),
         subject(
-            "m80-bootstrap-selector.tsv.sha256",
-            "checksum-sidecar",
-            &sha256_bytes(selector_checksum_bytes.as_bytes()),
-            selector_checksum_bytes.len(),
-        ),
-        subject(
             "m80-release-build.json",
             "build-manifest",
             &build_sha256,
             build_bytes.len(),
         ),
-        subject(
-            "m80-release-build.json.sha256",
-            "checksum-sidecar",
-            &sha256_bytes(build_checksum_bytes.as_bytes()),
-            build_checksum_bytes.len(),
-        ),
-        subject(
-            "SHA256SUMS",
-            "checksum-manifest",
-            &public_sha256s_sha,
-            public_sha256s.len(),
-        ),
     ];
+    if !options.missing_install_digest {
+        subjects.push(subject(
+            "install.sh",
+            "installer",
+            &install_subject_sha256,
+            install_bytes.len(),
+        ));
+    }
     let integrity = serde_json::json!({
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",

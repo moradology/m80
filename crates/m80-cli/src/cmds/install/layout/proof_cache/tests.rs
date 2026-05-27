@@ -36,12 +36,6 @@ fn write_verified_release_proof_cache_copies_manifest_and_mode_checks_material()
         manifest.payload.verifier_versions.attestation_verifier,
         "m80 native release-attestation verifier v1"
     );
-    assert_eq!(manifest.payload.checksum_sidecars.len(), 6);
-    assert!(manifest
-        .payload
-        .checksum_sidecars
-        .iter()
-        .any(|sidecar| sidecar.subject == "install.sh"));
     assert_eq!(file_mode(&manifest_path), PROOF_CACHE_FILE_MODE);
     assert!(manifest_path
         .parent()
@@ -97,7 +91,6 @@ fn complete_manifest_parses_and_validates_digest() {
         parsed.payload.attestation_metadata.keyset_id,
         "github-actions-oidc:m80-release-v1"
     );
-    assert_eq!(parsed.payload.checksum_sidecars.len(), 2);
 }
 
 #[test]
@@ -187,19 +180,6 @@ fn valid_manifest() -> ProofCacheManifest {
             predicate_sha256: digest("1"),
         },
         asset_index: proof_file("m80-release-assets.json", "4", 500),
-        public_sha256s: proof_file("SHA256SUMS", "5", 400),
-        checksum_sidecars: vec![
-            ChecksumSidecarRef {
-                path: "m80-linux-x86_64.tar.gz.sha256".to_owned(),
-                sha256: digest("6"),
-                subject: "m80-linux-x86_64.tar.gz".to_owned(),
-            },
-            ChecksumSidecarRef {
-                path: "install.sh.sha256".to_owned(),
-                sha256: digest("7"),
-                subject: "install.sh".to_owned(),
-            },
-        ],
         trust_policy: TrustPolicyRef {
             path: "m80-release-trust-policy.json".to_owned(),
             identity: "github-actions-oidc:m80-release-v1".to_owned(),
@@ -209,7 +189,7 @@ fn valid_manifest() -> ProofCacheManifest {
             m80_version: "v0.0.0".to_owned(),
             attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
-            asset_index_schema_version: 1,
+            asset_index_schema_version: 2,
         },
     };
     let manifest_digest = proof_cache_manifest_digest(&payload).expect("digest test payload");
@@ -283,43 +263,6 @@ fn verified_bundle_fixture() -> VerifiedBundleFixture {
             "m80-release-assets.json",
             b"{\"schema_version\":1}\n".as_slice(),
         ),
-        ("public-sha256s", "SHA256SUMS", b"abc  fixture\n".as_slice()),
-        (
-            "bundle-checksum",
-            "m80-linux-x86_64.tar.gz.sha256",
-            b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  m80-linux-x86_64.tar.gz\n"
-                .as_slice(),
-        ),
-        (
-            "bundle-metadata-checksum",
-            "m80-linux-x86_64.bundle.json.sha256",
-            b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  m80-linux-x86_64.bundle.json\n"
-                .as_slice(),
-        ),
-        (
-            "asset-index-checksum",
-            "m80-release-assets.json.sha256",
-            b"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  m80-release-assets.json\n"
-                .as_slice(),
-        ),
-        (
-            "install-script-checksum",
-            "install.sh.sha256",
-            b"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  install.sh\n"
-                .as_slice(),
-        ),
-        (
-            "bootstrap-selector-checksum",
-            "m80-bootstrap-selector.tsv.sha256",
-            b"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee  m80-bootstrap-selector.tsv\n"
-                .as_slice(),
-        ),
-        (
-            "release-build-checksum",
-            "m80-release-build.json.sha256",
-            b"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  m80-release-build.json\n"
-                .as_slice(),
-        ),
     ] {
         let path = material_dir.join(name);
         fs::write(&path, body).expect("write material fixture");
@@ -344,7 +287,6 @@ fn verified_bundle_fixture() -> VerifiedBundleFixture {
             bundle_sha256: "a".repeat(64),
             install_sh_sha256: "d".repeat(64),
             predicate_sha256: "1".repeat(64),
-            public_sha256s_sha256: "2".repeat(64),
             asset_index_sha256: "3".repeat(64),
             attestation_signer: "moradology/m80/.github/workflows/release-artifacts.yml".to_owned(),
             attestation_issuer: "https://token.actions.githubusercontent.com".to_owned(),

@@ -64,27 +64,6 @@ fn download_material_to_path(material: &ReleaseMaterial, dest: &Path) -> Result<
     Ok(dest.to_path_buf())
 }
 
-pub(super) fn read_checksum_line(path: &Path) -> Result<(String, Option<String>), FcError> {
-    let text = fs::read_to_string(path).map_err(|source| FcError::PathIo {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let mut parts = text.split_whitespace();
-    let Some(sha256) = parts.next() else {
-        return Err(release_material_error(format!(
-            "release material checksum is empty: path={}",
-            path.display()
-        )));
-    };
-    if !is_sha256(sha256) {
-        return Err(release_material_error(format!(
-            "release material checksum must start with a 64-hex sha256 digest: path={}",
-            path.display()
-        )));
-    }
-    Ok((sha256.to_ascii_lowercase(), parts.next().map(str::to_owned)))
-}
-
 pub(super) fn sha256_file(path: &Path) -> Result<String, FcError> {
     let bytes = fs::read(path).map_err(|source| FcError::PathIo {
         path: path.to_path_buf(),
@@ -183,10 +162,6 @@ fn validate_final_material_url(material: &ReleaseMaterial, final_url: &str) -> R
             "final URL host is not an official GitHub asset redirect host: final_host={final_host}"
         ),
     ))
-}
-
-fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[derive(Debug, PartialEq, Eq)]

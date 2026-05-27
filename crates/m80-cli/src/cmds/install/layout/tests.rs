@@ -62,7 +62,6 @@ fn release_material_install_summary_initializes_proof_cache_fields() {
                 .to_owned(),
         bundle_sha256: "a".repeat(64),
         install_sh_sha256: "b".repeat(64),
-        public_sha256s_sha256: "c".repeat(64),
         asset_index_sha256: "d".repeat(64),
         predicate_sha256: "e".repeat(64),
         attestation_signer: "moradology/m80/.github/workflows/release-artifacts.yml".to_owned(),
@@ -77,7 +76,6 @@ fn release_material_install_summary_initializes_proof_cache_fields() {
     assert_eq!(summary.release_tag, "v0.0.0");
     assert_eq!(summary.bundle_asset, "m80-linux-x86_64.tar.gz");
     assert_eq!(summary.install_sh_sha256, "b".repeat(64));
-    assert_eq!(summary.public_sha256s_sha256, "c".repeat(64));
     assert_eq!(summary.asset_index_sha256, "d".repeat(64));
     assert_eq!(
         summary.proof_cache_destination,

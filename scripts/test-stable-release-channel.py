@@ -12,7 +12,6 @@ import unittest
 from release_url_contract import release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
-    CHECKSUM_NAME,
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     METADATA_NAME,
     REQUIRED_PUBLIC_ASSETS,
@@ -129,7 +128,7 @@ def base_release_metadata(
 
 def base_asset_index(*, tag: str = "v1.2.3") -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "release_tag": tag,
         "assets": [
             {
@@ -139,7 +138,6 @@ def base_asset_index(*, tag: str = "v1.2.3") -> dict:
                 "size_bytes": 42,
                 "metadata_name": METADATA_NAME,
                 "metadata_sha256": "b" * 64,
-                "checksum_name": CHECKSUM_NAME,
                 "signature_name": None,
                 "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
                 "target": "linux-x86_64",

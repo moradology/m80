@@ -153,18 +153,6 @@ fn public_material_mismatch_fields(
     );
     push_changed(
         &mut fields,
-        "public_sha256s",
-        &existing.public_sha256s,
-        &verified.public_sha256s,
-    );
-    push_changed(
-        &mut fields,
-        "checksum_sidecars",
-        &existing.checksum_sidecars,
-        &verified.checksum_sidecars,
-    );
-    push_changed(
-        &mut fields,
         "trust_policy.path",
         &existing.trust_policy.path,
         &verified.trust_policy.path,

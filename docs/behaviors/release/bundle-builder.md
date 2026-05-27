@@ -33,32 +33,24 @@ Optional tuple inputs:
   `metadata_path`, `bundle_name`, and `metadata_name`. Relative paths resolve
   from the manifest directory. The assembler copies those files into the dist
   directory, verifies the metadata sidecar matches the bundle's `bundle.json`,
-  writes checksum sidecars, rejects duplicate `os` / `arch` / `image_kind`
-  tuples or duplicate dist names, and sorts rows by tuple.
+  rejects duplicate `os` / `arch` / `image_kind` tuples or duplicate dist
+  names, and sorts rows by tuple.
 
 The dist directory contains:
 
 ```text
 m80-linux-x86_64.tar.gz
-m80-linux-x86_64.tar.gz.sha256
 m80-linux-x86_64.bundle.json
-m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
-m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
-m80-bootstrap-selector.tsv.sha256
 m80-release-build.json
-m80-release-build.json.sha256
 install.sh
-install.sh.sha256
 m80-release-integrity.json
-SHA256SUMS
 ```
 
-Extra tuple manifests add their own bundle, metadata sidecar, and checksum
-sidecars to the same dist directory. The default one-tuple release uses this
-same assembly path with no compatibility branch for an old single-row index
-writer.
+Extra tuple manifests add their own bundle and metadata sidecar to the same
+dist directory. The default one-tuple release uses this same assembly path with
+no compatibility branch for an old single-row index writer.
 
 The tarball contains the contract paths from
 [`bundle-contract.md`](bundle-contract.md). `bundle.json` is also copied beside
@@ -70,10 +62,10 @@ digest, schema versions, guest protocol, and Firecracker version.
 bootstrap path that runs before a local `m80` binary exists. The public
 `m80-release-build.json` records the source commit, Rust toolchain, target
 triples, `Cargo.lock` digest, builder identity, builder OS image, and builder
-package versions or container digest. The public `SHA256SUMS` covers every
-asset-index row's bundle, metadata sidecar, and checksum sidecars, plus the
-installer, asset index, bootstrap selector, build manifest, and their checksum
-sidecars. The current assembler emits no detached signature files.
+package versions or container digest. `m80-release-integrity.json` covers every
+asset-index row's bundle and metadata sidecar, plus the installer, asset index,
+bootstrap selector, and build manifest. The current assembler emits no detached
+public checksum or signature files.
 The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in only the concrete release tag;
 bundle selection comes from the verified bootstrap selector and canonical asset
@@ -126,14 +118,14 @@ bundle metadata that omits the install-provenance requirement.
 ## Verification
 
 `scripts/verify-release-bundle.py --verify-sidecars` validates the default
-tarball, adjacent dist sidecars, and every bundle named by the release asset
-index. Publish-time redownload checks add `--downloaded-public-assets`: that
+tarball, adjacent public release material, and every bundle named by the release
+asset index. Publish-time redownload checks add `--downloaded-public-assets`: that
 keeps byte, digest, metadata, and tar-internal mode checks, while ignoring local
 filesystem modes on HTTP-downloaded release assets because GitHub release
 downloads do not preserve `install.sh`'s executable bit. Each asset-index row
 supplies the tuple metadata used to re-run the tar-internal bundle contract, so
-a non-default image kind can have fresh public checksums, a fresh selector row,
-and fresh integrity subjects while still failing publish verification if its tar
+a non-default image kind can have a fresh selector row and fresh integrity
+subjects while still failing publish verification if its tar
 members disagree with `bundle.json`, the guest manifest, the build receipt, or
 internal `SHA256SUMS`.
 
@@ -141,15 +133,15 @@ Regression coverage in `scripts/test-release-bundle.py` checks successful
 packaging plus rejection of missing required paths, duplicate paths, unexpected
 paths, wrong modes, stale versions, metadata hash mismatches,
 schema/protocol/receipt mismatches, missing install-provenance metadata, stale
-public checksum sidecars, and non-default tuple tar corruption. It also checks
+integrity subjects, and non-default tuple tar corruption. It also checks
 the asset-index path for missing assets, wrong tuple, wrong hash, duplicate
-tuple, stale version, a missing index checksum sidecar, bootstrap-selector drift
+tuple, stale version, missing integrity material, bootstrap-selector drift
 from the JSON index, and build manifest drift from the bundle metadata, source
 commit, `Cargo.lock`, or builder-material contract.
 
 `scripts/verify-release-integrity.py` validates the release-integrity predicate
 used by the signing/attestation lane. That predicate is generated from the same
-assembled row set as the index and public checksum manifest. It is documented in
+assembled row set as the index. It is documented in
 [`release-integrity-material.md`](release-integrity-material.md) and records the
 release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
 metadata hash, build-manifest subjects, and every current public

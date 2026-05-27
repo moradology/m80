@@ -200,14 +200,26 @@ def rust_arch() -> str:
 
 def write_index(path: Path, text: str) -> None:
     path.write_text(text)
-    digest = hashlib.sha256(text.encode()).hexdigest()
-    path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
+    index = json.loads(text)
+    integrity = {
+        "schema_version": 1,
+        "release_tag": index["release_tag"],
+        "subjects": [
+            {
+                "name": "m80-release-assets.json",
+                "kind": "asset-index",
+                "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "size_bytes": len(text.encode()),
+            }
+        ],
+    }
+    path.with_name("m80-release-integrity.json").write_text(json.dumps(integrity, sort_keys=True))
 
 
 def index_json(release_tag: str, assets: list[str]) -> str:
     return json.dumps(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "release_tag": release_tag,
             "assets": [json.loads(asset) for asset in assets],
         },
@@ -234,7 +246,6 @@ def asset_json(
             "size_bytes": 42,
             "metadata_name": f"m80-{target}{name_suffix}.bundle.json",
             "metadata_sha256": "b" * 64,
-            "checksum_name": f"{name}.sha256",
             "signature_name": "m80.sig",
             "attestation_name": "m80.intoto.jsonl",
             "target": target,

@@ -11,8 +11,8 @@ live:
   tag;
 - every installer-consumed public asset URL emitted by
   `scripts/stable_latest_bootstrap.py`, including the asset index, selector,
-  checksum sidecars, release-integrity predicate, attestation bundle,
-  normalized attestation metadata, and `SHA256SUMS`;
+  release-integrity predicate, attestation bundle, normalized attestation
+  metadata, release build manifest, and selected bundle;
 - concrete docs-linked release install URLs discovered by
   `scripts/quickstart_snippets.py`.
 

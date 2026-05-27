@@ -13,7 +13,6 @@ fn direct_url_diagnostics_doc_names_stable_contract() {
         "resolved release tag",
         "bundle asset",
         "`install.sh` SHA-256",
-        "public `SHA256SUMS` SHA-256",
         "asset-index SHA-256",
         "proof-cache destination",
         "`proof_cache_written=true`",

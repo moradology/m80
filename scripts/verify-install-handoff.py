@@ -14,15 +14,11 @@ import sys
 SCRIPT_DIR = Path(__file__).resolve().parent
 INTEGRITY_MODULE_PATH = SCRIPT_DIR / "verify-release-integrity.py"
 INSTALL_NAME = "install.sh"
-CHECKSUM_NAME = f"{INSTALL_NAME}.sha256"
-PUBLIC_SHA256S_NAME = "SHA256SUMS"
 INTEGRITY_NAME = "m80-release-integrity.json"
 ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 VERIFIED_ASSET_NAMES = (
     INSTALL_NAME,
-    CHECKSUM_NAME,
-    PUBLIC_SHA256S_NAME,
     INTEGRITY_NAME,
     ATTESTATION_BUNDLE_NAME,
     ATTESTATION_METADATA_NAME,
@@ -72,8 +68,6 @@ def verify_install_handoff(args: argparse.Namespace) -> int:
     verify.require(dist_dir.is_dir(), f"install handoff dist dir missing: {dist_dir}")
     material_path = dist_dir / INTEGRITY_NAME
     install_path = dist_dir / INSTALL_NAME
-    checksum_path = dist_dir / CHECKSUM_NAME
-    public_sha256s_path = dist_dir / PUBLIC_SHA256S_NAME
     attestation_bundle_path = args.attestation_bundle or dist_dir / ATTESTATION_BUNDLE_NAME
     attestation_metadata_path = args.attestation_metadata or dist_dir / ATTESTATION_METADATA_NAME
 
@@ -90,12 +84,7 @@ def verify_install_handoff(args: argparse.Namespace) -> int:
         commit_sha=commit_sha,
         verification_time=verification_time,
     )
-    install_sha256 = verify_install_script_subjects(
-        material,
-        install_path,
-        checksum_path,
-        public_sha256s_path,
-    )
+    install_sha256 = verify_install_script_subjects(material, install_path)
     payload = {
         "verified_install_handoff": True,
         "release_tag": args.release_tag,
@@ -153,64 +142,18 @@ def read_material(path: Path, release_tag: str) -> dict:
     return material
 
 
-def verify_install_script_subjects(
-    material: dict,
-    install_path: Path,
-    checksum_path: Path,
-    public_sha256s_path: Path,
-) -> str:
+def verify_install_script_subjects(material: dict, install_path: Path) -> str:
     verify.require(install_path.is_file(), f"install script missing: {install_path}")
-    install_digest = read_install_checksum_sidecar(checksum_path)
-    public_install_digest = read_public_sha256s_install_digest(public_sha256s_path)
-    verify.require(
-        public_install_digest == install_digest,
-        f"public SHA256SUMS install.sh digest mismatch: expected {install_digest}, got {public_install_digest}",
-    )
     actual_install_digest = verify.sha256_file(install_path)
-    verify.require(
-        actual_install_digest == install_digest,
-        f"install.sh sha256 mismatch: expected {install_digest} from {checksum_path.name}, got {actual_install_digest}",
-    )
     by_name = subject_map(material)
     verify_named_subject(
         by_name,
         INSTALL_NAME,
         "installer",
         install_path,
-        expected_digest=install_digest,
+        expected_digest=actual_install_digest,
     )
-    verify_named_subject(by_name, CHECKSUM_NAME, "checksum-sidecar", checksum_path)
-    verify_named_subject(by_name, PUBLIC_SHA256S_NAME, "checksum-manifest", public_sha256s_path)
-    return install_digest
-
-
-def read_install_checksum_sidecar(path: Path) -> str:
-    verify.require(path.is_file(), f"install checksum sidecar missing: {path}")
-    line = path.read_text().strip()
-    parts = line.split()
-    verify.require(len(parts) == 2, f"{CHECKSUM_NAME} must contain '<sha256> {INSTALL_NAME}'")
-    digest, asset_name = parts
-    verify.require(asset_name == INSTALL_NAME, f"{CHECKSUM_NAME} names {asset_name}, expected {INSTALL_NAME}")
-    verify.require_valid_sha(digest, f"{CHECKSUM_NAME} digest")
-    return digest
-
-
-def read_public_sha256s_install_digest(path: Path) -> str:
-    verify.require(path.is_file(), f"public SHA256SUMS missing: {path}")
-    install_digests: list[str] = []
-    for line_number, line in enumerate(path.read_text().splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        parts = stripped.split()
-        verify.require(len(parts) == 2, f"{PUBLIC_SHA256S_NAME}:{line_number}: must contain '<sha256> <asset>'")
-        digest, asset_name = parts
-        verify.require_valid_sha(digest, f"{PUBLIC_SHA256S_NAME}:{line_number} digest")
-        if asset_name == INSTALL_NAME:
-            install_digests.append(digest)
-    verify.require(install_digests, f"{PUBLIC_SHA256S_NAME} missing {INSTALL_NAME}")
-    verify.require(len(install_digests) == 1, f"{PUBLIC_SHA256S_NAME} contains duplicate {INSTALL_NAME} rows")
-    return install_digests[0]
+    return actual_install_digest
 
 
 def subject_map(material: dict) -> dict[str, dict]:

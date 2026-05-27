@@ -83,7 +83,7 @@
     },
     {
       "id": "checksum-mismatch",
-      "description": "Public release metadata, checksum sidecars, asset index rows, or freshness proof digests disagree for the same release asset.",
+      "description": "Public release metadata, release-integrity subjects, asset index rows, or freshness proof digests disagree for the same release asset.",
       "disposition": "block-next-release-latest",
       "owner": "release-operator",
       "blocks_next_release": true,

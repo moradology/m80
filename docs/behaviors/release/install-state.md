@@ -297,7 +297,7 @@ The cache manifest is
 <install-root>/versions/<release_tag>/artifacts/release-proof-cache/manifest.json
 ```
 
-`manifest.json` has `schema_version: 1`, a top-level `manifest_digest`, and a
+`manifest.json` has `schema_version: 2`, a top-level `manifest_digest`, and a
 `payload` object. `manifest_digest` is the sha256 of the canonical JSON payload,
 not a digest of the enclosing manifest object. The payload records what the
 installer verified; it is evidence for offline status and repair diagnostics,
@@ -313,8 +313,6 @@ The payload fields are:
 - `attestation_metadata`: path, sha256, size, signer identity, issuer, keyset,
   and predicate sha256 for `m80-release-attestation.json`;
 - `asset_index`: path, sha256, and size for `m80-release-assets.json`;
-- `public_sha256s`: path, sha256, and size for public `SHA256SUMS`;
-- `checksum_sidecars`: every public checksum sidecar path, sha256, and subject;
 - `trust_policy`: policy path, trust identity, and policy sha256;
 - `verifier_versions`: m80 version, attestation verifier, release-integrity schema
   version, and asset-index schema version.
@@ -476,7 +474,7 @@ by default.
 - `same_version_reinstall_with_missing_installed_config_refuses_explicit_repair`
 - `same_version_reinstall_with_changed_verifier_versions_is_idempotent`
 - `same_version_reinstall_with_changed_predicate_refuses_silent_replacement`
-- `same_version_reinstall_with_changed_public_sha256s_refuses_silent_replacement`
+- `same_version_reinstall_with_changed_install_integrity_refuses_silent_replacement`
 - `same_version_reinstall_with_changed_trust_policy_identity_refuses_silent_replacement`
 - `same_version_reinstall_change_error_names_explicit_repair_version_dir`
 - `same_version_reinstall_refuses_when_existing_version_is_not_active`

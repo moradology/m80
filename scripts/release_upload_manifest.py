@@ -27,7 +27,6 @@ WORKFLOW_POLICY_READINESS_RECEIPT_NAME = "m80-readiness-workflow-policy.json"
 RELEASE_INTEGRITY_READINESS_RECEIPT_NAME = "m80-readiness-release-bundle-integrity.json"
 HOSTLESS_QUICKSTART_READINESS_RECEIPT_NAME = "m80-readiness-hostless-quickstart.json"
 DOCS_COMMAND_READINESS_RECEIPT_NAME = "m80-readiness-docs-command.json"
-SHA256SUMS_NAME = "SHA256SUMS"
 
 DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -189,7 +188,6 @@ def verify_manifest(
             )
 
     material = read_integrity_material(dist_dir, release_tag)
-    verify_sha256s_coverage(dist_dir, material["subjects"])
     integrity_subject_names = {subject["name"] for subject in material["subjects"]}
     observed_integrity_names = {
         asset["name"] for asset in public_assets if asset["integrity_subject"] is True
@@ -277,26 +275,6 @@ def verify_exact_dist_public_assets(manifest: dict, dist_dir: Path) -> None:
         set(public_by_name),
         "release upload redownload file set",
     )
-
-
-def verify_sha256s_coverage(dist_dir: Path, subjects: list[object]) -> None:
-    expected = {
-        subject["name"]: subject["sha256"]
-        for subject in subjects
-        if subject["name"] != SHA256SUMS_NAME
-    }
-    sums = read_sha256s(dist_dir / SHA256SUMS_NAME)
-    require_name_set(
-        set(sums),
-        set(expected),
-        "release upload SHA256SUMS subject coverage",
-    )
-    for name, expected_sha in expected.items():
-        require(
-            sums[name] == expected_sha,
-            f"release upload SHA256SUMS hash mismatch for {name}: "
-            f"expected {expected_sha}, got {sums[name]}",
-        )
 
 
 def expected_public_assets(dist_dir: Path, release_tag: str) -> list[dict]:
@@ -450,22 +428,6 @@ def read_json(path: Path, label: str) -> dict:
 
 def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-
-def read_sha256s(path: Path) -> dict[str, str]:
-    require(path.is_file(), f"release upload SHA256SUMS missing: {path}")
-    result: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        require(line, "release upload SHA256SUMS contains empty line")
-        parts = line.split()
-        require(len(parts) == 2, "release upload SHA256SUMS row shape invalid")
-        digest, name = parts
-        require_sha256(digest, f"release upload SHA256SUMS digest for {name}")
-        require_dist_asset_name(name, "release upload SHA256SUMS asset name")
-        require(name not in result, f"release upload SHA256SUMS duplicate asset: {name}")
-        result[name] = digest
-    require(result, "release upload SHA256SUMS must not be empty")
-    return result
 
 
 if __name__ == "__main__":

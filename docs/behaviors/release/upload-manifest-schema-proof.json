@@ -13,6 +13,6 @@
   "stdout": "Ran 179 tests in 43.886s\n\nOK",
   "substrate": {
     "kind": "local-linux-hostless",
-    "summary": "Fixture-based release bundle tests generated and verified m80-release-upload-manifest.json with local dist artifacts, including manifest-driven upload/download lists, exact redownload file sets, release-integrity subjects, SHA256SUMS coverage, and provenance digest coverage."
+    "summary": "Fixture-based release bundle tests generated and verified m80-release-upload-manifest.json with local dist artifacts, including manifest-driven upload/download lists, exact redownload file sets, release-integrity subjects, and provenance digest coverage."
   }
 }

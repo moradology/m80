@@ -1063,8 +1063,6 @@ fn write_test_proof_cache(cache_dir: &std::path::Path) {
     );
     let metadata = write_test_proof_file(cache_dir, "m80-release-attestation.json", b"metadata\n");
     let asset_index = write_test_proof_file(cache_dir, "m80-release-assets.json", b"assets\n");
-    let public_sha256s = write_test_proof_file(cache_dir, "SHA256SUMS", b"sha256s\n");
-    let sidecar = write_test_proof_file(cache_dir, "m80-linux-x86_64.tar.gz.sha256", b"bundle\n");
     let trust = write_test_proof_file(
         cache_dir,
         "m80-release-trust-policy.json",
@@ -1087,12 +1085,6 @@ fn write_test_proof_cache(cache_dir: &std::path::Path) {
             predicate_sha256: "4".repeat(64),
         },
         asset_index,
-        public_sha256s,
-        checksum_sidecars: vec![TestChecksumSidecarRef {
-            path: sidecar.path,
-            sha256: sidecar.sha256,
-            subject: "bundle".to_owned(),
-        }],
         trust_policy: TestTrustPolicyRef {
             path: trust.path,
             identity: "repository=moradology/m80".to_owned(),
@@ -1102,11 +1094,11 @@ fn write_test_proof_cache(cache_dir: &std::path::Path) {
             m80_version: "v1".to_owned(),
             attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
-            asset_index_schema_version: 1,
+            asset_index_schema_version: 2,
         },
     };
     let manifest = TestProofManifest {
-        schema_version: 1,
+        schema_version: 2,
         manifest_digest: sha256_json(&payload),
         payload,
     };
@@ -1157,8 +1149,6 @@ struct TestProofPayload {
     attestation_bundle: TestProofFile,
     attestation_metadata: TestAttestationMetadataRef,
     asset_index: TestProofFile,
-    public_sha256s: TestProofFile,
-    checksum_sidecars: Vec<TestChecksumSidecarRef>,
     trust_policy: TestTrustPolicyRef,
     verifier_versions: TestVerifierVersions,
 }
@@ -1177,13 +1167,6 @@ struct TestAttestationMetadataRef {
     issuer: String,
     keyset_id: String,
     predicate_sha256: String,
-}
-
-#[derive(Serialize)]
-struct TestChecksumSidecarRef {
-    path: String,
-    sha256: String,
-    subject: String,
 }
 
 #[derive(Serialize)]

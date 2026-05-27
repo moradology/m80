@@ -8,33 +8,11 @@ use super::{assert_no_bundle_download, ReleaseMaterialPlan};
 
 const MATERIAL_FIXTURE_CASES: &[(&str, &str, bool)] = &[
     ("bundle", "m80-linux-x86_64.tar.gz", true),
-    ("bundle-checksum", "m80-linux-x86_64.tar.gz.sha256", false),
     ("bundle-metadata", "m80-linux-x86_64.bundle.json", false),
-    (
-        "bundle-metadata-checksum",
-        "m80-linux-x86_64.bundle.json.sha256",
-        false,
-    ),
     ("asset-index", "m80-release-assets.json", false),
-    (
-        "asset-index-checksum",
-        "m80-release-assets.json.sha256",
-        false,
-    ),
     ("install-script", "install.sh", false),
-    ("install-script-checksum", "install.sh.sha256", false),
     ("bootstrap-selector", "m80-bootstrap-selector.tsv", false),
-    (
-        "bootstrap-selector-checksum",
-        "m80-bootstrap-selector.tsv.sha256",
-        false,
-    ),
     ("release-build", "m80-release-build.json", false),
-    (
-        "release-build-checksum",
-        "m80-release-build.json.sha256",
-        false,
-    ),
     (
         "release-integrity-predicate",
         "m80-release-integrity.json",
@@ -50,7 +28,6 @@ const MATERIAL_FIXTURE_CASES: &[(&str, &str, bool)] = &[
         "m80-release-attestation.json",
         false,
     ),
-    ("public-sha256s", "SHA256SUMS", false),
 ];
 
 #[test]
@@ -119,7 +96,7 @@ fn fixture_omit_matrix_covers_every_direct_url_material_class() {
             ..ReleaseFixtureOptions::default()
         });
         let message = err.to_string();
-        if class.starts_with("asset-index") {
+        if class.starts_with("asset-index") || *class == "release-integrity-predicate" {
             assert!(
                 message.contains("release asset index"),
                 "omitting {name} should fail in the asset-index fetcher: {message}"
@@ -150,8 +127,8 @@ fn fixture_negative_matrix_names_required_failure_shapes() {
                 ..ReleaseFixtureOptions::default()
             },
             expected: &[
-                "release integrity release_tag mismatch",
-                "material_class=release-integrity-predicate",
+                "release integrity predicate release_tag mismatch",
+                "release asset index",
             ],
             expect_bundle_download: false,
         },
@@ -161,7 +138,7 @@ fn fixture_negative_matrix_names_required_failure_shapes() {
                 tamper_bundle: true,
                 ..ReleaseFixtureOptions::default()
             },
-            expected: &["sidecar digest mismatch", "material_class=bundle"],
+            expected: &["release integrity sha256 mismatch", "material_class=bundle"],
             expect_bundle_download: true,
         },
         FixtureScenario {
@@ -170,35 +147,35 @@ fn fixture_negative_matrix_names_required_failure_shapes() {
                 stale_asset_index: true,
                 ..ReleaseFixtureOptions::default()
             },
-            expected: &["checksum mismatch", "material_class=bundle-checksum"],
-            expect_bundle_download: false,
+            expected: &["bundle digest mismatch", "material_class=bundle"],
+            expect_bundle_download: true,
         },
         FixtureScenario {
-            name: "stale checksum sidecar",
+            name: "stale bundle integrity subject",
             options: ReleaseFixtureOptions {
                 wrong_bundle_checksum: true,
                 ..ReleaseFixtureOptions::default()
             },
-            expected: &["checksum mismatch", "material_class=bundle-checksum"],
-            expect_bundle_download: false,
+            expected: &["release integrity sha256 mismatch", "material_class=bundle"],
+            expect_bundle_download: true,
         },
         FixtureScenario {
-            name: "missing install.sh digest row",
+            name: "missing install.sh integrity subject",
             options: ReleaseFixtureOptions {
                 missing_install_digest: true,
                 ..ReleaseFixtureOptions::default()
             },
-            expected: &["public SHA256SUMS", "install.sh"],
+            expected: &["subject set mismatch", "install.sh"],
             expect_bundle_download: false,
         },
         FixtureScenario {
-            name: "stale public SHA256SUMS row",
+            name: "stale install.sh integrity subject",
             options: ReleaseFixtureOptions {
-                stale_public_sha256s: true,
+                stale_integrity_subjects: true,
                 ..ReleaseFixtureOptions::default()
             },
             expected: &[
-                "public SHA256SUMS mismatch",
+                "release integrity sha256 mismatch",
                 "material_class=install-script",
             ],
             expect_bundle_download: false,

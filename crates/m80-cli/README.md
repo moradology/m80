@@ -75,22 +75,22 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
   the release-bundle installer input contract. `--dry-run` prints the install
   plan without touching host state. `--release-tag` and the hidden
-  `--bootstrap-tag` handoff fetch the checksum-verified asset index for the
+  `--bootstrap-tag` handoff fetch the release-integrity-verified asset index for the
   concrete release, select the Linux x86_64 minimal bundle by tag, OS,
   architecture, and image kind. Asset-index failures report stable text and
   JSON fields for the requested tuple/version, available alternatives, a
   machine-readable code, and a repair command when known. `--bundle-url`
   remains the explicit local fixture/operator override path. Concrete official
   GitHub release bundle URLs verify the same-tag public material set and bundle
-  bytes before staging: asset index, checksum sidecars, installer, bootstrap
-  selector, build manifest, release-integrity predicate subjects, normalized
-  attestation metadata, the GitHub Artifact Attestation bundle, public
-  `SHA256SUMS`, and the selected bundle digest. The attestation check binds the
+  bytes before staging: asset index, installer, bootstrap selector, build
+  manifest, release-integrity predicate subjects, normalized attestation
+  metadata, the GitHub Artifact Attestation bundle, and the selected bundle
+  digest. The attestation check binds the
   predicate to the moradology/m80 release workflow, tag ref, source commit, and
   trusted issuer before the selected bundle tarball is downloaded. Successful
   direct official URL installs name the resolved tag, bundle asset, installer
-  digest, public checksum digest, asset-index digest, proof-cache destination,
-  and whether the verified proof cache was written before activation. Failures
+  digest, asset-index digest, proof-cache destination, and whether the verified
+  proof cache was written before activation. Failures
   include finite JSON `code` values for classifier, fetch, digest, attestation,
   stale-material, and no-write rollback cases plus one retry command when the
   operator should rerun the explicit URL. When an active install already points
@@ -504,7 +504,7 @@ Stable surfaces:
   `--bootstrap-tag`. Dry-run planning does not write host state; indexed sources
   still fetch and verify the release asset index so the plan names the concrete
   bundle. Release-tag and bootstrap-tag sources select bundles through the
-  checksum-verified release asset index. Non-dry-run layout copy accepts
+  release-integrity-verified release asset index. Non-dry-run layout copy accepts
   selected index URLs, local `file://` bundle URLs, local HTTP test fixtures,
   and concrete stable-tag moradology/m80 GitHub release bundle URLs matching
   `m80-<target>.tar.gz`. Mutable latest artifact URLs, raw branch URLs, foreign
@@ -512,8 +512,8 @@ Stable surfaces:
   non-HTTPS GitHub release URLs are rejected before network access or
   install-root mutation. Concrete official GitHub release bundle URLs also
   preflight the same-tag public material set before staging so missing
-  release-integrity, attestation, index, checksum, installer, selector, build,
-  or public checksum assets fail before the bundle tarball is downloaded; the
+  release-integrity, attestation, index, installer, selector, or build assets
+  fail before the bundle tarball is downloaded; the
   release-integrity predicate must also verify through m80's native attestation
   bundle checks before selected bundle bytes are fetched.
   Accepted remote bundles are staged before publishing

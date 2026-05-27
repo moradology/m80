@@ -56,9 +56,9 @@ The metadata file set is the payload set: `bin/*`, `artifacts/*`, and
 metadata bytes are checked before use.
 
 The release dist directory also publishes `m80-linux-x86_64.bundle.json` as a
-byte-identical metadata sidecar, checksum sidecars for public assets, and a
-public `SHA256SUMS` covering the tarball, installer, metadata sidecar, asset
-index, bootstrap selector, build manifest, and each checksum sidecar. See
+byte-identical metadata sidecar. The signed release-integrity predicate covers
+the tarball, installer, metadata sidecar, asset index, bootstrap selector, and
+build manifest. See
 [`bundle-builder.md`](bundle-builder.md).
 
 ## Public Release Subject Set
@@ -69,18 +69,11 @@ public subject set is:
 
 ```text
 m80-linux-x86_64.tar.gz
-m80-linux-x86_64.tar.gz.sha256
 install.sh
-install.sh.sha256
 m80-linux-x86_64.bundle.json
-m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
-m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
-m80-bootstrap-selector.tsv.sha256
 m80-release-build.json
-m80-release-build.json.sha256
-SHA256SUMS
 ```
 
 There are no detached signature files in v1. If the asset index later names a
@@ -108,8 +101,8 @@ original hash, installed hash, path rewrite, and release tag. See
 - stale release tag, m80 version, or package version;
 - missing manifest/protocol/receipt/provenance/Firecracker metadata;
 - manifest, build-receipt, or bundle compatibility tuple mismatch;
-- metadata or `SHA256SUMS` hash mismatch;
-- stale adjacent dist checksum sidecars when `--verify-sidecars` is set.
+- metadata or bundled `SHA256SUMS` hash mismatch;
+- stale adjacent dist release-integrity material when `--verify-sidecars` is set.
 
 `scripts/package-release-bundle.py` creates this shape from already-built
 inputs with deterministic tar metadata and refuses a binary whose

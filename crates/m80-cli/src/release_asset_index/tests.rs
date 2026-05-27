@@ -6,7 +6,7 @@ mod fetch;
 fn parser_round_trip_accepts_default_linux_bundle() {
     let index = valid_index();
 
-    assert_eq!(index.schema_version, 1);
+    assert_eq!(index.schema_version, ASSET_INDEX_SCHEMA_VERSION);
     assert_eq!(index.release_tag, "v0.0.0");
     assert_eq!(index.assets.len(), 1);
     assert_eq!(index.assets[0].os, "linux");
@@ -230,13 +230,14 @@ fn schema_mismatch_diagnostic_names_expected_and_actual() {
 
     assert_eq!(
         err.to_string(),
-        "release asset index schema mismatch: expected 1, got 999"
+        "release asset index schema mismatch: expected 2, got 999"
     );
 }
 
 #[test]
 fn unknown_index_fields_fail_closed() {
-    let mut value: serde_json::Value = serde_json::from_str(&index_json_with_schema(1)).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION)).unwrap();
     value["unexpected"] = serde_json::json!(true);
 
     let err = ReleaseAssetIndex::parse_json(&value.to_string()).unwrap_err();
@@ -339,7 +340,7 @@ fn manifest_schema_version_must_be_nonzero() {
 }
 
 fn valid_index() -> ReleaseAssetIndex {
-    ReleaseAssetIndex::parse_json(&index_json_with_schema(1)).unwrap()
+    ReleaseAssetIndex::parse_json(&index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION)).unwrap()
 }
 
 fn release_binary() -> BinaryRelease<'static> {
@@ -379,7 +380,7 @@ fn index_json_with_schema(schema_version: u32) -> String {
         asset_json("linux", "x86_64", "minimal", "v0.0.0", "v0.0.0"),
     )
     .replace(
-        "\"schema_version\": 1",
+        "\"schema_version\": 2",
         &format!("\"schema_version\": {schema_version}"),
     )
 }
@@ -392,7 +393,8 @@ fn parse_index_with_asset_field(
     field: &str,
     replacement: serde_json::Value,
 ) -> Result<ReleaseAssetIndex, AssetIndexError> {
-    let mut value: serde_json::Value = serde_json::from_str(&index_json_with_schema(1)).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&index_json_with_schema(ASSET_INDEX_SCHEMA_VERSION)).unwrap();
     value["assets"][0][field] = replacement;
 
     ReleaseAssetIndex::parse_json(&value.to_string())
@@ -401,7 +403,7 @@ fn parse_index_with_asset_field(
 fn index_json(release_tag: &str, assets: String) -> String {
     format!(
         r#"{{
-  "schema_version": 1,
+  "schema_version": 2,
   "release_tag": "{release_tag}",
   "assets": [{assets}]
 }}"#
@@ -424,7 +426,6 @@ fn asset_json(
   "size_bytes": 42,
   "metadata_name": "m80-{target}.bundle.json",
   "metadata_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "checksum_name": "m80-{target}.tar.gz.sha256",
   "signature_name": "m80.sig",
   "attestation_name": "m80.intoto.jsonl",
   "target": "{target}",

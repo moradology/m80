@@ -20,8 +20,8 @@ from release_common import require, sha256_file
 
 
 BUNDLE_SCHEMA_VERSION = 1
-ASSET_INDEX_SCHEMA_VERSION = 1
-BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+ASSET_INDEX_SCHEMA_VERSION = 2
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 2
 BUILD_MANIFEST_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
@@ -44,7 +44,6 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "m80_version",
@@ -126,7 +125,6 @@ ASSET_INDEX_FIELDS = {
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "target",
@@ -163,7 +161,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--verify-sidecars",
         action="store_true",
-        help="verify adjacent public release sidecars emitted by package-release-bundle.py",
+        help="verify adjacent public release materials emitted by package-release-bundle.py",
     )
     parser.add_argument(
         "--downloaded-public-assets",
@@ -223,7 +221,7 @@ def main() -> int:
     )
 
     if args.verify_sidecars or args.verify_integrity:
-        verify_sidecars(
+        verify_public_release_materials(
             verification,
             repo_root=args.repo_root,
             release_tag=args.release_tag,
@@ -546,7 +544,7 @@ def parse_sha256s(text: str) -> dict[str, str]:
     return result
 
 
-def verify_sidecars(
+def verify_public_release_materials(
     default_bundle: BundleVerification,
     *,
     repo_root: Path,
@@ -562,13 +560,11 @@ def verify_sidecars(
     asset_index = sidecar_dir / ASSET_INDEX_NAME
     bootstrap_selector = sidecar_dir / BOOTSTRAP_SELECTOR_NAME
     build_manifest = sidecar_dir / BUILD_MANIFEST_NAME
-    public_sums = sidecar_dir / "SHA256SUMS"
-    require(install_asset.is_file(), f"missing public sidecar: {INSTALL_NAME}")
-    require(metadata_asset.is_file(), f"missing public sidecar: {METADATA_NAME}")
-    require(asset_index.is_file(), f"missing public sidecar: {ASSET_INDEX_NAME}")
-    require(bootstrap_selector.is_file(), f"missing public sidecar: {BOOTSTRAP_SELECTOR_NAME}")
-    require(build_manifest.is_file(), f"missing public sidecar: {BUILD_MANIFEST_NAME}")
-    require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
+    require(install_asset.is_file(), f"missing public release material: {INSTALL_NAME}")
+    require(metadata_asset.is_file(), f"missing public release material: {METADATA_NAME}")
+    require(asset_index.is_file(), f"missing public release material: {ASSET_INDEX_NAME}")
+    require(bootstrap_selector.is_file(), f"missing public release material: {BOOTSTRAP_SELECTOR_NAME}")
+    require(build_manifest.is_file(), f"missing public release material: {BUILD_MANIFEST_NAME}")
     if not downloaded_public_assets:
         verify_public_mode(bundle, 0o644)
         verify_public_mode(install_asset, 0o755)
@@ -576,7 +572,6 @@ def verify_sidecars(
         verify_public_mode(asset_index, 0o644)
         verify_public_mode(bootstrap_selector, 0o644)
         verify_public_mode(build_manifest, 0o644)
-        verify_public_mode(public_sums, 0o644)
     require(metadata_asset.read_bytes() == default_bundle.bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
     expected_assets = {
@@ -587,20 +582,13 @@ def verify_sidecars(
         BOOTSTRAP_SELECTOR_NAME: bootstrap_selector,
         BUILD_MANIFEST_NAME: build_manifest,
     }
-    for name, path in expected_assets.items():
-        verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
-
     index = verify_asset_index(
         asset_index,
         bundle=default_bundle,
         metadata_asset=metadata_asset,
         release_tag=release_tag,
     )
-    expected_public_assets = expected_public_assets_from_index(index, sidecar_dir, expected_assets)
-    sums = parse_sha256s(public_sums.read_text())
-    require(set(sums) == set(expected_public_assets), "public SHA256SUMS file set mismatch")
-    for name, path in expected_public_assets.items():
-        require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
+    verify_public_assets_from_index(index, sidecar_dir, expected_assets)
     verify_bootstrap_selector(
         bootstrap_selector,
         index,
@@ -624,15 +612,15 @@ def verify_sidecars(
     )
 
 
-def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_assets: dict[str, Path]) -> dict[str, Path]:
+def verify_public_assets_from_index(index: dict, sidecar_dir: Path, core_assets: dict[str, Path]) -> None:
     expected: dict[str, Path] = {}
 
     def add(name: object, path: Path) -> None:
-        name = require_dist_asset_name(name, "public SHA256SUMS asset name")
+        name = require_dist_asset_name(name, "public release asset name")
         previous = expected.get(name)
         require(
             previous is None or previous == path,
-            f"public SHA256SUMS duplicate asset path mismatch for {name}",
+            f"public release asset duplicate path mismatch for {name}",
         )
         expected[name] = path
 
@@ -641,20 +629,19 @@ def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_asset
     for asset in assets:
         require(isinstance(asset, dict), "asset index asset must be an object")
         name = require_dist_asset_name(asset.get("name"), "asset index name")
-        checksum_name = require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
         add(name, sidecar_dir / name)
-        add(checksum_name, sidecar_dir / checksum_name)
         metadata_name = require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
         add(metadata_name, sidecar_dir / metadata_name)
-        add(f"{metadata_name}.sha256", sidecar_dir / f"{metadata_name}.sha256")
         signature_name = asset.get("signature_name")
         if signature_name is not None:
             signature_name = require_dist_asset_name(signature_name, "asset index signature_name")
             add(signature_name, sidecar_dir / signature_name)
     for name, path in core_assets.items():
         add(name, path)
-        add(f"{name}.sha256", sidecar_dir / f"{name}.sha256")
-    return expected
+    for name, path in expected.items():
+        require(path.is_file(), f"public release material missing: {name}")
+        if name in {BUNDLE_NAME, METADATA_NAME, ASSET_INDEX_NAME, BOOTSTRAP_SELECTOR_NAME, BUILD_MANIFEST_NAME}:
+            verify_public_mode(path, 0o644)
 
 
 def verify_asset_index(
@@ -698,7 +685,6 @@ def require_unique_asset_index_tuples(assets: list) -> None:
         require(isinstance(asset, dict), "asset index asset must be an object")
         require_dist_asset_name(asset.get("name"), "asset index name")
         require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
-        require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
         if asset.get("signature_name") is not None:
             require_dist_asset_name(asset.get("signature_name"), "asset index signature_name")
         if asset.get("attestation_name") is not None:
@@ -743,7 +729,6 @@ def verify_asset_row_matches_bundle(
         "size_bytes": bundle.stat().st_size,
         "metadata_name": metadata_asset.name,
         "metadata_sha256": sha256_file(metadata_asset),
-        "checksum_name": f"{bundle.name}.sha256",
         "target": metadata["target"],
         "os": metadata["os"],
         "arch": metadata["arch"],
@@ -782,14 +767,11 @@ def verify_asset_index_tuple_bundles(
         bundle_path = sidecar_dir / name
         metadata_name = require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
         metadata_path = sidecar_dir / metadata_name
-        checksum_name = require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
         try:
             require(bundle_path.is_file(), f"asset index bundle missing: {name}")
             require(metadata_path.is_file(), f"asset index metadata missing: {metadata_name}")
             verify_public_mode(bundle_path, 0o644)
             verify_public_mode(metadata_path, 0o644)
-            verify_single_sha256(sidecar_dir / checksum_name, name, bundle_path)
-            verify_single_sha256(sidecar_dir / f"{metadata_name}.sha256", metadata_name, metadata_path)
             verified = verify_bundle_contract(
                 bundle_path,
                 release_tag=release_tag,
@@ -799,7 +781,7 @@ def verify_asset_index_tuple_bundles(
             )
             require(
                 metadata_path.read_bytes() == verified.bundle_metadata,
-                f"tuple metadata sidecar does not match bundled bundle.json: {metadata_name}",
+        f"tuple metadata file does not match bundled bundle.json: {metadata_name}",
             )
             verify_asset_row_matches_bundle(
                 asset,
@@ -998,7 +980,6 @@ def expected_bootstrap_selector_rows(index: dict) -> dict[tuple[str, str, str], 
             selector_value(asset["size_bytes"], "size_bytes"),
             selector_value(asset["metadata_name"], "metadata_name"),
             selector_value(asset["metadata_sha256"], "metadata_sha256"),
-            selector_value(asset["checksum_name"], "checksum_name"),
             selector_value(asset["signature_name"], "signature_name"),
             selector_value(asset["attestation_name"], "attestation_name"),
             selector_value(asset["m80_version"], "m80_version"),
@@ -1028,18 +1009,11 @@ def format_tuple(key: tuple[str, str, str]) -> str:
     return "/".join(key)
 
 
-def verify_single_sha256(sidecar: Path, expected_name: str, asset: Path) -> None:
-    require(sidecar.is_file(), f"missing checksum sidecar: {sidecar.name}")
-    verify_public_mode(sidecar, 0o644)
-    sums = parse_sha256s(sidecar.read_text())
-    require(sums == {expected_name: sha256_file(asset)}, f"checksum sidecar mismatch for {expected_name}")
-
-
 def verify_public_mode(path: Path, expected_mode: int) -> None:
     actual_mode = path.stat().st_mode & 0o777
     require(
         actual_mode == expected_mode,
-        f"public sidecar mode mismatch for {path.name}: expected {expected_mode:o}, got {actual_mode:o}",
+        f"public release material mode mismatch for {path.name}: expected {expected_mode:o}, got {actual_mode:o}",
     )
 
 

@@ -6,7 +6,7 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
     let doc = read_repo_file("docs/behaviors/release/asset-index.md");
 
     for required in [
-        "`schema_version: 1`",
+        "`schema_version: 2`",
         "`release_tag`",
         "`os`",
         "`arch`",
@@ -19,10 +19,8 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
         "`signature_name`",
         "`attestation_name`",
         "`m80-release-assets.json`",
-        "`m80-release-assets.json.sha256`",
         "`m80-bootstrap-selector.tsv`",
         "`m80-release-build.json`",
-        "`SHA256SUMS`",
         "shell tokens",
         "shell-unsafe tokens",
         "verify the index sha256",
@@ -30,7 +28,6 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
         "expected sha256",
         "observed sha256",
         "fail before bundle download",
-        "not a substitute for signed release integrity",
         "re-download",
         "non-SHA-256",
         "zero size/schema/protocol",

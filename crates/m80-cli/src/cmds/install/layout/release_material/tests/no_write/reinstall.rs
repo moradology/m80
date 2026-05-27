@@ -465,7 +465,7 @@ fn same_version_reinstall_with_changed_predicate_refuses_silent_replacement() {
 }
 
 #[test]
-fn same_version_reinstall_with_changed_public_sha256s_refuses_silent_replacement() {
+fn same_version_reinstall_with_changed_install_integrity_refuses_silent_replacement() {
     let temp = tempfile::tempdir().unwrap();
     let install_root = temp.path().join("install-root");
     let bundle_bytes = write_installable_bundle_bytes(temp.path());
@@ -485,8 +485,8 @@ fn same_version_reinstall_with_changed_public_sha256s_refuses_silent_replacement
         },
     );
 
-    assert_reinstall_change_error(err, "public_sha256s");
-    assert_no_layout_staging_dirs(&install_root, "changed SHA256SUMS reinstall");
+    assert_reinstall_change_error(err, "integrity_predicate");
+    assert_no_layout_staging_dirs(&install_root, "changed install integrity reinstall");
 }
 
 #[test]
@@ -537,7 +537,7 @@ fn same_version_reinstall_change_error_names_explicit_repair_version_dir() {
     );
 
     let message = err.to_string();
-    assert_reinstall_change_error(err, "public_sha256s");
+    assert_reinstall_change_error(err, "integrity_predicate");
     assert!(
         message.contains(&format!(
             "version_dir={}",

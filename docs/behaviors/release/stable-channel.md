@@ -15,9 +15,9 @@ The stable-channel metadata gate checks:
 - `tag_name` is a stable `vMAJOR.MINOR.PATCH` tag;
 - `draft` and `prerelease` are both false;
 - public release metadata names every installer-consumed asset, including
-  `install.sh`, the bundle, checksum sidecars, asset index, bootstrap selector,
-  build manifest, release-integrity predicate, attestation bundle, normalized
-  attestation metadata, and `SHA256SUMS`;
+  `install.sh`, the bundle, bundle metadata, asset index, bootstrap selector,
+  build manifest, release-integrity predicate, attestation bundle, and
+  normalized attestation metadata;
 - each public asset URL points at the configured release repository and the
   same resolved tag;
 - the release asset index uses the same `release_tag`, and each indexed bundle
@@ -27,11 +27,11 @@ The stable-channel metadata gate checks:
 bootstrap and freshness jobs. `scripts/stable_latest_bootstrap.py` resolves the
 GitHub latest release metadata into one stable concrete tag, checks the latest
 metadata again before emitting a handoff, and outputs only pinned
-`releases/download/<tag>/...` URLs for the installer, bundle, checksum sidecars,
-asset index, bootstrap selector, release-integrity predicate, attestation
-metadata, and public checksum material. Its JSON handoff includes
+`releases/download/<tag>/...` URLs for the installer, bundle, bundle metadata,
+asset index, bootstrap selector, release-integrity predicate, and attestation
+metadata. Its JSON handoff includes
 `versioned_install_args` for downstream install logic, `versioned_install_inputs`
-for the pinned asset-index/checksum/proof URLs and optional install root, and a
+for the pinned asset-index/proof URLs and optional install root, and a
 `bootstrap_proof` record of the resolved tag plus every pinned asset URL; see
 `docs/behaviors/release/stable-latest-bootstrap-handoff.md`. Its URL mode bounds
 both metadata fetches with the same connect-timeout, total-timeout, retry, and

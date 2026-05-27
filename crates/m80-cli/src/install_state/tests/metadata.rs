@@ -186,7 +186,7 @@ fn resolver_reports_tampered_proof_cache() {
 #[test]
 fn resolver_reports_tampered_proof_cache_for_missing_reference() {
     let fixture = installed_fixture();
-    fs::remove_file(proof_cache_dir(&fixture).join("SHA256SUMS"))
+    fs::remove_file(proof_cache_dir(&fixture).join("m80-release-assets.json"))
         .expect("remove proof-cache reference");
 
     let report = fixture.resolve(None);
@@ -310,9 +310,9 @@ fn resolver_reports_proof_cache_materials_for_offline_status() {
             && material.modified_unix_seconds.is_some()
     }));
     assert!(proof_cache.materials.iter().any(|material| {
-        material.role == "checksum_sidecar"
-            && material.path == "m80-linux-x86_64.tar.gz.sha256"
-            && material.subject.as_deref() == Some("bundle")
+        material.role == "asset_index"
+            && material.path == "m80-release-assets.json"
+            && material.subject.is_none()
     }));
     assert_eq!(
         proof_cache.trust_policy.path,

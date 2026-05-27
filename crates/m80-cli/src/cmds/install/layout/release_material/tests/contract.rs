@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use super::super::test_env::valid_material;
 use super::super::{
     verify, verify_support, ReleaseMaterialPlan, ASSET_INDEX_NAME, BOOTSTRAP_SELECTOR_NAME,
-    INSTALL_SCRIPT_NAME, PUBLIC_SHA256SUMS_NAME, RELEASE_ATTESTATION_BUNDLE_NAME,
-    RELEASE_ATTESTATION_METADATA_NAME, RELEASE_BUILD_NAME, RELEASE_INTEGRITY_NAME,
+    INSTALL_SCRIPT_NAME, RELEASE_ATTESTATION_BUNDLE_NAME, RELEASE_ATTESTATION_METADATA_NAME,
+    RELEASE_BUILD_NAME, RELEASE_INTEGRITY_NAME,
 };
 
 #[test]
@@ -33,16 +33,8 @@ fn direct_release_material_plan_matches_shared_integrity_contract() {
         json!("m80-linux-x86_64.tar.gz")
     );
     assert_eq!(
-        contract["default_bundle"]["checksum_name"],
-        json!("m80-linux-x86_64.tar.gz.sha256")
-    );
-    assert_eq!(
         contract["default_bundle"]["metadata_name"],
         json!("m80-linux-x86_64.bundle.json")
-    );
-    assert_eq!(
-        contract["default_bundle"]["metadata_checksum_name"],
-        json!("m80-linux-x86_64.bundle.json.sha256")
     );
     assert_eq!(
         contract["required_files"]["asset_index"],
@@ -63,10 +55,6 @@ fn direct_release_material_plan_matches_shared_integrity_contract() {
     assert_eq!(
         contract["required_files"]["integrity_predicate"],
         json!(RELEASE_INTEGRITY_NAME)
-    );
-    assert_eq!(
-        contract["required_files"]["public_sha256s"],
-        json!(PUBLIC_SHA256SUMS_NAME)
     );
     assert_eq!(
         contract["attestation"]["bundle_name"],
@@ -97,7 +85,6 @@ fn direct_release_material_plan_matches_shared_integrity_contract() {
             json!({
                 "class": material.class,
                 "name": material.name.as_str(),
-                "public_sha256s": subject_kind.is_some() && material.name != PUBLIC_SHA256SUMS_NAME,
                 "subject_kind": subject_kind,
             })
         })

@@ -166,7 +166,7 @@ impl fmt::Display for AssetIndexFetchError {
                 context,
             } => write!(
                 f,
-                "release asset index checksum sidecar invalid at {checksum_url}: {detail}; {}",
+                "release asset index integrity material invalid at {checksum_url}: {detail}; {}",
                 context.describe()
             ),
             Self::ChecksumMismatch {

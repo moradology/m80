@@ -25,7 +25,6 @@ from release_freshness import (
 from release_url_contract import latest_install_command, pinned_install_command, public_release_root, release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
-    CHECKSUM_NAME,
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     METADATA_NAME,
     REQUIRED_PUBLIC_ASSETS,
@@ -148,15 +147,19 @@ class ReleaseFreshnessTest(unittest.TestCase):
             self.assertIn("github-release-metadata", row["checksum_sources"])
         self.assertEqual(
             assets["install.sh"]["checksum_sources"],
-            ["SHA256SUMS", "github-release-metadata", "install.sh.sha256"],
+            ["github-release-metadata", "release-integrity"],
         )
         self.assertEqual(
             assets[BUNDLE_NAME]["checksum_sources"],
-            ["SHA256SUMS", "github-release-metadata", CHECKSUM_NAME],
+            ["github-release-metadata", "release-integrity"],
         )
         self.assertEqual(
             assets[INTEGRITY_ATTESTATION_BUNDLE_NAME]["checksum_sources"],
-            ["SHA256SUMS", "github-release-metadata"],
+            ["github-release-metadata"],
+        )
+        self.assertEqual(
+            assets["m80-release-integrity.json"]["checksum_sources"],
+            ["github-artifact-attestation", "github-release-metadata"],
         )
 
         for args in logged:
@@ -167,13 +170,13 @@ class ReleaseFreshnessTest(unittest.TestCase):
         public_fetches = [args for args in logged if "api.github.com" not in args[-1]]
         self.assertGreaterEqual(len(public_fetches), len(REQUIRED_PUBLIC_ASSETS))
         null_fetches = [args for args in public_fetches if "--output" in args]
-        checksum_fetch_urls = {args[-1] for args in public_fetches if "--output" not in args}
+        content_fetch_urls = {args[-1] for args in public_fetches if "--output" not in args}
         for args in null_fetches:
             self.assert_curl_flag(args, "--output", "/dev/null")
         self.assertGreaterEqual(len(null_fetches), len(REQUIRED_PUBLIC_ASSETS))
-        self.assertIn(release_asset_url("v1.2.3", "SHA256SUMS"), checksum_fetch_urls)
-        self.assertIn(release_asset_url("v1.2.3", CHECKSUM_NAME), checksum_fetch_urls)
-        self.assertIn(release_asset_url("v1.2.3", METADATA_NAME), checksum_fetch_urls)
+        self.assertIn(release_asset_url("v1.2.3", "m80-release-integrity.json"), content_fetch_urls)
+        self.assertIn(release_asset_url("v1.2.3", INTEGRITY_ATTESTATION_BUNDLE_NAME), content_fetch_urls)
+        self.assertIn(release_asset_url("v1.2.3", METADATA_NAME), content_fetch_urls)
 
     def test_success_proof_validation_rejects_bad_schema_digest_status_and_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -360,9 +363,10 @@ class ReleaseFreshnessTest(unittest.TestCase):
             {
                 "class": "missing-public-asset",
                 "message": "failure_class=missing-public-asset; freshness public asset missing: "
-                f"role=checksum asset={CHECKSUM_NAME} url={release_asset_url('v1.2.3', CHECKSUM_NAME)} "
+                "role=metadata asset=m80-release-build.json "
+                f"url={release_asset_url('v1.2.3', 'm80-release-build.json')} "
                 "release_tag=v1.2.3",
-                "source": release_asset_url("v1.2.3", CHECKSUM_NAME),
+                "source": release_asset_url("v1.2.3", "m80-release-build.json"),
             },
             {
                 "class": "docs-drift",
@@ -579,7 +583,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             docs_root = write_docs_root(root / "docs-root")
             metadata = base_release_metadata()
             metadata["assets"] = [
-                asset for asset in metadata["assets"] if asset["name"] != CHECKSUM_NAME
+                asset for asset in metadata["assets"] if asset["name"] != "m80-release-build.json"
             ]
             curl = write_fake_curl(root / "curl", log=root / "curl.log", metadata=metadata)
 
@@ -602,8 +606,8 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("failure_class=missing-public-asset", result.stderr)
         self.assertIn("freshness public asset missing", result.stderr)
-        self.assertIn(f"role=checksum asset={CHECKSUM_NAME}", result.stderr)
-        self.assertIn(f"url={release_asset_url('v1.2.3', CHECKSUM_NAME)}", result.stderr)
+        self.assertIn("role=metadata asset=m80-release-build.json", result.stderr)
+        self.assertIn(f"url={release_asset_url('v1.2.3', 'm80-release-build.json')}", result.stderr)
         self.assertIn("release_tag=v1.2.3", result.stderr)
         self.assertIn("repair_command=br show m80-o3uh9.21.7", result.stderr)
 
@@ -940,149 +944,6 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("field=attestation_name", result.stderr)
         self.assertIn("repair_command=python3 scripts/verify-freshness-failure-policy.py", result.stderr)
 
-    def test_checksum_sidecar_digest_mismatch_names_checksum_and_asset(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            docs_root = write_docs_root(root / "docs-root")
-            curl = write_fake_curl(
-                root / "curl",
-                log=root / "curl.log",
-                checksum_overrides={CHECKSUM_NAME: f"{'0' * 64}  {BUNDLE_NAME}\n"},
-            )
-
-            result = subprocess.run(
-                [
-                    "python3",
-                    str(SCRIPT),
-                    "--curl",
-                    str(curl),
-                    "--docs-root",
-                    str(docs_root),
-                    "--json",
-                ],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("failure_class=checksum-mismatch", result.stderr)
-        self.assertIn("freshness checksum content mismatch: checksum sidecar digest mismatch", result.stderr)
-        self.assertIn("role=bundle", result.stderr)
-        self.assertIn(f"asset={BUNDLE_NAME}", result.stderr)
-        self.assertIn(f"checksum_asset={CHECKSUM_NAME}", result.stderr)
-        self.assertIn(f"checksum_url={release_asset_url('v1.2.3', CHECKSUM_NAME)}", result.stderr)
-        self.assertIn(f"asset_url={release_asset_url('v1.2.3', BUNDLE_NAME)}", result.stderr)
-        self.assertIn("release_tag=v1.2.3", result.stderr)
-        self.assertIn("expected=" + asset_digest(BUNDLE_NAME), result.stderr)
-        self.assertIn("got=" + ("0" * 64), result.stderr)
-        self.assertIn("repair_command=python3 scripts/verify-release-integrity.py --help", result.stderr)
-
-    def test_checksum_sidecar_asset_name_mismatch_names_expected_target(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            docs_root = write_docs_root(root / "docs-root")
-            curl = write_fake_curl(
-                root / "curl",
-                log=root / "curl.log",
-                checksum_overrides={CHECKSUM_NAME: f"{asset_digest(BUNDLE_NAME)}  stale-{BUNDLE_NAME}\n"},
-            )
-
-            result = subprocess.run(
-                [
-                    "python3",
-                    str(SCRIPT),
-                    "--curl",
-                    str(curl),
-                    "--docs-root",
-                    str(docs_root),
-                    "--json",
-                ],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("failure_class=checksum-mismatch", result.stderr)
-        self.assertIn("freshness checksum content mismatch: checksum sidecar asset-name mismatch", result.stderr)
-        self.assertIn(f"asset={BUNDLE_NAME}", result.stderr)
-        self.assertIn(f"checksum_asset={CHECKSUM_NAME}", result.stderr)
-        self.assertIn(f"expected={BUNDLE_NAME}", result.stderr)
-        self.assertIn(f"got=stale-{BUNDLE_NAME}", result.stderr)
-
-    def test_sha256sums_malformed_line_names_checksum_url(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            docs_root = write_docs_root(root / "docs-root")
-            curl = write_fake_curl(
-                root / "curl",
-                log=root / "curl.log",
-                checksum_overrides={"SHA256SUMS": "not-a-sha  install.sh\n"},
-            )
-
-            result = subprocess.run(
-                [
-                    "python3",
-                    str(SCRIPT),
-                    "--curl",
-                    str(curl),
-                    "--docs-root",
-                    str(docs_root),
-                    "--json",
-                ],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("failure_class=checksum-mismatch", result.stderr)
-        self.assertIn("freshness checksum content mismatch: checksum line malformed", result.stderr)
-        self.assertIn("asset=SHA256SUMS", result.stderr)
-        self.assertIn("checksum_asset=SHA256SUMS", result.stderr)
-        self.assertIn(f"checksum_url={release_asset_url('v1.2.3', 'SHA256SUMS')}", result.stderr)
-        self.assertIn("release_tag=v1.2.3", result.stderr)
-
-    def test_sha256sums_duplicate_entry_names_asset(self) -> None:
-        duplicate = (
-            f"{asset_digest('install.sh')}  install.sh\n"
-            f"{asset_digest('install.sh')}  install.sh\n"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            docs_root = write_docs_root(root / "docs-root")
-            curl = write_fake_curl(
-                root / "curl",
-                log=root / "curl.log",
-                checksum_overrides={"SHA256SUMS": duplicate},
-            )
-
-            result = subprocess.run(
-                [
-                    "python3",
-                    str(SCRIPT),
-                    "--curl",
-                    str(curl),
-                    "--docs-root",
-                    str(docs_root),
-                    "--json",
-                ],
-                cwd=REPO_ROOT,
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("failure_class=checksum-mismatch", result.stderr)
-        self.assertIn("freshness checksum content mismatch: duplicate checksum entry", result.stderr)
-        self.assertIn("asset=install.sh", result.stderr)
-        self.assertIn("checksum_asset=SHA256SUMS", result.stderr)
-
     def test_provenance_rejects_wrong_bundle_digest(self) -> None:
         predicate = base_integrity_predicate()
         for subject in predicate["subjects"]:
@@ -1344,13 +1205,11 @@ def write_fake_curl(
     fail_contains: str | None = None,
     fail_code: int = 28,
     fail_stderr: str = "failed\n",
-    checksum_overrides: dict[str, str] | None = None,
     integrity_predicate=None,
     attestation_bundle=None,
 ) -> Path:
     metadata_json = json.dumps(metadata if metadata is not None else base_release_metadata())
     bundle_metadata_json = json.dumps(bundle_metadata if bundle_metadata is not None else base_bundle_metadata())
-    checksums_json = json.dumps(checksum_bodies(checksum_overrides or {}))
     if integrity_predicate is None:
         integrity_predicate = base_integrity_predicate()
     if attestation_bundle is None:
@@ -1396,7 +1255,6 @@ if "api.github.com" in url:
     sys.stdout.write({metadata_json!r})
     raise SystemExit(0)
 
-checksums = {checksums_json}
 if asset_name == {METADATA_NAME!r}:
     sys.stdout.write({bundle_metadata_json!r})
     raise SystemExit(0)
@@ -1406,8 +1264,6 @@ if asset_name == "m80-release-integrity.json":
 if asset_name == {INTEGRITY_ATTESTATION_BUNDLE_NAME!r}:
     sys.stdout.write({attestation_bundle_text!r})
     raise SystemExit(0)
-if asset_name in checksums:
-    sys.stdout.write(checksums[asset_name])
 """
     path.write_text(script)
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -1453,25 +1309,6 @@ def hostless_install_script(*, extra_body: str = "") -> str:
     )
 
 
-def checksum_bodies(overrides: dict[str, str]) -> dict[str, str]:
-    result = {
-        "SHA256SUMS": "".join(
-            f"{asset_digest(name)}  {name}\n"
-            for name in REQUIRED_PUBLIC_ASSETS
-            if name != "SHA256SUMS"
-        )
-    }
-    result.update(
-        {
-            name: f"{asset_digest(name.removesuffix('.sha256'))}  {name.removesuffix('.sha256')}\n"
-            for name in REQUIRED_PUBLIC_ASSETS
-            if name.endswith(".sha256")
-        }
-    )
-    result.update(overrides)
-    return result
-
-
 def base_release_metadata(*, tag: str = "v1.2.3") -> dict:
     return {
         "tag_name": tag,
@@ -1513,7 +1350,7 @@ def base_asset_index(
     metadata_sha: str | None = None,
 ) -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "release_tag": tag,
         "assets": [
             {
@@ -1523,7 +1360,6 @@ def base_asset_index(
                 "size_bytes": len(BUNDLE_NAME) * 10,
                 "metadata_name": METADATA_NAME,
                 "metadata_sha256": metadata_sha or asset_digest(METADATA_NAME),
-                "checksum_name": CHECKSUM_NAME,
                 "signature_name": None,
                 "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
                 "target": "linux-x86_64",
@@ -1559,6 +1395,12 @@ def base_integrity_predicate(
         "rust_toolchain": "1.82",
         "subjects": [
             {
+                "kind": "installer",
+                "name": "install.sh",
+                "sha256": asset_digest("install.sh"),
+                "size_bytes": len("install.sh") * 10,
+            },
+            {
                 "kind": "release-bundle",
                 "name": BUNDLE_NAME,
                 "sha256": bundle_sha or asset_digest(BUNDLE_NAME),
@@ -1569,6 +1411,24 @@ def base_integrity_predicate(
                 "name": METADATA_NAME,
                 "sha256": metadata_sha or asset_digest(METADATA_NAME),
                 "size_bytes": len(METADATA_NAME) * 10,
+            },
+            {
+                "kind": "asset-index",
+                "name": "m80-release-assets.json",
+                "sha256": asset_digest("m80-release-assets.json"),
+                "size_bytes": len("m80-release-assets.json") * 10,
+            },
+            {
+                "kind": "bootstrap-selector",
+                "name": "m80-bootstrap-selector.tsv",
+                "sha256": asset_digest("m80-bootstrap-selector.tsv"),
+                "size_bytes": len("m80-bootstrap-selector.tsv") * 10,
+            },
+            {
+                "kind": "build-manifest",
+                "name": "m80-release-build.json",
+                "sha256": asset_digest("m80-release-build.json"),
+                "size_bytes": len("m80-release-build.json") * 10,
             },
         ],
     }

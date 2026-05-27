@@ -9,9 +9,9 @@ fn missing_integrity_predicate_aborts_before_install_root_mutation() {
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "release material fetch failed",
+            "release asset index fetch failed",
             "release_tag=v0.0.0",
-            "material_class=release-integrity-predicate",
+            "material_class=asset-index",
             "m80-release-integrity.json",
         ],
         expect_bundle_download: false,
@@ -73,36 +73,36 @@ fn missing_asset_index_aborts_before_install_root_mutation() {
 }
 
 #[test]
-fn missing_public_sha256s_aborts_before_install_root_mutation() {
+fn missing_bundle_metadata_aborts_before_install_root_mutation() {
     assert_failure_preserves_install_root(FailureScenario {
-        name: "missing public SHA256SUMS",
+        name: "missing bundle metadata",
         options: ReleaseFixtureOptions {
-            omit: Some("SHA256SUMS"),
+            omit: Some("m80-linux-x86_64.bundle.json"),
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
             "release material fetch failed",
             "release_tag=v0.0.0",
-            "material_class=public-sha256s",
-            "SHA256SUMS",
+            "material_class=bundle-metadata",
+            "m80-linux-x86_64.bundle.json",
         ],
         expect_bundle_download: false,
     });
 }
 
 #[test]
-fn missing_checksum_sidecar_aborts_before_install_root_mutation() {
+fn missing_bootstrap_selector_aborts_before_install_root_mutation() {
     assert_failure_preserves_install_root(FailureScenario {
-        name: "missing checksum sidecar",
+        name: "missing bootstrap selector",
         options: ReleaseFixtureOptions {
-            omit: Some("install.sh.sha256"),
+            omit: Some("m80-bootstrap-selector.tsv"),
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
             "release material fetch failed",
             "release_tag=v0.0.0",
-            "material_class=install-script-checksum",
-            "install.sh.sha256",
+            "material_class=bootstrap-selector",
+            "m80-bootstrap-selector.tsv",
         ],
         expect_bundle_download: false,
     });
@@ -128,15 +128,15 @@ fn trust_policy_signer_mismatch_aborts_before_install_root_mutation() {
 }
 
 #[test]
-fn public_sha256s_digest_mismatch_aborts_before_install_root_mutation() {
+fn integrity_subject_digest_mismatch_aborts_before_install_root_mutation() {
     assert_failure_preserves_install_root(FailureScenario {
-        name: "public SHA256SUMS digest mismatch",
+        name: "integrity subject digest mismatch",
         options: ReleaseFixtureOptions {
-            stale_public_sha256s: true,
+            stale_integrity_subjects: true,
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "public SHA256SUMS mismatch",
+            "release integrity sha256 mismatch",
             "release_tag=v0.0.0",
             "material_class=install-script",
         ],
@@ -170,11 +170,11 @@ fn asset_index_digest_mismatch_aborts_before_install_root_mutation() {
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "checksum mismatch",
+            "release material bundle digest mismatch",
             "release_tag=v0.0.0",
-            "material_class=bundle-checksum",
+            "material_class=bundle",
         ],
-        expect_bundle_download: false,
+        expect_bundle_download: true,
     });
 }
 
@@ -240,9 +240,9 @@ fn release_tag_mismatch_aborts_before_install_root_mutation() {
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "release integrity release_tag mismatch",
+            "release integrity predicate release_tag mismatch",
             "release_tag=v0.0.0",
-            "material_class=release-integrity-predicate",
+            "material_class=asset-index",
         ],
         expect_bundle_download: false,
     });
@@ -274,7 +274,7 @@ fn tampered_bundle_aborts_before_install_root_mutation() {
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "sidecar digest mismatch",
+            "release integrity sha256 mismatch",
             "release_tag=v0.0.0",
             "material_class=bundle",
         ],

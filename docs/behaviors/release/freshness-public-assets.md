@@ -9,23 +9,21 @@ GitHub release asset metadata.
 `scripts/release_freshness.py` treats these assets as required for a stable
 latest install:
 
-- `install.sh` and `install.sh.sha256`;
-- `m80-release-assets.json` and `m80-release-assets.json.sha256`;
-- `m80-bootstrap-selector.tsv` and `m80-bootstrap-selector.tsv.sha256`;
-- the default Linux bundle, bundle metadata sidecar, and their checksum
-  sidecars;
-- `m80-release-build.json` and its checksum sidecar;
+- `install.sh`;
+- `m80-release-assets.json`;
+- `m80-bootstrap-selector.tsv`;
+- the default Linux bundle and bundle metadata sidecar;
+- `m80-release-build.json`;
 - `m80-release-integrity.json`;
 - `m80-release-integrity.attestation.jsonl`;
-- `m80-release-attestation.json`;
-- `SHA256SUMS`.
+- `m80-release-attestation.json`.
 
 Each asset row in the freshness proof records `name`, `role`, `url`,
 `release_tag`, `size_bytes`, and `sha256`. Proof rows come from the validated
 release asset set, so `install.sh` keeps the canonical `installer` role even
 when checked through latest, pinned, and docs-linked URLs. The role vocabulary
 is intentionally small: installer, asset-index, selector, provenance,
-attestation, bundle, checksum, metadata, or public-asset. Missing assets fail
+attestation, bundle, metadata, or public-asset. Missing assets fail
 before URL fetches and name the role, asset, expected public URL, and release
 tag.
 

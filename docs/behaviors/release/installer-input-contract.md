@@ -44,14 +44,14 @@ For `--release-tag` and `--bootstrap-tag`, dry-run still fetches and verifies
 the release asset index so the plan names the concrete selected bundle.
 
 Without `--dry-run`, `--release-tag` and `--bootstrap-tag` fetch the pinned
-`m80-release-assets.json` plus its checksum sidecar for the selected tag,
-verify the index sha256, then select the Linux x86_64 minimal bundle by
-release tag, OS, architecture, and image kind before any bundle download or
-extraction. The selected bundle is still staged through the existing
-checksum-sidecar downloader; indexed size and digest verification is tracked by
-`m80-o3uh9.3.10`. Missing default rows, duplicate defaults, wrong architecture,
-wrong image kind, and wrong index asset tags fail with tuple-specific
-diagnostics before the install root is touched.
+`m80-release-assets.json` plus release-integrity material for the selected tag,
+verify the index sha256 from the signed predicate, then select the Linux x86_64
+minimal bundle by release tag, OS, architecture, and image kind before any
+bundle download or extraction. The selected bundle is staged only after the
+same signed predicate and indexed size/digest checks pass. Missing default
+rows, duplicate defaults, wrong architecture, wrong image kind, and wrong index
+asset tags fail with tuple-specific diagnostics before the install root is
+touched.
 
 The installer also supports explicit local `file://...` bundle URLs and
 concrete stable-tag GitHub release bundle URLs under
@@ -63,20 +63,18 @@ install-root mutation.
 
 Before an official GitHub release bundle URL can create staging state, the
 layout installer resolves the same-tag public material set. It fetches and
-checksum-verifies the tag's `m80-release-assets.json`, requires the selected
+integrity-verifies the tag's `m80-release-assets.json`, requires the selected
 bundle row URL to match the explicit bundle URL, requires the row's
 `attestation_name` to name `m80-release-integrity.attestation.jsonl`, and builds
-a plan covering the bundle, bundle checksum sidecar, metadata sidecar,
-metadata checksum sidecar, asset index, asset-index checksum, `install.sh`,
-`install.sh.sha256`, `m80-bootstrap-selector.tsv`, its checksum sidecar,
-`m80-release-build.json`, its checksum sidecar, `m80-release-integrity.json`,
-`m80-release-integrity.attestation.jsonl`, `m80-release-attestation.json`, and
-public `SHA256SUMS`. The bundle tarball itself is only listed at this stage,
-not downloaded. Missing public material, checksum sidecar mismatch, metadata
-digest mismatch, or redirect to an unsupported host fails before `<install-root>`
-or `.staging` exists. The failure diagnostic names the resolved release tag,
-material class, material name, public URL, and expected public digest or
-identity without printing credentials or temporary paths.
+a plan covering the bundle, metadata sidecar, asset index, `install.sh`,
+`m80-bootstrap-selector.tsv`, `m80-release-build.json`,
+`m80-release-integrity.json`, `m80-release-integrity.attestation.jsonl`, and
+`m80-release-attestation.json`. The bundle tarball itself is only listed at
+this stage, not downloaded. Missing public material, signed-integrity mismatch,
+metadata digest mismatch, or redirect to an unsupported host fails before
+`<install-root>` or `.staging` exists. The failure diagnostic names the resolved
+release tag, material class, material name, public URL, and expected public
+digest or identity without printing credentials or temporary paths.
 
 A successful bundle install stages and verifies the selected or explicit bundle, copies the
 verified layout into `<install-root>/versions/<release_tag>`, writes the

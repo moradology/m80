@@ -8,15 +8,13 @@ use serde_json::Value;
 
 use super::support::{download_material_to_dir, release_material_error, sha256_file};
 use super::verify_support::{
-    expected_file_sha256, expected_subjects, material_subject_kind, parse_sha256s, read_json,
-    require_commit_sha, require_nonempty, verify_public_sha256s_complete,
-    verify_public_sha256s_row, verify_sidecar, verify_subject_file, verify_subject_set,
-    DownloadedReleaseMaterials, PrebundleVerification, ReleaseAttestationMetadata,
-    ReleaseIntegrityPredicate,
+    expected_file_sha256, expected_subjects, material_subject_kind, read_json, require_commit_sha,
+    require_nonempty, verify_subject_file, verify_subject_set, DownloadedReleaseMaterials,
+    PrebundleVerification, ReleaseAttestationMetadata, ReleaseIntegrityPredicate,
 };
 use super::{
     MaterialExpectation, ReleaseMaterialPlan, ReleaseVerificationSummary,
-    VerifiedOfficialReleaseBundle, PUBLIC_SHA256SUMS_NAME,
+    VerifiedOfficialReleaseBundle,
 };
 
 pub(super) const RELEASE_INTEGRITY_SCHEMA_VERSION: u32 = 1;
@@ -70,7 +68,6 @@ fn verify_prebundle_material(
     plan: &ReleaseMaterialPlan,
     downloaded: &DownloadedReleaseMaterials,
 ) -> Result<PrebundleVerification, FcError> {
-    let public_sha256s = parse_sha256s(downloaded.path("public-sha256s")?)?;
     let integrity = read_json::<ReleaseIntegrityPredicate>(
         downloaded.path("release-integrity-predicate")?,
         "release integrity predicate",
@@ -80,7 +77,6 @@ fn verify_prebundle_material(
         "release attestation metadata",
     )?;
     let predicate_sha256 = sha256_file(downloaded.path("release-integrity-predicate")?)?;
-    let public_sha256s_sha256 = sha256_file(downloaded.path("public-sha256s")?)?;
     let asset_index_sha256 = sha256_file(downloaded.path("asset-index")?)?;
 
     require_equal_material(
@@ -192,32 +188,14 @@ fn verify_prebundle_material(
         &attestation.certificate_not_after,
     )?;
 
-    verify_sidecar(downloaded, "asset-index", "asset-index-checksum")?;
-    verify_sidecar(downloaded, "bundle-metadata", "bundle-metadata-checksum")?;
-    verify_sidecar(downloaded, "install-script", "install-script-checksum")?;
-    verify_sidecar(
-        downloaded,
-        "bootstrap-selector",
-        "bootstrap-selector-checksum",
-    )?;
-    verify_sidecar(downloaded, "release-build", "release-build-checksum")?;
-
     let expected_subjects = expected_subjects(plan)?;
     verify_subject_set(&integrity.subjects, &expected_subjects)?;
-    verify_public_sha256s_complete(&public_sha256s, &expected_subjects)?;
     for material in plan
         .materials
         .iter()
         .filter(|material| material.class != "bundle")
     {
         if material_subject_kind(material).is_some() {
-            if material.name != PUBLIC_SHA256SUMS_NAME {
-                verify_public_sha256s_row(
-                    &public_sha256s,
-                    material,
-                    downloaded.path(material.class)?,
-                )?;
-            }
             verify_subject_file(
                 &integrity.subjects,
                 material,
@@ -230,11 +208,9 @@ fn verify_prebundle_material(
 
     let install_sh_sha256 = sha256_file(downloaded.path("install-script")?)?;
     Ok(PrebundleVerification {
-        public_sha256s,
         integrity,
         install_sh_sha256,
         predicate_sha256,
-        public_sha256s_sha256,
         asset_index_sha256,
         attestation_signer: attestation.signer_identity,
         attestation_issuer: attestation.issuer,
@@ -247,13 +223,7 @@ fn verify_full_material(
     downloaded: &DownloadedReleaseMaterials,
     prebundle: PrebundleVerification,
 ) -> Result<ReleaseVerificationSummary, FcError> {
-    verify_sidecar(downloaded, "bundle", "bundle-checksum")?;
     let bundle = plan.material("bundle")?;
-    verify_public_sha256s_row(
-        &prebundle.public_sha256s,
-        bundle,
-        downloaded.path("bundle")?,
-    )?;
     verify_subject_file(
         &prebundle.integrity.subjects,
         bundle,
@@ -295,7 +265,6 @@ fn verify_full_material(
         bundle_sha256,
         install_sh_sha256: prebundle.install_sh_sha256,
         predicate_sha256: prebundle.predicate_sha256,
-        public_sha256s_sha256: prebundle.public_sha256s_sha256,
         asset_index_sha256: prebundle.asset_index_sha256,
         attestation_signer: prebundle.attestation_signer,
         attestation_issuer: prebundle.attestation_issuer,

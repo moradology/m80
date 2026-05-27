@@ -12,29 +12,21 @@ import re
 from release_url_contract import release_asset_url, release_repository
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STABLE_TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
-CHECKSUM_NAME = f"{BUNDLE_NAME}.sha256"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 REQUIRED_PUBLIC_ASSETS = (
     BUNDLE_NAME,
-    CHECKSUM_NAME,
     METADATA_NAME,
-    f"{METADATA_NAME}.sha256",
     "install.sh",
-    "install.sh.sha256",
     "m80-release-assets.json",
-    "m80-release-assets.json.sha256",
     "m80-bootstrap-selector.tsv",
-    "m80-bootstrap-selector.tsv.sha256",
     "m80-release-build.json",
-    "m80-release-build.json.sha256",
     "m80-release-integrity.json",
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     "m80-release-attestation.json",
-    "SHA256SUMS",
 )
 
 
@@ -165,7 +157,6 @@ def validate_asset_index(index: dict, tag: str) -> None:
         f"release asset index default bundle URL mismatch: expected {expected_url}, got {default.get('url')}",
     )
     require(default.get("metadata_name") == METADATA_NAME, "release asset index default metadata_name mismatch")
-    require(default.get("checksum_name") == CHECKSUM_NAME, "release asset index default checksum_name mismatch")
     require(
         default.get("attestation_name") == INTEGRITY_ATTESTATION_BUNDLE_NAME,
         "release asset index default attestation_name mismatch",
@@ -202,8 +193,6 @@ def public_asset_role(name: str) -> str:
         return "attestation"
     if name == BUNDLE_NAME:
         return "bundle"
-    if name.endswith(".sha256") or name == "SHA256SUMS":
-        return "checksum"
     if name == METADATA_NAME or name == "m80-release-build.json":
         return "metadata"
     return "public-asset"

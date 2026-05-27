@@ -7,19 +7,16 @@ into a temporary directory:
 
 ```text
 install.sh
-install.sh.sha256
-SHA256SUMS
 m80-release-integrity.json
 m80-release-integrity.attestation.jsonl
 m80-release-attestation.json
 ```
 
 `scripts/verify-install-handoff.py` verifies the local `install.sh` bytes
-against `install.sh.sha256` and the public `SHA256SUMS` row, requires matching
-`installer`, `checksum-sidecar`, and `checksum-manifest` subjects in
-`m80-release-integrity.json`, then verifies the predicate with the trusted m80
-release policy and GitHub Artifact Attestations. Only after that does it print
-the local `sudo sh <tmp>/install.sh` handoff command.
+against the `installer` subject in `m80-release-integrity.json`, then verifies
+the predicate with the trusted m80 release policy and GitHub Artifact
+Attestations. Only after that does it print the local
+`sudo sh <tmp>/install.sh` handoff command.
 
 The verifier fails before printing the sudo handoff when the installer is
 tampered, the checksum is wrong, signature/provenance material is missing, the

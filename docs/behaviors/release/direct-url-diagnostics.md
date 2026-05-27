@@ -14,9 +14,9 @@ Concrete official bundle URLs under
 `https://github.com/moradology/m80/releases/download/<tag>/<bundle>.tar.gz`
 are still verified as official release material. Successful direct official URL
 installs report the resolved release tag, bundle asset, bundle SHA-256,
-`install.sh` SHA-256, public `SHA256SUMS` SHA-256, asset-index SHA-256,
-predicate SHA-256, attestation identity, source commit, the proof-cache destination,
-and `proof_cache_written=true` after the verified proof cache is
+`install.sh` SHA-256, asset-index SHA-256, predicate SHA-256, attestation
+identity, source commit, the proof-cache destination, and
+`proof_cache_written=true` after the verified proof cache is
 written before activation. Local fixture/operator bundle installs do not write a
 release proof cache.
 

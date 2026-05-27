@@ -32,14 +32,13 @@ fallback for missing apt evidence.
 whose release tag, target, image kind, package version, bundle metadata digest,
 `Cargo.lock` digest, source commit, or Rust toolchain does not match the rest
 of the release dist. `scripts/verify-release-integrity.py` also requires the
-build manifest and checksum sidecar to be subjects in
-`m80-release-integrity.json`, then checks the same manifest identity against
-the signed predicate.
+build manifest to be a subject in `m80-release-integrity.json`, then checks the
+same manifest identity against the signed predicate.
 
-The versioned `install.sh` downloads `m80-release-build.json` and
-`m80-release-build.json.sha256` before extracting the selected bundle. Its
-embedded verifier rejects a build manifest whose release tag, source commit,
-Rust toolchain, target, package version, image kind, target triples, builder
-material, container digest syntax, or bundle metadata hash does not match the
-signed predicate and the selected bundle metadata. That keeps the
-no-installed-binary path from treating the manifest as a mere signed blob.
+The versioned `install.sh` downloads `m80-release-build.json` before extracting
+the selected bundle. Its embedded verifier rejects a build manifest whose
+release tag, source commit, Rust toolchain, target, package version, image kind,
+target triples, builder material, container digest syntax, or bundle metadata
+hash does not match the signed predicate and the selected bundle metadata. That
+keeps the no-installed-binary path from treating the manifest as a mere signed
+blob.

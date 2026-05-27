@@ -6,8 +6,7 @@ use tempfile::TempDir;
 
 use super::source;
 use support::{
-    read_checksum_line, release_asset_url, release_material_error, sha256_file,
-    validate_release_asset_name,
+    release_asset_url, release_material_error, sha256_file, validate_release_asset_name,
 };
 
 const CONNECT_TIMEOUT_SECONDS: &str = "10";
@@ -16,7 +15,6 @@ const MAX_TIME_SECONDS: &str = "120";
 const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
 const BOOTSTRAP_SELECTOR_NAME: &str = "m80-bootstrap-selector.tsv";
 const INSTALL_SCRIPT_NAME: &str = "install.sh";
-const PUBLIC_SHA256SUMS_NAME: &str = "SHA256SUMS";
 const RELEASE_ATTESTATION_BUNDLE_NAME: &str = "m80-release-integrity.attestation.jsonl";
 const RELEASE_ATTESTATION_METADATA_NAME: &str = "m80-release-attestation.json";
 const RELEASE_BUILD_NAME: &str = "m80-release-build.json";
@@ -46,14 +44,13 @@ pub(super) fn verify_official_release_bundle(
     let plan = ReleaseMaterialPlan::from_index_material(material)?;
     let verified = plan.verify_official_bundle()?;
     eprintln!(
-        "m80 install: verified release material release_tag={} bundle_asset={} bundle_sha256={} material_classes={} identity={} install_sh_sha256={} public_sha256s_sha256={} asset_index_sha256={} predicate_sha256={} attestation_signer={} attestation_issuer={} source_commit={}",
+        "m80 install: verified release material release_tag={} bundle_asset={} bundle_sha256={} material_classes={} identity={} install_sh_sha256={} asset_index_sha256={} predicate_sha256={} attestation_signer={} attestation_issuer={} source_commit={}",
         plan.release_tag,
         verified.summary.bundle_asset,
         verified.summary.bundle_sha256,
         plan.material_classes().join(","),
         plan.identity,
         verified.summary.install_sh_sha256,
-        verified.summary.public_sha256s_sha256,
         verified.summary.asset_index_sha256,
         verified.summary.predicate_sha256,
         verified.summary.attestation_signer,
@@ -128,6 +125,8 @@ fn append_retry_context(
 fn fallback_material_class(reason: &str) -> Option<&'static str> {
     if reason.contains("attestation") || reason.contains("gh_bin") {
         Some("release-attestation-bundle")
+    } else if reason.contains("release asset index") {
+        Some("asset-index")
     } else if reason.contains("bundle URL") || reason.contains("remote bundle URL") {
         Some("direct-url-classifier")
     } else {
@@ -191,7 +190,6 @@ pub(super) struct ReleaseVerificationSummary {
     pub(super) bundle_sha256: String,
     pub(super) install_sh_sha256: String,
     pub(super) predicate_sha256: String,
-    pub(super) public_sha256s_sha256: String,
     pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
@@ -228,28 +226,16 @@ impl ReleaseMaterialPlan {
             )));
         }
 
-        let metadata_checksum_name = format!("{}.sha256", material.metadata_name);
-        let asset_index_checksum_name = format!("{ASSET_INDEX_NAME}.sha256");
-        let install_checksum_name = format!("{INSTALL_SCRIPT_NAME}.sha256");
-        let bootstrap_selector_checksum_name = format!("{BOOTSTRAP_SELECTOR_NAME}.sha256");
-        let release_build_checksum_name = format!("{RELEASE_BUILD_NAME}.sha256");
         let names = [
             material.bundle_name.as_str(),
-            material.checksum_name.as_str(),
             material.metadata_name.as_str(),
-            metadata_checksum_name.as_str(),
             ASSET_INDEX_NAME,
-            asset_index_checksum_name.as_str(),
             INSTALL_SCRIPT_NAME,
-            install_checksum_name.as_str(),
             BOOTSTRAP_SELECTOR_NAME,
-            bootstrap_selector_checksum_name.as_str(),
             RELEASE_BUILD_NAME,
-            release_build_checksum_name.as_str(),
             RELEASE_INTEGRITY_NAME,
             RELEASE_ATTESTATION_BUNDLE_NAME,
             RELEASE_ATTESTATION_METADATA_NAME,
-            PUBLIC_SHA256SUMS_NAME,
         ];
         for name in names {
             validate_release_asset_name(name)?;
@@ -281,28 +267,10 @@ impl ReleaseMaterialPlan {
                 },
             ),
             ReleaseMaterial::probed(
-                "bundle-checksum",
-                material.checksum_name.clone(),
-                release_asset_url(&release_tag, &material.checksum_name),
-                MaterialExpectation::ChecksumLine {
-                    sha256: material.bundle_sha256,
-                    name: material.bundle_name,
-                },
-            ),
-            ReleaseMaterial::probed(
                 "bundle-metadata",
                 material.metadata_name.clone(),
                 release_asset_url(&release_tag, &material.metadata_name),
                 MaterialExpectation::FileSha256(material.metadata_sha256.clone()),
-            ),
-            ReleaseMaterial::probed(
-                "bundle-metadata-checksum",
-                metadata_checksum_name.clone(),
-                release_asset_url(&release_tag, &metadata_checksum_name),
-                MaterialExpectation::ChecksumLine {
-                    sha256: material.metadata_sha256,
-                    name: material.metadata_name,
-                },
             ),
             ReleaseMaterial::listed(
                 "asset-index",
@@ -313,25 +281,10 @@ impl ReleaseMaterialPlan {
                     observed: material.index_observed_sha256,
                 },
             ),
-            ReleaseMaterial::listed(
-                "asset-index-checksum",
-                asset_index_checksum_name,
-                material.index_checksum_url,
-                MaterialExpectation::ChecksumLine {
-                    sha256: material.index_expected_sha256,
-                    name: ASSET_INDEX_NAME.to_owned(),
-                },
-            ),
             ReleaseMaterial::probed(
                 "install-script",
                 INSTALL_SCRIPT_NAME.to_owned(),
                 release_asset_url(&release_tag, INSTALL_SCRIPT_NAME),
-                MaterialExpectation::Exists,
-            ),
-            ReleaseMaterial::probed(
-                "install-script-checksum",
-                install_checksum_name.clone(),
-                release_asset_url(&release_tag, &install_checksum_name),
                 MaterialExpectation::Exists,
             ),
             ReleaseMaterial::probed(
@@ -341,21 +294,9 @@ impl ReleaseMaterialPlan {
                 MaterialExpectation::Exists,
             ),
             ReleaseMaterial::probed(
-                "bootstrap-selector-checksum",
-                bootstrap_selector_checksum_name.clone(),
-                release_asset_url(&release_tag, &bootstrap_selector_checksum_name),
-                MaterialExpectation::Exists,
-            ),
-            ReleaseMaterial::probed(
                 "release-build",
                 RELEASE_BUILD_NAME.to_owned(),
                 release_asset_url(&release_tag, RELEASE_BUILD_NAME),
-                MaterialExpectation::Exists,
-            ),
-            ReleaseMaterial::probed(
-                "release-build-checksum",
-                release_build_checksum_name.clone(),
-                release_asset_url(&release_tag, &release_build_checksum_name),
                 MaterialExpectation::Exists,
             ),
             ReleaseMaterial::probed(
@@ -374,12 +315,6 @@ impl ReleaseMaterialPlan {
                 "release-attestation-metadata",
                 RELEASE_ATTESTATION_METADATA_NAME.to_owned(),
                 release_asset_url(&release_tag, RELEASE_ATTESTATION_METADATA_NAME),
-                MaterialExpectation::Exists,
-            ),
-            ReleaseMaterial::probed(
-                "public-sha256s",
-                PUBLIC_SHA256SUMS_NAME.to_owned(),
-                release_asset_url(&release_tag, PUBLIC_SHA256SUMS_NAME),
                 MaterialExpectation::Exists,
             ),
         ];
@@ -481,26 +416,6 @@ impl ReleaseMaterial {
                     )))
                 }
             }
-            MaterialExpectation::ChecksumLine { sha256, name } => {
-                let (observed_sha256, observed_name) = read_checksum_line(path)?;
-                if observed_sha256 != *sha256 {
-                    return Err(release_material_error(format!(
-                        "release material checksum mismatch: {} expected_sha256={} observed_sha256={observed_sha256}",
-                        self.context(),
-                        sha256
-                    )));
-                }
-                if let Some(observed_name) = observed_name {
-                    if observed_name != *name {
-                        return Err(release_material_error(format!(
-                            "release material checksum name mismatch: {} expected_name={} observed_name={observed_name}",
-                            self.context(),
-                            name
-                        )));
-                    }
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -509,7 +424,6 @@ impl ReleaseMaterial {
 enum MaterialExpectation {
     Exists,
     FileSha256(String),
-    ChecksumLine { sha256: String, name: String },
     BundleIdentity { sha256: String, size_bytes: u64 },
     VerifiedIndexSha256 { expected: String, observed: String },
 }
@@ -519,9 +433,6 @@ impl MaterialExpectation {
         match self {
             Self::Exists => "exists".to_owned(),
             Self::FileSha256(sha256) => format!("file_sha256={sha256}"),
-            Self::ChecksumLine { sha256, name } => {
-                format!("checksum_line_sha256={sha256} checksum_line_name={name}")
-            }
             Self::BundleIdentity { sha256, size_bytes } => {
                 format!("bundle_sha256={sha256} size_bytes={size_bytes}")
             }

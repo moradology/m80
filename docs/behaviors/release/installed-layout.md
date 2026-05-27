@@ -4,14 +4,13 @@ Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.4`, `m80-o3uh9.3.6`,
 `m80-o3uh9.3.7`, `m80-o3uh9.16.1`.
 
 `m80 install --release-tag <TAG> --install-root <PATH>` fetches the pinned
-release asset index, verifies its checksum sidecar, selects the matching Linux
-x86_64 minimal bundle, stages that release bundle through the existing
-checksum-sidecar downloader, verifies the extracted layout, copies it into one
-versioned directory, writes install metadata/profile state, and flips the active
-pointer last. `--bootstrap-tag <TAG>` uses the same indexed source selection
-after the bootstrapper resolves "latest" to a concrete tag. The installer also
-accepts explicit local `file://...` bundles for fixtures and
-concrete stable-tag
+release asset index, verifies it through signed release-integrity material,
+selects the matching Linux x86_64 minimal bundle, stages that release bundle,
+verifies the extracted layout, copies it into one versioned directory, writes
+install metadata/profile state, and flips the active pointer last.
+`--bootstrap-tag <TAG>` uses the same indexed source selection after the
+bootstrapper resolves "latest" to a concrete tag. The installer also accepts
+explicit local `file://...` bundles for fixtures and concrete stable-tag
 `https://github.com/moradology/m80/releases/download/<tag>/m80-<target>.tar.gz`
 release bundle URLs. Direct official release URLs are not a weaker trust mode:
 the installer verifies the same release-integrity material and GitHub
@@ -46,11 +45,11 @@ The copied guest manifest and build receipt are rewritten from release-local
 paths to the final versioned `artifacts/` paths. The rewrite is not silent:
 `artifacts/install-provenance.json` records the source hash, installed hash,
 release tag, and `install_path_rewrite` transform for both rewritten JSON
-artifacts. The installed `bundle.json` and installed `SHA256SUMS` are rewritten
+artifacts. The installed `bundle.json` and bundled `SHA256SUMS` are rewritten
 after those path rewrites so the version directory is self-verifying on disk.
-For official release installs, the original public `SHA256SUMS` is preserved in
-`artifacts/release-proof-cache/` with the rest of the verified public proof
-material.
+For official release installs, the release integrity predicate, attestation
+material, asset index, and trust policy are preserved in
+`artifacts/release-proof-cache/`.
 
 The installer also publishes a flat hardlink projection:
 
@@ -115,17 +114,15 @@ The copy uses `<install-root>/.staging/layout-<pid>` as its transaction
 directory. Abandoned `layout-*` staging directories are deleted before a new
 install starts, and the active staging directory is removed on success or
 failure. Remote bundle downloads first land as
-`<install-root>/.staging/layout-<pid>/bundle.tar.gz`, and the adjacent
-`<URL>.sha256` is downloaded and checked before extraction. The final effective
+`<install-root>/.staging/layout-<pid>/bundle.tar.gz`. The final effective
 download URL must stay on the release host/CDN allowlist, or on the same local
 test fixture authority. For indexed release-tag and bootstrap installs, the
-selected asset-index row's bundle URL, sha256, `size_bytes`, checksum asset,
-metadata identity, release tag, target tuple, image kind, and m80 version are
-carried into release-material verification before extraction. The bundle is not
-accepted unless its checksum sidecar digest, computed sha256, and downloaded
-byte length match the selected index material. Explicit local `file://` fixture
-bundles are the only install source that may omit indexed size and digest
-material.
+selected asset-index row's bundle URL, sha256, `size_bytes`, metadata identity,
+release tag, target tuple, image kind, and m80 version are carried into
+release-material verification before extraction. The bundle is not accepted
+unless its signed predicate digest, computed sha256, and downloaded byte length
+match the selected index material. Explicit local `file://` fixture bundles are
+the only install source that may omit indexed size and digest material.
 
 Verification failures never write `<install-root>/active`. Failures after a
 previous install leave the previous active symlink selected. Profile-write,
@@ -134,7 +131,7 @@ unselected version directory behind for inspection, but the active pointer is
 not changed. Failed downloads, checksum mismatches, unsupported redirects, and
 truncated downloads delete staged bundle/checksum partials.
 Direct official release-material failures happen earlier than staging: missing
-metadata, wrong repository, wrong tag, stale checksums or asset index rows,
+metadata, wrong repository, wrong tag, stale integrity material or asset index rows,
 bad attestation, bad predicate, tampered bundle bytes, and release-material
 network failures leave the install root byte-for-byte unchanged and print the
 failed `material_class` plus a safe retry command.
@@ -168,6 +165,6 @@ create `<install-root>`.
 - `install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout`
 - `missing_integrity_predicate_aborts_before_install_root_mutation`
 - `missing_asset_index_aborts_before_install_root_mutation`
-- `public_sha256s_digest_mismatch_aborts_before_install_root_mutation`
+- `integrity_predicate_digest_mismatch_aborts_before_install_root_mutation`
 - `tampered_bundle_aborts_before_install_root_mutation`
 - `installed_layout_doc_names_directory_contract_and_tests`

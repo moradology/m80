@@ -16,10 +16,7 @@ fn failure_context_names_release_tag_material_class_and_one_retry() {
     let message = err.to_string();
 
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
-    assert!(
-        message.contains("material_class=release-integrity-predicate"),
-        "{message}"
-    );
+    assert!(message.contains("material_class=asset-index"), "{message}");
     assert_eq!(message.matches("retry_command=").count(), 1, "{message}");
     assert!(
         message.contains("m80 install --bundle-url 'https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz'"),

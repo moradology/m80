@@ -16,7 +16,6 @@ pub(super) fn valid_material() -> crate::release_asset_index::DirectBundleIndexM
         bundle_size_bytes: 42,
         metadata_name: "m80-linux-x86_64.bundle.json".to_owned(),
         metadata_sha256: "b".repeat(64),
-        checksum_name: "m80-linux-x86_64.tar.gz.sha256".to_owned(),
         attestation_name: Some("m80-release-integrity.attestation.jsonl".to_owned()),
         target: "linux-x86_64".to_owned(),
         image_kind: "minimal".to_owned(),
@@ -24,7 +23,7 @@ pub(super) fn valid_material() -> crate::release_asset_index::DirectBundleIndexM
         index_url: crate::release_urls::release_asset_url("v0.0.0", "m80-release-assets.json"),
         index_checksum_url: crate::release_urls::release_asset_url(
             "v0.0.0",
-            "m80-release-assets.json.sha256",
+            "m80-release-integrity.json",
         ),
         index_expected_sha256: "c".repeat(64),
         index_observed_sha256: "c".repeat(64),

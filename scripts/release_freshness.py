@@ -34,7 +34,7 @@ from stable_release_channel import (
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     METADATA_NAME,
     REQUIRED_PUBLIC_ASSETS,
-    SCHEMA_VERSION,
+    SCHEMA_VERSION as ASSET_INDEX_SCHEMA_VERSION,
     public_asset_role,
 )
 
@@ -43,6 +43,7 @@ FETCH_CONNECT_TIMEOUT_SECONDS = METADATA_CONNECT_TIMEOUT_SECONDS
 FETCH_MAX_TIME_SECONDS = METADATA_MAX_TIME_SECONDS
 FETCH_RETRY_COUNT = METADATA_RETRY_COUNT
 FETCH_RETRY_DELAY_SECONDS = METADATA_RETRY_DELAY_SECONDS
+INTEGRITY_SCHEMA_VERSION = 1
 SHA256_DIGEST_RE = re.compile(r"^sha256:([0-9a-f]{64})$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FRESHNESS_FAILURE_CLASSES = frozenset(
@@ -184,13 +185,13 @@ def main() -> int:
         )
         for check in checks:
             fetch_public_url(check, curl_bin=args.curl)
-        checksum_sources = verify_checksum_contents(public_assets, curl_bin=args.curl)
         provenance_result = verify_provenance_contents(
             public_assets,
             repository=repository,
             release_tag=resolution.resolved_tag,
             curl_bin=args.curl,
         )
+        checksum_sources = digest_sources_from_provenance(public_assets, provenance_result)
         bundle_metadata = fetch_bundle_metadata(public_assets[METADATA_NAME], curl_bin=args.curl)
         tag_agreement = verify_tag_agreement(
             latest_tag=release_tag_from_metadata_for_assets(latest.release),
@@ -535,7 +536,7 @@ def asset_index_expectations(asset_index: dict, tag: str) -> dict[str, tuple[str
             "freshness asset-index malformed: "
             f"{public_asset_failure_detail(tag, 'm80-release-assets.json')} field=root"
         )
-    if asset_index.get("schema_version") != SCHEMA_VERSION:
+    if asset_index.get("schema_version") != ASSET_INDEX_SCHEMA_VERSION:
         raise ValueError(
             "freshness asset-index malformed: "
             f"{public_asset_failure_detail(tag, 'm80-release-assets.json')} field=schema_version"
@@ -564,7 +565,6 @@ def asset_index_expectations(asset_index: dict, tag: str) -> dict[str, tuple[str
     default = default_rows[0]
     require_index_equals(default, "url", release_asset_url(tag, BUNDLE_NAME), BUNDLE_NAME, tag)
     require_index_equals(default, "metadata_name", METADATA_NAME, METADATA_NAME, tag)
-    require_index_equals(default, "checksum_name", f"{BUNDLE_NAME}.sha256", f"{BUNDLE_NAME}.sha256", tag)
     require_index_equals(
         default,
         "attestation_name",
@@ -630,10 +630,6 @@ def fetch_public_url(check: FreshnessUrl, *, curl_bin: str) -> None:
     )
 
 
-def fetch_checksum_text(asset: FreshnessAsset, *, curl_bin: str) -> str:
-    return fetch_public_asset_text(asset, curl_bin=curl_bin, source="checksum-content")
-
-
 def fetch_public_asset_text(asset: FreshnessAsset, *, curl_bin: str, source: str) -> str:
     check = FreshnessUrl(
         role=asset.role,
@@ -697,12 +693,17 @@ def verify_provenance_contents(
     predicate = fetch_json_public_asset(predicate_asset, curl_bin=curl_bin)
     subjects = integrity_subjects(predicate, predicate_asset=predicate_asset)
 
-    require_provenance_field(predicate, "schema_version", SCHEMA_VERSION, predicate_asset)
+    require_provenance_field(predicate, "schema_version", INTEGRITY_SCHEMA_VERSION, predicate_asset)
     require_provenance_field(predicate, "repository", repository, predicate_asset)
     require_provenance_field(predicate, "release_tag", release_tag, predicate_asset)
     require_provenance_field(predicate, "bundle_metadata_name", METADATA_NAME, predicate_asset)
     require_provenance_field(predicate, "bundle_metadata_sha256", public_assets[METADATA_NAME].sha256, predicate_asset)
-    for name in [BUNDLE_NAME, METADATA_NAME]:
+    signed_asset_names = sorted(
+        name
+        for name in public_assets
+        if name not in {predicate_asset.name, attestation_asset.name, "m80-release-attestation.json"}
+    )
+    for name in signed_asset_names:
         require_subject_digest(subjects, name, public_assets[name])
 
     attestation = parse_attestation_bundle(
@@ -724,12 +725,29 @@ def verify_provenance_contents(
             "sha256": attestation_asset.sha256,
             "statement_count": len(attestation["statements"]),
         },
-        "subjects": [
-            subject_summary(subjects[name], url=public_assets[name].url)
-            for name in [BUNDLE_NAME, METADATA_NAME]
-        ],
+        "subjects": [subject_summary(subjects[name], url=public_assets[name].url) for name in signed_asset_names],
         "attestation_subjects": attestation["subjects"],
     }
+
+
+def digest_sources_from_provenance(
+    public_assets: dict[str, FreshnessAsset],
+    provenance_result: dict,
+) -> dict[str, list[str]]:
+    sources = {name: ["github-release-metadata"] for name in public_assets}
+    for subject in provenance_result.get("subjects", []):
+        name = subject.get("name")
+        if isinstance(name, str) and name in sources:
+            sources[name].append("release-integrity")
+    predicate_name = provenance_result.get("predicate", {}).get("name")
+    attested = {
+        subject.get("name")
+        for subject in provenance_result.get("attestation_subjects", [])
+        if isinstance(subject, dict)
+    }
+    if isinstance(predicate_name, str) and predicate_name in sources and predicate_name in attested:
+        sources[predicate_name].append("github-artifact-attestation")
+    return {name: sorted(values) for name, values in sources.items()}
 
 
 def fetch_json_public_asset(asset: FreshnessAsset, *, curl_bin: str) -> dict:
@@ -1095,105 +1113,6 @@ def freshness_repair_command(failure_class: str) -> str | None:
     return None
 
 
-def verify_checksum_contents(
-    public_assets: dict[str, FreshnessAsset],
-    *,
-    curl_bin: str,
-) -> dict[str, list[str]]:
-    sources = {name: ["github-release-metadata"] for name in public_assets}
-    sums_asset = public_assets["SHA256SUMS"]
-    sums = fetch_checksum_text(sums_asset, curl_bin=curl_bin)
-    for asset_name, digest in parse_checksum_file(sums, checksum_asset=sums_asset).items():
-        asset = public_assets.get(asset_name)
-        if asset is None:
-            raise ValueError(
-                checksum_failure_message(
-                    "unknown asset in SHA256SUMS",
-                    checksum_asset=sums_asset,
-                    asset_name=asset_name,
-                    asset=FreshnessAsset(
-                        name=asset_name,
-                        role=public_asset_role(asset_name),
-                        url=release_asset_url(sums_asset.release_tag, asset_name),
-                        release_tag=sums_asset.release_tag,
-                        size_bytes=None,
-                        sha256="unknown",
-                    ),
-                )
-            )
-        if digest != asset.sha256:
-            raise ValueError(
-                checksum_failure_message(
-                    "SHA256SUMS digest mismatch",
-                    checksum_asset=sums_asset,
-                    asset_name=asset_name,
-                    asset=asset,
-                    expected=asset.sha256,
-                    got=digest,
-                )
-            )
-        sources[asset_name].append("SHA256SUMS")
-
-    for checksum_asset in sorted(
-        (asset for asset in public_assets.values() if asset.name.endswith(".sha256")),
-        key=lambda asset: asset.name,
-    ):
-        target_name = checksum_asset.name.removesuffix(".sha256")
-        target = public_assets.get(target_name)
-        if target is None:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum sidecar target missing",
-                    checksum_asset=checksum_asset,
-                    asset_name=target_name,
-                    asset=FreshnessAsset(
-                        name=target_name,
-                        role=public_asset_role(target_name),
-                        url=release_asset_url(checksum_asset.release_tag, target_name),
-                        release_tag=checksum_asset.release_tag,
-                        size_bytes=None,
-                        sha256="unknown",
-                    ),
-                )
-            )
-        entries = parse_checksum_file(fetch_checksum_text(checksum_asset, curl_bin=curl_bin), checksum_asset=checksum_asset)
-        if len(entries) != 1:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum sidecar must contain exactly one entry",
-                    checksum_asset=checksum_asset,
-                    asset_name=target_name,
-                    asset=target,
-                    got=str(len(entries)),
-                )
-            )
-        actual_name, digest = next(iter(entries.items()))
-        if actual_name != target_name:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum sidecar asset-name mismatch",
-                    checksum_asset=checksum_asset,
-                    asset_name=target_name,
-                    asset=target,
-                    expected=target_name,
-                    got=actual_name,
-                )
-            )
-        if digest != target.sha256:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum sidecar digest mismatch",
-                    checksum_asset=checksum_asset,
-                    asset_name=target_name,
-                    asset=target,
-                    expected=target.sha256,
-                    got=digest,
-                )
-            )
-        sources[target_name].append(checksum_asset.name)
-    return {name: sorted(values) for name, values in sources.items()}
-
-
 def verify_tag_agreement(
     *,
     latest_tag: str,
@@ -1249,88 +1168,6 @@ def require_bundle_metadata_string(metadata: dict, field: str, stable_bootstrap_
         f"stable_bootstrap_tag={stable_bootstrap_tag}; "
         f"pinned_install_command={pinned_install_command(stable_bootstrap_tag)}"
     )
-
-
-def parse_checksum_file(text: str, *, checksum_asset: FreshnessAsset) -> dict[str, str]:
-    entries: dict[str, str] = {}
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if not line.strip():
-            continue
-        parts = line.split()
-        if len(parts) != 2 or SHA256_RE.fullmatch(parts[0]) is None:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum line malformed",
-                    checksum_asset=checksum_asset,
-                    asset_name=checksum_asset.name,
-                    asset=checksum_asset,
-                    got=f"line {line_number}",
-                )
-            )
-        digest, asset_name = parts
-        asset_name = asset_name.removeprefix("*")
-        if not asset_name or "/" in asset_name or "\\" in asset_name:
-            raise ValueError(
-                checksum_failure_message(
-                    "checksum asset-name malformed",
-                    checksum_asset=checksum_asset,
-                    asset_name=asset_name or checksum_asset.name,
-                    asset=checksum_asset,
-                    got=f"line {line_number}: {asset_name!r}",
-                )
-            )
-        if asset_name in entries:
-            raise ValueError(
-                checksum_failure_message(
-                    "duplicate checksum entry",
-                    checksum_asset=checksum_asset,
-                    asset_name=asset_name,
-                    asset=FreshnessAsset(
-                        name=asset_name,
-                        role=public_asset_role(asset_name),
-                        url=release_asset_url(checksum_asset.release_tag, asset_name),
-                        release_tag=checksum_asset.release_tag,
-                        size_bytes=None,
-                        sha256="duplicate",
-                    ),
-                )
-            )
-        entries[asset_name] = digest
-    if not entries:
-        raise ValueError(
-            checksum_failure_message(
-                "checksum file empty",
-                checksum_asset=checksum_asset,
-                asset_name=checksum_asset.name,
-                asset=checksum_asset,
-            )
-        )
-    return entries
-
-
-def checksum_failure_message(
-    reason: str,
-    *,
-    checksum_asset: FreshnessAsset,
-    asset_name: str,
-    asset: FreshnessAsset,
-    expected: str | None = None,
-    got: str | None = None,
-) -> str:
-    fields = [
-        f"freshness checksum content mismatch: {reason}",
-        f"role={asset.role}",
-        f"asset={asset_name}",
-        f"checksum_asset={checksum_asset.name}",
-        f"checksum_url={checksum_asset.url}",
-        f"asset_url={asset.url}",
-        f"release_tag={checksum_asset.release_tag}",
-    ]
-    if expected is not None:
-        fields.append(f"expected={expected}")
-    if got is not None:
-        fields.append(f"got={got}")
-    return "; ".join(fields)
 
 
 def run_hostless_install_fixture(

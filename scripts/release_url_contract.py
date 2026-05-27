@@ -12,8 +12,6 @@ CONTRACT_PATH = REPO_ROOT / "docs" / "behaviors" / "release" / "public-release-r
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 VERIFIED_INSTALL_HANDOFF_ASSETS = (
     "install.sh",
-    "install.sh.sha256",
-    "SHA256SUMS",
     "m80-release-integrity.json",
     "m80-release-integrity.attestation.jsonl",
     "m80-release-attestation.json",

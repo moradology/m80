@@ -17,7 +17,8 @@ from release_common import require, sha256_file
 
 
 SCHEMA_VERSION = 1
-BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+ASSET_INDEX_SCHEMA_VERSION = 2
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 2
 BUILD_MANIFEST_SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
 REPOSITORY = release_repository()
@@ -39,7 +40,6 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "m80_version",
@@ -56,7 +56,6 @@ ASSET_FIELDS = {
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "target",
@@ -109,14 +108,9 @@ ATTESTATION_FIELDS = {
 }
 CORE_SUBJECTS = {
     INSTALL_NAME: "installer",
-    f"{INSTALL_NAME}.sha256": "checksum-sidecar",
     ASSET_INDEX_NAME: "asset-index",
-    f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
     BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
-    f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
     BUILD_MANIFEST_NAME: "build-manifest",
-    f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
-    "SHA256SUMS": "checksum-manifest",
 }
 BUILD_MANIFEST_FIELDS = {
     "schema_version",
@@ -238,7 +232,6 @@ def main() -> int:
     )
     verify_bootstrap_selector(dist_dir / BOOTSTRAP_SELECTOR_NAME, material, asset_index)
     expected_subjects = expected_subjects_from_index(asset_index)
-    verify_public_sha256s(dist_dir / "SHA256SUMS", dist_dir, expected_public_sha256s(expected_subjects))
     verify_subjects(material["subjects"], dist_dir, expected_subjects)
 
     print(f"verified release integrity material {args.material}")
@@ -534,7 +527,7 @@ def verify_asset_index(
 ) -> dict:
     index = read_json(index_path, "asset index")
     require_exact_fields(index, ASSET_INDEX_FIELDS, "asset index")
-    require(index.get("schema_version") == SCHEMA_VERSION, "release integrity unsupported asset index schema_version")
+    require(index.get("schema_version") == ASSET_INDEX_SCHEMA_VERSION, "release integrity unsupported asset index schema_version")
     require(index.get("release_tag") == material["release_tag"], "release integrity asset index release_tag mismatch")
     require(isinstance(index.get("assets"), list), "release integrity asset index assets must be a list")
     require(index["assets"], "release integrity asset index assets must not be empty")
@@ -581,9 +574,7 @@ def validate_asset_proof_refs(asset: dict, *, dist_dir: Path, attestation_bundle
         reserved_subject_names = {
             *CORE_SUBJECTS,
             asset["name"],
-            asset["checksum_name"],
             metadata_name,
-            f"{metadata_name}.sha256",
         }
         require(
             signature_name not in reserved_subject_names,
@@ -626,19 +617,10 @@ def require_dist_asset_name(value: object, field: str, asset_name: str) -> str:
 def verify_asset_row(asset: dict, *, material: dict, dist_dir: Path) -> dict:
     asset_name = require_dist_asset_name(asset["name"], "name", asset["name"])
     metadata_name = require_dist_asset_name(asset["metadata_name"], "metadata_name", asset_name)
-    checksum_name = require_dist_asset_name(asset["checksum_name"], "checksum_name", asset_name)
     bundle_path = dist_dir / asset_name
     metadata_path = dist_dir / metadata_name
-    checksum_path = dist_dir / checksum_name
-    metadata_checksum_name = f"{metadata_name}.sha256"
-    metadata_checksum_path = dist_dir / metadata_checksum_name
     require(bundle_path.is_file(), f"release integrity asset index bundle missing for {asset_name}: {asset_name}")
     require(metadata_path.is_file(), f"release integrity asset index metadata missing for {asset_name}: {metadata_name}")
-    require(checksum_path.is_file(), f"release integrity asset index checksum sidecar missing for {asset_name}: {checksum_name}")
-    require(
-        metadata_checksum_path.is_file(),
-        f"release integrity asset index metadata checksum sidecar missing for {asset_name}: {metadata_checksum_name}",
-    )
     bundle_sha = sha256_file(bundle_path)
     metadata_sha = sha256_file(metadata_path)
     row_metadata = read_json(metadata_path, f"asset index metadata for {asset_name}")
@@ -649,7 +631,6 @@ def verify_asset_row(asset: dict, *, material: dict, dist_dir: Path) -> dict:
         "size_bytes": bundle_path.stat().st_size,
         "metadata_name": metadata_name,
         "metadata_sha256": metadata_sha,
-        "checksum_name": f"{asset_name}.sha256",
         "target": f"{asset['os']}-{asset['arch']}",
         "release_tag": material["release_tag"],
         "m80_version": row_metadata["m80_version"],
@@ -662,14 +643,6 @@ def verify_asset_row(asset: dict, *, material: dict, dist_dir: Path) -> dict:
             asset[field] == expected_value,
             f"release integrity asset index {field} mismatch for {asset_name}",
         )
-    require(
-        read_sha256_sidecar(checksum_path, asset_name) == bundle_sha,
-        f"release integrity asset index checksum sidecar mismatch for {asset_name}",
-    )
-    require(
-        read_sha256_sidecar(metadata_checksum_path, metadata_name) == metadata_sha,
-        f"release integrity asset index metadata checksum sidecar mismatch for {asset_name}",
-    )
     verify_asset_row_metadata(asset, row_metadata, material)
     return row_metadata
 
@@ -693,19 +666,6 @@ def verify_asset_row_metadata(asset: dict, metadata: dict, material: dict) -> No
             metadata.get(field) == expected_value,
             f"release integrity asset index metadata {field} mismatch for {asset_name}",
         )
-
-
-def read_sha256_sidecar(path: Path, asset_name: str) -> str:
-    lines = path.read_text().splitlines()
-    require(len(lines) == 1, f"release integrity checksum sidecar shape invalid for {asset_name}")
-    parts = lines[0].split()
-    require(
-        len(parts) == 2 and parts[1] == asset_name,
-        f"release integrity checksum sidecar target mismatch for {asset_name}",
-    )
-    digest = parts[0]
-    require_valid_sha(digest, f"release integrity checksum sidecar digest for {asset_name}")
-    return digest
 
 
 def verify_bootstrap_selector(selector_path: Path, material: dict, index: dict) -> None:
@@ -797,7 +757,6 @@ def expected_bootstrap_selector_rows(index: dict) -> dict[tuple[str, str, str], 
             selector_value(asset.get("size_bytes"), "size_bytes"),
             selector_value(asset.get("metadata_name"), "metadata_name"),
             selector_value(asset.get("metadata_sha256"), "metadata_sha256"),
-            selector_value(asset.get("checksum_name"), "checksum_name"),
             selector_value(asset.get("signature_name"), "signature_name"),
             selector_value(asset.get("attestation_name"), "attestation_name"),
             selector_value(asset.get("m80_version"), "m80_version"),
@@ -834,9 +793,7 @@ def expected_subjects_from_index(index: dict) -> dict[str, str]:
     subjects = dict(CORE_SUBJECTS)
     for asset in index["assets"]:
         add_expected_subject(subjects, asset["name"], "release-bundle")
-        add_expected_subject(subjects, asset["checksum_name"], "checksum-sidecar")
         add_expected_subject(subjects, asset["metadata_name"], "bundle-metadata")
-        add_expected_subject(subjects, f"{asset['metadata_name']}.sha256", "checksum-sidecar")
         signature_name = asset["signature_name"]
         if signature_name is not None:
             add_expected_subject(subjects, signature_name, "detached-signature")
@@ -846,46 +803,6 @@ def expected_subjects_from_index(index: dict) -> dict[str, str]:
 def add_expected_subject(subjects: dict[str, str], name: str, kind: str) -> None:
     require(name not in subjects, f"release integrity duplicate expected subject {name}")
     subjects[name] = kind
-
-
-def expected_public_sha256s(expected_subjects: dict[str, str]) -> dict[str, str]:
-    return {
-        name: kind
-        for name, kind in expected_subjects.items()
-        if name != "SHA256SUMS"
-    }
-
-
-def verify_public_sha256s(sums_path: Path, dist_dir: Path, expected_assets: dict[str, str]) -> None:
-    require(sums_path.is_file(), f"release integrity public SHA256SUMS missing: {sums_path}")
-    sums = parse_sha256s(sums_path)
-    missing = sorted(set(expected_assets) - set(sums))
-    extra = sorted(set(sums) - set(expected_assets))
-    require(not missing, "release integrity public SHA256SUMS missing asset(s): " + ", ".join(missing))
-    require(not extra, "release integrity public SHA256SUMS unexpected asset(s): " + ", ".join(extra))
-    for name in expected_assets:
-        asset = dist_dir / name
-        require(asset.is_file(), f"release integrity public SHA256SUMS asset missing: {name}")
-        actual_sha = sha256_file(asset)
-        require(
-            sums[name] == actual_sha,
-            f"release integrity public SHA256SUMS hash mismatch for {name}: expected {sums[name]}, got {actual_sha}",
-        )
-
-
-def parse_sha256s(sums_path: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for line in sums_path.read_text().splitlines():
-        require(line, "release integrity public SHA256SUMS contains empty line")
-        parts = line.split()
-        require(len(parts) == 2, "release integrity public SHA256SUMS row shape invalid")
-        digest, name = parts
-        require_valid_sha(digest, f"release integrity public SHA256SUMS digest for {name}")
-        require_dist_asset_name(name, "SHA256SUMS asset name", name)
-        require(name not in result, f"release integrity public SHA256SUMS duplicate asset: {name}")
-        result[name] = digest
-    require(result, "release integrity public SHA256SUMS must not be empty")
-    return result
 
 
 def verify_subjects(subjects: object, dist_dir: Path, expected_subjects: dict[str, str]) -> None:

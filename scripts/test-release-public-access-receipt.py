@@ -51,9 +51,10 @@ class PublicAccessReceiptTests(unittest.TestCase):
 
     def test_missing_public_asset_fails(self) -> None:
         receipt = valid_receipt()
-        receipt["downloaded_assets"] = receipt["downloaded_assets"][1:]
-        receipt["downloaded_asset_digests"].pop("SHA256SUMS")
-        self.assert_fails(receipt, "missing SHA256SUMS")
+        missing = sorted(public_access.REQUIRED_PUBLIC_ASSETS)[0]
+        receipt["downloaded_assets"] = [asset for asset in receipt["downloaded_assets"] if asset["name"] != missing]
+        receipt["downloaded_asset_digests"].pop(missing)
+        self.assert_fails(receipt, f"missing {missing}")
 
     def test_extra_public_asset_fails(self) -> None:
         receipt = valid_receipt()
@@ -167,7 +168,7 @@ def valid_receipt() -> dict:
             "sha256": digest,
             "error": None,
         }
-        if name in {"install.sh", "SHA256SUMS", "m80-release-assets.json"}:
+        if name in {"install.sh", "m80-release-assets.json"}:
             row["expected_sha256"] = digest
             row["expected_size_bytes"] = row["size_bytes"]
             subjects.append(

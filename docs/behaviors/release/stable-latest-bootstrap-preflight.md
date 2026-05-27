@@ -10,7 +10,7 @@ The preflight checks:
 
 - `curl`, or the configured downloader command, to fetch release metadata and
   pinned release assets;
-- `sha256sum` for checksum sidecar verification;
+- `sha256sum` for local digest calculation during verified handoff;
 - `mktemp` for the private bootstrap temp directory;
 - `chmod` for installer file permissions;
 - root execution or `sudo` for the privileged versioned install handoff.

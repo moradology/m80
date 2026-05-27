@@ -131,7 +131,6 @@ class ReleaseUrlContractTest(unittest.TestCase):
             "m80-release-assets.json",
             "install.sh",
             "m80-linux-x86_64.tar.gz",
-            "m80-linux-x86_64.tar.gz.sha256",
             "m80-release-integrity.json",
         ]:
             self.assertEqual(

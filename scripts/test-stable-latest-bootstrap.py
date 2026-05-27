@@ -19,7 +19,6 @@ from release_url_contract import release_asset_url
 from stable_latest_bootstrap import MetadataSource, preflight_local_tools, resolve_latest_bootstrap
 from stable_release_channel import (
     BUNDLE_NAME,
-    CHECKSUM_NAME,
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     METADATA_NAME,
     REQUIRED_PUBLIC_ASSETS,
@@ -104,7 +103,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
             payload["versioned_install_inputs"]["asset_index"]["url"],
             release_asset_url("v1.2.3", "m80-release-assets.json"),
         )
-        self.assertIn("m80-release-assets.json.sha256", payload["versioned_install_inputs"]["checksum_urls"])
+        self.assertNotIn("checksum_urls", payload["versioned_install_inputs"])
         self.assertIn("m80-release-integrity.json", payload["versioned_install_inputs"]["proof_urls"])
         self.assertIn("m80-release-attestation.json", payload["versioned_install_inputs"]["proof_urls"])
         self.assert_no_mutable_latest_in_downstream_args(payload["versioned_install_args"])
@@ -330,7 +329,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertFalse((root / "curl.log").exists(), "preflight must fail before network fetch")
         self.assertIn("missing tool=sha256sum", result.stderr)
-        self.assertIn("needed_for=verify downloaded checksum sidecars before install handoff", result.stderr)
+        self.assertIn("needed_for=compute local release asset digests before install handoff", result.stderr)
         self.assertIn("remediation=install GNU coreutils", result.stderr)
 
     def test_rejects_missing_downloader_before_guard_url_fetch(self) -> None:
@@ -697,7 +696,7 @@ def base_release_metadata(
 
 def base_asset_index(*, tag: str = "v1.2.3") -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "release_tag": tag,
         "assets": [
             {
@@ -707,7 +706,6 @@ def base_asset_index(*, tag: str = "v1.2.3") -> dict:
                 "size_bytes": 42,
                 "metadata_name": METADATA_NAME,
                 "metadata_sha256": "b" * 64,
-                "checksum_name": CHECKSUM_NAME,
                 "signature_name": None,
                 "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
                 "target": "linux-x86_64",

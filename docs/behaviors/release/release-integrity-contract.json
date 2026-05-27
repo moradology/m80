@@ -7,8 +7,6 @@
     "signer_workflow": "moradology/m80/.github/workflows/release-artifacts.yml"
   },
   "default_bundle": {
-    "checksum_name": "m80-linux-x86_64.tar.gz.sha256",
-    "metadata_checksum_name": "m80-linux-x86_64.bundle.json.sha256",
     "metadata_name": "m80-linux-x86_64.bundle.json",
     "name": "m80-linux-x86_64.tar.gz"
   },
@@ -16,98 +14,47 @@
     {
       "class": "bundle",
       "name": "m80-linux-x86_64.tar.gz",
-      "public_sha256s": true,
       "subject_kind": "release-bundle"
-    },
-    {
-      "class": "bundle-checksum",
-      "name": "m80-linux-x86_64.tar.gz.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "bundle-metadata",
       "name": "m80-linux-x86_64.bundle.json",
-      "public_sha256s": true,
       "subject_kind": "bundle-metadata"
-    },
-    {
-      "class": "bundle-metadata-checksum",
-      "name": "m80-linux-x86_64.bundle.json.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "asset-index",
       "name": "m80-release-assets.json",
-      "public_sha256s": true,
       "subject_kind": "asset-index"
-    },
-    {
-      "class": "asset-index-checksum",
-      "name": "m80-release-assets.json.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "install-script",
       "name": "install.sh",
-      "public_sha256s": true,
       "subject_kind": "installer"
-    },
-    {
-      "class": "install-script-checksum",
-      "name": "install.sh.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "bootstrap-selector",
       "name": "m80-bootstrap-selector.tsv",
-      "public_sha256s": true,
       "subject_kind": "bootstrap-selector"
-    },
-    {
-      "class": "bootstrap-selector-checksum",
-      "name": "m80-bootstrap-selector.tsv.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "release-build",
       "name": "m80-release-build.json",
-      "public_sha256s": true,
       "subject_kind": "build-manifest"
-    },
-    {
-      "class": "release-build-checksum",
-      "name": "m80-release-build.json.sha256",
-      "public_sha256s": true,
-      "subject_kind": "checksum-sidecar"
     },
     {
       "class": "release-integrity-predicate",
       "name": "m80-release-integrity.json",
-      "public_sha256s": false,
       "subject_kind": null
     },
     {
       "class": "release-attestation-bundle",
       "name": "m80-release-integrity.attestation.jsonl",
-      "public_sha256s": false,
       "subject_kind": null
     },
     {
       "class": "release-attestation-metadata",
       "name": "m80-release-attestation.json",
-      "public_sha256s": false,
       "subject_kind": null
-    },
-    {
-      "class": "public-sha256s",
-      "name": "SHA256SUMS",
-      "public_sha256s": false,
-      "subject_kind": "checksum-manifest"
     }
   ],
   "mechanism": "github-artifact-attestation",
@@ -117,8 +64,7 @@
     "bootstrap_selector": "m80-bootstrap-selector.tsv",
     "build_manifest": "m80-release-build.json",
     "install": "install.sh",
-    "integrity_predicate": "m80-release-integrity.json",
-    "public_sha256s": "SHA256SUMS"
+    "integrity_predicate": "m80-release-integrity.json"
   },
   "schema_version": 1,
   "target": "linux-x86_64"

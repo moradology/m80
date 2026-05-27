@@ -16,7 +16,7 @@ pub(crate) use reinstall::ProofCacheReinstallReport;
 
 pub(super) const PROOF_CACHE_DIR: &str = "release-proof-cache";
 pub(super) const PROOF_CACHE_MANIFEST: &str = "manifest.json";
-pub(super) const PROOF_CACHE_SCHEMA_VERSION: u32 = 1;
+pub(super) const PROOF_CACHE_SCHEMA_VERSION: u32 = 2;
 
 const PROOF_CACHE_FILE_MODE: u32 = 0o644;
 const PROOF_CACHE_DIR_MODE: u32 = 0o755;
@@ -25,15 +25,6 @@ const TRUST_POLICY_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../docs/behaviors/release/m80-release-trust-policy.json"
 ));
-const CHECKSUM_SIDECAR_MATERIALS: &[&str] = &[
-    "bundle-checksum",
-    "bundle-metadata-checksum",
-    "asset-index-checksum",
-    "install-script-checksum",
-    "bootstrap-selector-checksum",
-    "release-build-checksum",
-];
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ProofCacheManifest {
@@ -52,8 +43,6 @@ pub(super) struct ProofCachePayload {
     pub(super) attestation_bundle: ProofCacheFile,
     pub(super) attestation_metadata: AttestationMetadataRef,
     pub(super) asset_index: ProofCacheFile,
-    pub(super) public_sha256s: ProofCacheFile,
-    pub(super) checksum_sidecars: Vec<ChecksumSidecarRef>,
     pub(super) trust_policy: TrustPolicyRef,
     pub(super) verifier_versions: VerifierVersions,
 }
@@ -74,14 +63,6 @@ pub(super) struct AttestationMetadataRef {
     pub(super) issuer: String,
     pub(super) keyset_id: String,
     pub(super) predicate_sha256: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ChecksumSidecarRef {
-    pub(super) path: String,
-    pub(super) sha256: String,
-    pub(super) subject: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,20 +131,6 @@ pub(super) fn write_verified_release_proof_cache(
         "asset-index",
         &manifest.payload.asset_index,
     )?);
-    saved_paths.push(copy_expected_material(
-        verified,
-        &cache_dir,
-        "public-sha256s",
-        &manifest.payload.public_sha256s,
-    )?);
-    for (class, sidecar) in CHECKSUM_SIDECAR_MATERIALS
-        .iter()
-        .zip(&manifest.payload.checksum_sidecars)
-    {
-        saved_paths.push(copy_expected_material_with_subject(
-            verified, &cache_dir, class, sidecar,
-        )?);
-    }
     let trust_policy = write_trust_policy(&cache_dir, verified)?;
     if trust_policy.descriptor != manifest.payload.trust_policy {
         return Err(invalid_manifest(
@@ -213,19 +180,6 @@ fn verified_release_proof_cache_manifest(
         "m80-release-attestation.json",
     )?;
     let asset_index = describe_material(verified, "asset-index", "m80-release-assets.json")?;
-    let public_sha256s = describe_material(verified, "public-sha256s", "SHA256SUMS")?;
-    let checksum_sidecars = CHECKSUM_SIDECAR_MATERIALS
-        .iter()
-        .map(|class| {
-            let descriptor = describe_material_with_source_name(verified, class)?;
-            let subject = checksum_sidecar_subject(verified.material_path(class)?)?;
-            Ok(ChecksumSidecarRef {
-                path: descriptor.path,
-                sha256: descriptor.sha256,
-                subject,
-            })
-        })
-        .collect::<Result<Vec<_>, FcError>>()?;
     let payload = ProofCachePayload {
         release_tag: verified.summary.release_tag.clone(),
         repository: verified.summary.repository.clone(),
@@ -240,8 +194,6 @@ fn verified_release_proof_cache_manifest(
             predicate_sha256: verified.summary.predicate_sha256.clone(),
         },
         asset_index,
-        public_sha256s,
-        checksum_sidecars,
         trust_policy: trust_policy_ref(verified),
         verifier_versions: VerifierVersions {
             m80_version: m80_version.to_owned(),
@@ -325,15 +277,6 @@ fn validate_payload(payload: &ProofCachePayload) -> Result<(), FcError> {
         &payload.attestation_metadata.predicate_sha256,
     )?;
     validate_file("asset_index", &payload.asset_index)?;
-    validate_file("public_sha256s", &payload.public_sha256s)?;
-    if payload.checksum_sidecars.is_empty() {
-        return Err(invalid_manifest(
-            "checksum_sidecars must contain at least one sidecar".to_owned(),
-        ));
-    }
-    for sidecar in &payload.checksum_sidecars {
-        validate_checksum_sidecar(sidecar)?;
-    }
     require_nonempty("trust_policy.path", &payload.trust_policy.path)?;
     require_nonempty("trust_policy.identity", &payload.trust_policy.identity)?;
     require_sha256("trust_policy.sha256", &payload.trust_policy.sha256)?;
@@ -367,12 +310,6 @@ fn validate_file(label: &str, file: &ProofCacheFile) -> Result<(), FcError> {
         )));
     }
     Ok(())
-}
-
-fn validate_checksum_sidecar(sidecar: &ChecksumSidecarRef) -> Result<(), FcError> {
-    require_nonempty("checksum_sidecars.path", &sidecar.path)?;
-    require_sha256("checksum_sidecars.sha256", &sidecar.sha256)?;
-    require_nonempty("checksum_sidecars.subject", &sidecar.subject)
 }
 
 fn copy_material(
@@ -414,69 +351,12 @@ fn copy_expected_material(
     Ok(saved.cache_path)
 }
 
-fn copy_material_with_source_name(
-    verified: &VerifiedOfficialReleaseBundle,
-    cache_dir: &Path,
-    class: &'static str,
-) -> Result<SavedFile, FcError> {
-    let source = verified.material_path(class)?;
-    let name = source
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            invalid_manifest(format!(
-                "proof-cache material path has no UTF-8 file name: material_class={class} path={}",
-                source.display()
-            ))
-        })?
-        .to_owned();
-    copy_material(verified, cache_dir, class, &name)
-}
-
-fn copy_expected_material_with_subject(
-    verified: &VerifiedOfficialReleaseBundle,
-    cache_dir: &Path,
-    class: &'static str,
-    expected: &ChecksumSidecarRef,
-) -> Result<PathBuf, FcError> {
-    let saved = copy_material_with_source_name(verified, cache_dir, class)?;
-    let subject = checksum_sidecar_subject(&saved.cache_path)?;
-    let observed = ChecksumSidecarRef {
-        path: saved.descriptor.path,
-        sha256: saved.descriptor.sha256,
-        subject,
-    };
-    if &observed != expected {
-        return Err(invalid_manifest(format!(
-            "internal proof-cache checksum sidecar mismatch: material_class={class}"
-        )));
-    }
-    Ok(saved.cache_path)
-}
-
 fn describe_material(
     verified: &VerifiedOfficialReleaseBundle,
     class: &'static str,
     name: &str,
 ) -> Result<ProofCacheFile, FcError> {
     describe_file(name, verified.material_path(class)?)
-}
-
-fn describe_material_with_source_name(
-    verified: &VerifiedOfficialReleaseBundle,
-    class: &'static str,
-) -> Result<ProofCacheFile, FcError> {
-    let source = verified.material_path(class)?;
-    let name = source
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            invalid_manifest(format!(
-                "proof-cache material path has no UTF-8 file name: material_class={class} path={}",
-                source.display()
-            ))
-        })?;
-    describe_file(name, source)
 }
 
 struct SavedTrustPolicy {
@@ -573,28 +453,6 @@ fn describe_file(relative_path: &str, path: &Path) -> Result<ProofCacheFile, FcE
     })
 }
 
-fn checksum_sidecar_subject(path: &Path) -> Result<String, FcError> {
-    let text = fs::read_to_string(path).map_err(|source| FcError::PathIo {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let mut parts = text.split_whitespace();
-    let _digest = parts.next().ok_or_else(|| {
-        invalid_manifest(format!(
-            "checksum sidecar is empty: path={}",
-            path.display()
-        ))
-    })?;
-    let subject = parts.next().ok_or_else(|| {
-        invalid_manifest(format!(
-            "checksum sidecar missing subject: path={}",
-            path.display()
-        ))
-    })?;
-    require_nonempty("checksum_sidecars.subject", subject)?;
-    Ok(subject.to_owned())
-}
-
 fn attestation_verifier() -> Result<String, FcError> {
     Ok("m80 native release-attestation verifier v1".to_owned())
 }
@@ -623,15 +481,6 @@ fn verify_cached_payload_files(
         &payload.attestation_metadata.file,
     )?;
     verify_proof_file(cache_dir, "asset_index", &payload.asset_index)?;
-    verify_proof_file(cache_dir, "public_sha256s", &payload.public_sha256s)?;
-    for sidecar in &payload.checksum_sidecars {
-        verify_sha_ref(
-            cache_dir,
-            "checksum_sidecars",
-            &sidecar.path,
-            &sidecar.sha256,
-        )?;
-    }
     verify_sha_ref(
         cache_dir,
         "trust_policy",
@@ -656,11 +505,7 @@ fn proof_cache_payload_paths(
         cache_file_path(cache_dir, &payload.attestation_bundle.path)?,
         cache_file_path(cache_dir, &payload.attestation_metadata.file.path)?,
         cache_file_path(cache_dir, &payload.asset_index.path)?,
-        cache_file_path(cache_dir, &payload.public_sha256s.path)?,
     ];
-    for sidecar in &payload.checksum_sidecars {
-        paths.push(cache_file_path(cache_dir, &sidecar.path)?);
-    }
     paths.push(cache_file_path(cache_dir, &payload.trust_policy.path)?);
     Ok(paths)
 }

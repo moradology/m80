@@ -15,8 +15,6 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERIFY_HANDOFF = REPO_ROOT / "scripts" / "verify-install-handoff.py"
 INSTALL_NAME = "install.sh"
-CHECKSUM_NAME = f"{INSTALL_NAME}.sha256"
-PUBLIC_SHA256S_NAME = "SHA256SUMS"
 INTEGRITY_NAME = "m80-release-integrity.json"
 ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
@@ -40,7 +38,7 @@ class InstallHandoffTest(unittest.TestCase):
         self.assertIn(f"verified install handoff: release_tag={RELEASE_TAG} commit={COMMIT_SHA}", result.stdout)
         self.assertIn(f"install_sh_sha256={sha256_text('#!/bin/sh\necho install\n')}", result.stdout)
         self.assertIn(
-            "verified_assets=install.sh,install.sh.sha256,SHA256SUMS,m80-release-integrity.json,"
+            "verified_assets=install.sh,m80-release-integrity.json,"
             "m80-release-integrity.attestation.jsonl,m80-release-attestation.json",
             result.stdout,
         )
@@ -58,7 +56,10 @@ class InstallHandoffTest(unittest.TestCase):
         self.assertTrue(payload["verified_install_handoff"])
         self.assertEqual(payload["release_tag"], RELEASE_TAG)
         self.assertEqual(payload["install_sh_sha256"], expected_install_sha)
-        self.assertEqual(payload["verified_assets"][0:3], [INSTALL_NAME, CHECKSUM_NAME, PUBLIC_SHA256S_NAME])
+        self.assertEqual(
+            payload["verified_assets"],
+            [INSTALL_NAME, INTEGRITY_NAME, ATTESTATION_BUNDLE_NAME, ATTESTATION_METADATA_NAME],
+        )
         self.assertEqual(payload["sudo_command"], f"sudo sh {dist / INSTALL_NAME}")
 
     def test_rejects_tampered_install_before_sudo_handoff(self) -> None:
@@ -71,19 +72,21 @@ class InstallHandoffTest(unittest.TestCase):
             result = run_handoff(dist, check=False)
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("install.sh sha256 mismatch", result.stderr)
+        self.assertIn("release integrity sha256 mismatch for install.sh", result.stderr)
         self.assertNotIn("sudo sh", result.stdout)
 
-    def test_rejects_wrong_checksum_before_sudo_handoff(self) -> None:
+    def test_rejects_modified_integrity_predicate_before_sudo_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dist = write_handoff_fixture(root)
-            (dist / CHECKSUM_NAME).write_text(f"{'0' * 64}  {INSTALL_NAME}\n")
+            payload = json.loads((dist / INTEGRITY_NAME).read_text())
+            payload["subjects"][0]["sha256"] = "0" * 64
+            (dist / INTEGRITY_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
             result = run_handoff(dist, check=False)
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("public SHA256SUMS install.sh digest mismatch", result.stderr)
+        self.assertIn("release trust predicate digest mismatch", result.stderr)
         self.assertIn(
             f"retry the pinned installer `curl -fsSL https://github.com/moradology/m80/releases/download/{RELEASE_TAG}/install.sh | sudo sh`",
             result.stderr,
@@ -103,16 +106,18 @@ class InstallHandoffTest(unittest.TestCase):
         self.assertIn("release attestation bundle missing", result.stderr)
         self.assertNotIn("sudo sh", result.stdout)
 
-    def test_rejects_public_sha256s_mismatch_before_sudo_handoff(self) -> None:
+    def test_rejects_missing_install_subject_by_rejecting_modified_predicate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dist = write_handoff_fixture(root)
-            (dist / PUBLIC_SHA256S_NAME).write_text(f"{'0' * 64}  {INSTALL_NAME}\n")
+            payload = json.loads((dist / INTEGRITY_NAME).read_text())
+            payload["subjects"] = []
+            (dist / INTEGRITY_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
             result = run_handoff(dist, check=False)
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("public SHA256SUMS install.sh digest mismatch", result.stderr)
+        self.assertIn("release trust predicate digest mismatch", result.stderr)
         self.assertNotIn("sudo sh", result.stdout)
 
     def test_rejects_wrong_tag_before_sudo_handoff(self) -> None:
@@ -164,8 +169,6 @@ def write_handoff_fixture(root: Path) -> Path:
     install = dist / INSTALL_NAME
     install.write_text("#!/bin/sh\necho install\n")
     install.chmod(0o755)
-    write_sha256_sidecar(dist / CHECKSUM_NAME, install, INSTALL_NAME)
-    write_public_sha256s(dist / PUBLIC_SHA256S_NAME, [install, dist / CHECKSUM_NAME])
     material = write_integrity_material(dist)
     write_trust_policy(dist)
     write_attestation_bundle(dist, material)
@@ -176,20 +179,15 @@ def write_handoff_fixture(root: Path) -> Path:
 
 def write_integrity_material(dist: Path) -> Path:
     subjects = []
-    for name, kind in [
-        (INSTALL_NAME, "installer"),
-        (CHECKSUM_NAME, "checksum-sidecar"),
-        (PUBLIC_SHA256S_NAME, "checksum-manifest"),
-    ]:
-        asset = dist / name
-        subjects.append(
-            {
-                "name": name,
-                "kind": kind,
-                "sha256": sha256(asset),
-                "size_bytes": asset.stat().st_size,
-            }
-        )
+    asset = dist / INSTALL_NAME
+    subjects.append(
+        {
+            "name": INSTALL_NAME,
+            "kind": "installer",
+            "sha256": sha256(asset),
+            "size_bytes": asset.stat().st_size,
+        }
+    )
     payload = {
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
@@ -351,14 +349,6 @@ print(json.dumps([{{"verificationResult": {{"statement": {{"subject": [{{"name":
 
 def fake_gh_path(root: Path) -> Path:
     return root / "fake-gh"
-
-
-def write_sha256_sidecar(path: Path, asset: Path, asset_name: str) -> None:
-    path.write_text(f"{sha256(asset)}  {asset_name}\n")
-
-
-def write_public_sha256s(path: Path, assets: list[Path]) -> None:
-    path.write_text("".join(f"{sha256(asset)}  {asset.name}\n" for asset in assets))
 
 
 def sha256(path: Path) -> str:

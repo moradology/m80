@@ -12,7 +12,7 @@ use super::{
 };
 use crate::install_state::{diagnostic, InstallStateDiagnostic, InstallStateDiagnosticCode};
 
-const PROOF_CACHE_SCHEMA_VERSION: u32 = 1;
+const PROOF_CACHE_SCHEMA_VERSION: u32 = 2;
 const PROOF_CACHE_FILE_MODE: u32 = 0o644;
 const PROOF_CACHE_DIR_MODE: u32 = 0o755;
 
@@ -74,7 +74,7 @@ fn proof_cache_report(
     manifest: ProofCacheManifest,
 ) -> ProofCacheReport {
     let manifest_modified_unix_seconds = modified_unix_seconds(manifest_path);
-    let mut materials = vec![
+    let materials = vec![
         material_report(
             cache_dir,
             "integrity_predicate",
@@ -99,23 +99,7 @@ fn proof_cache_report(
             &manifest.payload.asset_index,
             None,
         ),
-        material_report(
-            cache_dir,
-            "public_sha256s",
-            &manifest.payload.public_sha256s,
-            None,
-        ),
     ];
-    materials.extend(manifest.payload.checksum_sidecars.iter().map(|sidecar| {
-        ProofCacheMaterialReport {
-            role: "checksum_sidecar".to_owned(),
-            path: sidecar.path.clone(),
-            sha256: sidecar.sha256.clone(),
-            size_bytes: None,
-            subject: Some(sidecar.subject.clone()),
-            modified_unix_seconds: modified_unix_seconds(&cache_dir.join(&sidecar.path)),
-        }
-    }));
     ProofCacheReport {
         cache_dir: cache_dir.to_path_buf(),
         manifest_path: manifest_path.to_path_buf(),
@@ -261,20 +245,6 @@ fn validate_proof_cache_manifest(
         &manifest.payload.attestation_metadata.predicate_sha256,
     )?;
     validate_proof_file(cache_dir, "asset_index", &manifest.payload.asset_index)?;
-    validate_proof_file(
-        cache_dir,
-        "public_sha256s",
-        &manifest.payload.public_sha256s,
-    )?;
-    if manifest.payload.checksum_sidecars.is_empty() {
-        return Err("proof-cache checksum_sidecars must not be empty".to_owned());
-    }
-    for sidecar in &manifest.payload.checksum_sidecars {
-        validate_file_name("proof_cache.checksum_sidecars.path", &sidecar.path)?;
-        require_sha256("proof_cache.checksum_sidecars.sha256", &sidecar.sha256)?;
-        require_nonempty("proof_cache.checksum_sidecars.subject", &sidecar.subject)?;
-        verify_cache_file(cache_dir, &sidecar.path, &sidecar.sha256, None)?;
-    }
     validate_file_name(
         "proof_cache.trust_policy.path",
         &manifest.payload.trust_policy.path,
@@ -439,8 +409,6 @@ struct ProofCachePayload {
     attestation_bundle: ProofCacheFile,
     attestation_metadata: AttestationMetadataRef,
     asset_index: ProofCacheFile,
-    public_sha256s: ProofCacheFile,
-    checksum_sidecars: Vec<ChecksumSidecarRef>,
     trust_policy: TrustPolicyRef,
     verifier_versions: VerifierVersions,
 }
@@ -461,14 +429,6 @@ struct AttestationMetadataRef {
     issuer: String,
     keyset_id: String,
     predicate_sha256: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChecksumSidecarRef {
-    path: String,
-    sha256: String,
-    subject: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

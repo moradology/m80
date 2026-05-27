@@ -23,8 +23,8 @@ from release_common import require
 
 
 BUNDLE_SCHEMA_VERSION = 1
-ASSET_INDEX_SCHEMA_VERSION = 1
-BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+ASSET_INDEX_SCHEMA_VERSION = 2
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 2
 BUILD_MANIFEST_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
@@ -60,7 +60,6 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "m80_version",
@@ -257,7 +256,6 @@ def main() -> int:
         tarball.chmod(0o644)
         install_asset = out_dir / INSTALL_NAME
         copy_file(rendered_install, install_asset, 0o755)
-        write_sha256_sidecar(out_dir / f"{INSTALL_NAME}.sha256", install_asset, INSTALL_NAME)
         metadata_asset = out_dir / METADATA_NAME
         shutil.copy2(metadata_path, metadata_asset)
         metadata_asset.chmod(0o644)
@@ -275,11 +273,6 @@ def main() -> int:
             ),
         )
         build_manifest_path.chmod(0o644)
-        write_sha256_sidecar(
-            out_dir / f"{BUILD_MANIFEST_NAME}.sha256",
-            build_manifest_path,
-            BUILD_MANIFEST_NAME,
-        )
         tuple_artifacts = assemble_tuple_artifacts(
             out_dir=out_dir,
             release_tag=args.release_tag,
@@ -298,16 +291,9 @@ def main() -> int:
         asset_index = release_asset_index(args.release_tag, tuple_artifacts)
         write_json(asset_index_path, asset_index)
         asset_index_path.chmod(0o644)
-        write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", asset_index_path, ASSET_INDEX_NAME)
         bootstrap_selector_path = out_dir / BOOTSTRAP_SELECTOR_NAME
         write_bootstrap_selector(bootstrap_selector_path, asset_index)
         bootstrap_selector_path.chmod(0o644)
-        write_sha256_sidecar(
-            out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
-            bootstrap_selector_path,
-            BOOTSTRAP_SELECTOR_NAME,
-        )
-        write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets(asset_index, out_dir))
         integrity_path = out_dir / INTEGRITY_NAME
         write_json(
             integrity_path,
@@ -722,17 +708,12 @@ def assemble_tuple_artifacts(
 def core_release_dist_names() -> set[str]:
     return {
         INSTALL_NAME,
-        f"{INSTALL_NAME}.sha256",
         ASSET_INDEX_NAME,
-        f"{ASSET_INDEX_NAME}.sha256",
         BOOTSTRAP_SELECTOR_NAME,
-        f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
         BUILD_MANIFEST_NAME,
-        f"{BUILD_MANIFEST_NAME}.sha256",
         INTEGRITY_NAME,
         INTEGRITY_ATTESTATION_BUNDLE_NAME,
         "m80-release-attestation.json",
-        "SHA256SUMS",
     }
 
 
@@ -752,9 +733,7 @@ def reserve_tuple_dist_names(artifact: ReleaseTupleArtifact, reserved_names: set
 def tuple_dist_names(artifact: ReleaseTupleArtifact) -> set[str]:
     return {
         artifact.bundle_name,
-        f"{artifact.bundle_name}.sha256",
         artifact.metadata_name,
-        f"{artifact.metadata_name}.sha256",
     }
 
 
@@ -771,9 +750,7 @@ def require_unique_tuple_artifacts(artifacts: list[ReleaseTupleArtifact]) -> Non
         seen_tuples.add(tuple_key)
         for name in [
             artifact.bundle_name,
-            f"{artifact.bundle_name}.sha256",
             artifact.metadata_name,
-            f"{artifact.metadata_name}.sha256",
         ]:
             require(name not in seen_names, f"release tuple duplicate dist asset name: {name}")
             seen_names.add(name)
@@ -858,12 +835,6 @@ def validate_tuple_artifact(
     require(isinstance(metadata.get("files"), list) and metadata["files"], f"tuple metadata missing files for {artifact.metadata_name}")
     validate_tuple_bundle_metadata(artifact)
     verify_tuple_bundle_contract(artifact, release_tag=release_tag, repo_root=repo_root)
-    write_sha256_sidecar(artifact.bundle_path.with_name(f"{artifact.bundle_name}.sha256"), artifact.bundle_path, artifact.bundle_name)
-    write_sha256_sidecar(
-        artifact.metadata_path.with_name(f"{artifact.metadata_name}.sha256"),
-        artifact.metadata_path,
-        artifact.metadata_name,
-    )
     return artifact
 
 
@@ -945,7 +916,6 @@ def release_asset_index_row(release_tag: str, artifact: ReleaseTupleArtifact) ->
         "size_bytes": artifact.bundle_path.stat().st_size,
         "metadata_name": artifact.metadata_name,
         "metadata_sha256": sha256(artifact.metadata_path),
-        "checksum_name": f"{artifact.bundle_name}.sha256",
         "signature_name": None,
         "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
         "target": metadata["target"],
@@ -1009,7 +979,6 @@ def write_bootstrap_selector(path: Path, asset_index: dict) -> None:
                     selector_value(asset["size_bytes"], "size_bytes"),
                     selector_value(asset["metadata_name"], "metadata_name"),
                     selector_value(asset["metadata_sha256"], "metadata_sha256"),
-                    selector_value(asset["checksum_name"], "checksum_name"),
                     selector_value(asset["signature_name"], "signature_name"),
                     selector_value(asset["attestation_name"], "attestation_name"),
                     selector_value(asset["m80_version"], "m80_version"),
@@ -1073,33 +1042,18 @@ def release_integrity_subject_kinds(asset_index: dict) -> list[tuple[str, str]]:
 
     for asset in asset_index["assets"]:
         add(asset["name"], "release-bundle")
-        add(asset["checksum_name"], "checksum-sidecar")
         add(asset["metadata_name"], "bundle-metadata")
-        add(f"{asset['metadata_name']}.sha256", "checksum-sidecar")
         if asset["signature_name"] is not None:
             add(asset["signature_name"], "detached-signature")
 
     for name, kind in [
         (INSTALL_NAME, "installer"),
-        (f"{INSTALL_NAME}.sha256", "checksum-sidecar"),
         (ASSET_INDEX_NAME, "asset-index"),
-        (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
         (BOOTSTRAP_SELECTOR_NAME, "bootstrap-selector"),
-        (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", "checksum-sidecar"),
         (BUILD_MANIFEST_NAME, "build-manifest"),
-        (f"{BUILD_MANIFEST_NAME}.sha256", "checksum-sidecar"),
-        ("SHA256SUMS", "checksum-manifest"),
     ]:
         add(name, kind)
     return list(kinds.items())
-
-
-def public_sha256_assets(asset_index: dict, dist_dir: Path) -> list[tuple[str, Path]]:
-    return [
-        (name, dist_dir / name)
-        for name, _kind in release_integrity_subject_kinds(asset_index)
-        if name != "SHA256SUMS"
-    ]
 
 
 def release_integrity_subject(path: Path, name: str, kind: str) -> dict:
@@ -1119,17 +1073,6 @@ def write_json(path: Path, payload: dict) -> None:
 def write_sha256s(path: Path, rows: list[dict]) -> None:
     lines = [f"{row['sha256']}  {row['path']}\n" for row in rows]
     path.write_text("".join(lines))
-
-
-def write_sha256_sidecar(path: Path, asset: Path, asset_name: str) -> None:
-    path.write_text(f"{sha256(asset)}  {asset_name}\n")
-    path.chmod(0o644)
-
-
-def write_public_sha256s(path: Path, assets: list[tuple[str, Path]]) -> None:
-    lines = [f"{sha256(asset)}  {name}\n" for name, asset in assets]
-    path.write_text("".join(lines))
-    path.chmod(0o644)
 
 
 def write_deterministic_tar_gz(root: Path, tarball: Path) -> None:

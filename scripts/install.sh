@@ -11,13 +11,12 @@ M80_RELEASE_BASE_URL="https://github.com/${M80_PUBLIC_RELEASE_OWNER}/${M80_PUBLI
 M80_ASSET_INDEX_NAME='m80-release-assets.json'
 M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'
 M80_INSTALL_NAME='install.sh'
-M80_PUBLIC_SHA256SUMS_NAME='SHA256SUMS'
 M80_RELEASE_BUILD_NAME='m80-release-build.json'
 M80_RELEASE_INTEGRITY_NAME='m80-release-integrity.json'
 M80_RELEASE_ATTESTATION_BUNDLE_NAME='m80-release-integrity.attestation.jsonl'
 M80_RELEASE_ATTESTATION_METADATA_NAME='m80-release-attestation.json'
 M80_IMAGE_KIND='minimal'
-M80_SELECTOR_COLUMNS='os	arch	image_kind	bundle_name	bundle_url	bundle_sha256	size_bytes	metadata_name	metadata_sha256	checksum_name	signature_name	attestation_name	m80_version'
+M80_SELECTOR_COLUMNS='os	arch	image_kind	bundle_name	bundle_url	bundle_sha256	size_bytes	metadata_name	metadata_sha256	signature_name	attestation_name	m80_version'
 M80_TRUST_KEYSET_ID='github-actions-oidc:m80-release-v1'
 M80_TRUST_SIGNER_WORKFLOW="${M80_PUBLIC_RELEASE_OWNER}/${M80_PUBLIC_RELEASE_REPO}/.github/workflows/release-artifacts.yml"
 M80_TRUST_SIGNER_ISSUER='https://token.actions.githubusercontent.com'
@@ -33,7 +32,7 @@ usage() {
 usage: install.sh [m80 install options]
 
 Downloads the m80 ${M80_RELEASE_TAG} release metadata, selects the matching
-host bundle, verifies its checksum, then runs the bundled versioned m80
+host bundle, verifies its signed integrity material, then runs the bundled versioned m80
 installer.
 
 Common options passed through to m80 install:
@@ -302,53 +301,13 @@ validate_asset_name() {
     esac
 }
 
-read_checksum_digest() {
-    checksum_path=$1
-    asset_name=$2
-    if ! read -r digest checksum_asset extra < "$checksum_path"; then
-        fail "checksum sidecar missing digest for $asset_name"
-    fi
-    if [ -n "${extra:-}" ]; then
-        fail "checksum sidecar for $asset_name has extra fields"
-    fi
-    validate_sha256 "checksum digest for $asset_name" "$digest"
-    if [ "$checksum_asset" != "$asset_name" ]; then
-        fail "checksum sidecar for $asset_name names $checksum_asset"
-    fi
-    printf '%s\n' "$digest"
-}
-
-verify_sha256_sidecar() {
-    verify_asset_name=$1
-    verify_checksum_name=$2
-    verify_expected_digest=$3
-    verify_checksum_path="$tmp/$verify_checksum_name"
-    verify_observed_digest=$(read_checksum_digest "$verify_checksum_path" "$verify_asset_name")
-    if [ "$verify_observed_digest" != "$verify_expected_digest" ]; then
-        fail "checksum digest mismatch for $verify_asset_name: expected $verify_expected_digest from selector, got $verify_observed_digest from $verify_checksum_name"
-    fi
-    (cd "$tmp" && sha256sum -c "$verify_checksum_name" >/dev/null) || fail "checksum verification failed for $verify_asset_name"
-}
-
-verify_integrity_sha256_sidecar() {
-    verify_asset_name=$1
-    verify_checksum_name=$2
-    verify_expected_digest=$3
-    verify_checksum_path="$tmp/$verify_checksum_name"
-    verify_observed_digest=$(read_checksum_digest "$verify_checksum_path" "$verify_asset_name")
-    if [ "$verify_observed_digest" != "$verify_expected_digest" ]; then
-        fail_integrity "checksum digest mismatch for $verify_asset_name: expected $verify_expected_digest, got $verify_observed_digest from $verify_checksum_name"
-    fi
-    (cd "$tmp" && sha256sum -c "$verify_checksum_name" >/dev/null) || fail_integrity "checksum verification failed for $verify_asset_name"
-}
-
 parse_bootstrap_selector() {
     selector_path=$1
     requested_os=$2
     requested_arch=$3
     requested_image_kind=$4
     tab=$(printf '\t')
-    expected_schema="schema_version${tab}1"
+    expected_schema="schema_version${tab}2"
     expected_tag="release_tag${tab}${M80_RELEASE_TAG}"
     expected_columns="columns${tab}${M80_SELECTOR_COLUMNS}"
     line_no=0
@@ -359,7 +318,6 @@ parse_bootstrap_selector() {
     selected_size_bytes=
     selected_metadata_name=
     selected_metadata_sha256=
-    selected_checksum_name=
     selected_signature_name=
     selected_attestation_name=
     selected_m80_version=
@@ -388,7 +346,7 @@ parse_bootstrap_selector() {
         set -- $line
         IFS=$old_ifs
 
-        [ "$#" -eq 14 ] || fail "bootstrap selector row shape invalid at line $line_no"
+        [ "$#" -eq 13 ] || fail "bootstrap selector row shape invalid at line $line_no"
         [ "$1" = row ] || fail "bootstrap selector row marker invalid at line $line_no"
         for value in "$@"; do
             validate_safe_token "row value at line $line_no" "$value"
@@ -411,10 +369,9 @@ parse_bootstrap_selector() {
             selected_size_bytes=$8
             selected_metadata_name=$9
             selected_metadata_sha256=${10}
-            selected_checksum_name=${11}
-            selected_signature_name=${12}
-            selected_attestation_name=${13}
-            selected_m80_version=${14}
+            selected_signature_name=${11}
+            selected_attestation_name=${12}
+            selected_m80_version=${13}
         fi
     done < "$selector_path"
 
@@ -426,13 +383,9 @@ parse_bootstrap_selector() {
     validate_asset_name "bundle_name" "$selected_bundle_name"
     validate_asset_name "metadata_name" "$selected_metadata_name"
     validate_sha256 "bootstrap selector metadata_sha256" "$selected_metadata_sha256"
-    validate_asset_name "checksum_name" "$selected_checksum_name"
     expected_bundle_url=$(asset_url "$selected_bundle_name")
     if [ "$selected_bundle_url" != "$expected_bundle_url" ]; then
         fail "bootstrap selector bundle_url mismatch for ${requested_os}/${requested_arch}/${requested_image_kind}: expected $expected_bundle_url, got $selected_bundle_url"
-    fi
-    if [ "$selected_checksum_name" != "$selected_bundle_name.sha256" ]; then
-        fail "bootstrap selector checksum_name mismatch for $selected_bundle_name"
     fi
     if [ "$selected_signature_name" != "-" ]; then
         fail "bootstrap selector signature_name names unsupported detached signature $selected_signature_name for $selected_bundle_name"
@@ -465,7 +418,6 @@ validate_release_integrity_material() {
         "$selected_size_bytes" \
         "$selected_metadata_name" \
         "$selected_metadata_sha256" \
-        "$selected_checksum_name" \
         "$selected_signature_name" \
         "$selected_attestation_name" \
         "$M80_TRUST_KEYSET_ID" \
@@ -499,7 +451,6 @@ import sys
     bundle_size,
     metadata_name,
     metadata_sha256,
-    checksum_name,
     signature_name,
     attestation_name,
     trust_keyset_id,
@@ -522,7 +473,6 @@ INSTALL_NAME = "install.sh"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 BUILD_MANIFEST_NAME = "m80-release-build.json"
-PUBLIC_SHA256SUMS_NAME = "SHA256SUMS"
 EXPECTED_INTEGRITY_FIELDS = {
     "schema_version",
     "mechanism",
@@ -556,7 +506,6 @@ EXPECTED_ASSET_FIELDS = {
     "size_bytes",
     "metadata_name",
     "metadata_sha256",
-    "checksum_name",
     "signature_name",
     "attestation_name",
     "target",
@@ -866,7 +815,7 @@ def verify_build_manifest_builder_material(manifest: dict) -> None:
 def verify_asset_index(metadata: dict) -> dict:
     index = read_json(tmp / ASSET_INDEX_NAME, "asset index")
     require_exact_fields(index, EXPECTED_INDEX_FIELDS, "asset index")
-    require(index["schema_version"] == 1, "release integrity unsupported asset index schema_version")
+    require(index["schema_version"] == 2, "release integrity unsupported asset index schema_version")
     require(index["release_tag"] == release_tag, "release integrity asset index release_tag mismatch")
     require(isinstance(index["assets"], list) and index["assets"], "release integrity asset index assets must not be empty")
     selected = None
@@ -889,7 +838,6 @@ def verify_asset_index(metadata: dict) -> dict:
         "size_bytes": int(bundle_size),
         "metadata_name": metadata_name,
         "metadata_sha256": metadata_sha256,
-        "checksum_name": checksum_name,
         "signature_name": None if signature_name == "-" else signature_name,
         "attestation_name": attestation_name,
         "target": f"{host_os}-{host_arch}",
@@ -917,20 +865,13 @@ def verify_asset_index(metadata: dict) -> dict:
 def expected_subjects_from_index(index: dict) -> dict[str, str]:
     expected = {
         INSTALL_NAME: "installer",
-        f"{INSTALL_NAME}.sha256": "checksum-sidecar",
         ASSET_INDEX_NAME: "asset-index",
-        f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
         BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
-        f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
         BUILD_MANIFEST_NAME: "build-manifest",
-        f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
-        PUBLIC_SHA256SUMS_NAME: "checksum-manifest",
     }
     for asset in index["assets"]:
         add_expected_subject(expected, asset["name"], "release-bundle")
-        add_expected_subject(expected, asset["checksum_name"], "checksum-sidecar")
         add_expected_subject(expected, asset["metadata_name"], "bundle-metadata")
-        add_expected_subject(expected, f"{asset['metadata_name']}.sha256", "checksum-sidecar")
         if asset["signature_name"] is not None:
             add_expected_subject(expected, asset["signature_name"], "detached-signature")
     return expected
@@ -944,19 +885,13 @@ def add_expected_subject(subjects: dict[str, str], name: str, kind: str) -> None
 def downloaded_subjects() -> set[str]:
     names = {
         INSTALL_NAME,
-        f"{INSTALL_NAME}.sha256",
         metadata_name,
-        f"{metadata_name}.sha256",
         ASSET_INDEX_NAME,
-        f"{ASSET_INDEX_NAME}.sha256",
         BOOTSTRAP_SELECTOR_NAME,
-        f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
         BUILD_MANIFEST_NAME,
-        f"{BUILD_MANIFEST_NAME}.sha256",
-        PUBLIC_SHA256SUMS_NAME,
     }
     if phase == "full":
-        names.update({bundle_name, checksum_name})
+        names.add(bundle_name)
     return names
 
 
@@ -1126,17 +1061,12 @@ trap cleanup EXIT HUP INT TERM
 host_os_value=$(host_os)
 host_arch_value=$(host_arch)
 selector_path="$tmp/$M80_BOOTSTRAP_SELECTOR_NAME"
-selector_checksum_path="$tmp/$M80_BOOTSTRAP_SELECTOR_NAME.sha256"
 index_path="$tmp/$M80_ASSET_INDEX_NAME"
-index_checksum_path="$tmp/$M80_ASSET_INDEX_NAME.sha256"
 integrity_path="$tmp/$M80_RELEASE_INTEGRITY_NAME"
 attestation_bundle_path="$tmp/$M80_RELEASE_ATTESTATION_BUNDLE_NAME"
 attestation_metadata_path="$tmp/$M80_RELEASE_ATTESTATION_METADATA_NAME"
 install_path="$tmp/$M80_INSTALL_NAME"
-install_checksum_path="$tmp/$M80_INSTALL_NAME.sha256"
 build_manifest_path="$tmp/$M80_RELEASE_BUILD_NAME"
-build_manifest_checksum_path="$tmp/$M80_RELEASE_BUILD_NAME.sha256"
-public_sha256s_path="$tmp/$M80_PUBLIC_SHA256SUMS_NAME"
 integrity_facts_path="$tmp/release-integrity.env"
 extract_dir="$tmp/extract"
 
@@ -1146,21 +1076,13 @@ echo "m80 install.sh: selector=$(asset_url "$M80_BOOTSTRAP_SELECTOR_NAME")" >&2
 echo "m80 install.sh: index=$(asset_url "$M80_ASSET_INDEX_NAME")" >&2
 
 download_asset "$M80_BOOTSTRAP_SELECTOR_NAME" "$selector_path"
-download_asset "$M80_BOOTSTRAP_SELECTOR_NAME.sha256" "$selector_checksum_path"
-selector_digest=$(read_checksum_digest "$selector_checksum_path" "$M80_BOOTSTRAP_SELECTOR_NAME")
-verify_sha256_sidecar "$M80_BOOTSTRAP_SELECTOR_NAME" "$M80_BOOTSTRAP_SELECTOR_NAME.sha256" "$selector_digest"
 
 download_asset "$M80_ASSET_INDEX_NAME" "$index_path"
-download_asset "$M80_ASSET_INDEX_NAME.sha256" "$index_checksum_path"
-index_digest=$(read_checksum_digest "$index_checksum_path" "$M80_ASSET_INDEX_NAME")
-verify_sha256_sidecar "$M80_ASSET_INDEX_NAME" "$M80_ASSET_INDEX_NAME.sha256" "$index_digest"
 
 parse_bootstrap_selector "$selector_path" "$host_os_value" "$host_arch_value" "$M80_IMAGE_KIND"
 
 bundle_path="$tmp/$selected_bundle_name"
-checksum_path="$tmp/$selected_checksum_name"
 metadata_path="$tmp/$selected_metadata_name"
-metadata_checksum_path="$tmp/$selected_metadata_name.sha256"
 
 echo "m80 install.sh: bundle=$selected_bundle_url" >&2
 
@@ -1168,17 +1090,8 @@ download_integrity_asset "$M80_RELEASE_INTEGRITY_NAME" "$integrity_path"
 download_integrity_asset "$selected_attestation_name" "$attestation_bundle_path"
 download_integrity_asset "$M80_RELEASE_ATTESTATION_METADATA_NAME" "$attestation_metadata_path"
 download_integrity_asset "$selected_metadata_name" "$metadata_path"
-download_integrity_asset "$selected_metadata_name.sha256" "$metadata_checksum_path"
-verify_integrity_sha256_sidecar "$selected_metadata_name" "$selected_metadata_name.sha256" "$selected_metadata_sha256"
 download_integrity_asset "$M80_INSTALL_NAME" "$install_path"
-download_integrity_asset "$M80_INSTALL_NAME.sha256" "$install_checksum_path"
-install_sidecar_digest=$(read_checksum_digest "$install_checksum_path" "$M80_INSTALL_NAME")
-verify_integrity_sha256_sidecar "$M80_INSTALL_NAME" "$M80_INSTALL_NAME.sha256" "$install_sidecar_digest"
 download_integrity_asset "$M80_RELEASE_BUILD_NAME" "$build_manifest_path"
-download_integrity_asset "$M80_RELEASE_BUILD_NAME.sha256" "$build_manifest_checksum_path"
-build_manifest_digest=$(read_checksum_digest "$build_manifest_checksum_path" "$M80_RELEASE_BUILD_NAME")
-verify_integrity_sha256_sidecar "$M80_RELEASE_BUILD_NAME" "$M80_RELEASE_BUILD_NAME.sha256" "$build_manifest_digest"
-download_integrity_asset "$M80_PUBLIC_SHA256SUMS_NAME" "$public_sha256s_path"
 
 validate_release_integrity_material prebundle "$integrity_facts_path" || fail_integrity "release integrity material verification failed"
 commit_sha=
@@ -1186,8 +1099,6 @@ install_sha256=
 # shellcheck disable=SC1090
 . "$integrity_facts_path"
 download_release_asset "$selected_bundle_name" "$bundle_path" "$selected_bundle_url" "yes" "integrity"
-download_integrity_asset "$selected_checksum_name" "$checksum_path"
-verify_integrity_sha256_sidecar "$selected_bundle_name" "$selected_checksum_name" "$selected_bundle_sha256"
 actual_bundle_sha256=$(sha256sum "$bundle_path")
 actual_bundle_sha256=${actual_bundle_sha256%% *}
 if [ "$actual_bundle_sha256" != "$selected_bundle_sha256" ]; then

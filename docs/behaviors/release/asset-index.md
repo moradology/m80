@@ -10,24 +10,22 @@ explicit bundle URL override bypasses index selection.
 
 The published index is `m80-release-assets.json`. The release packager derives
 it from the assembled tuple artifacts: the default package artifact plus any
-`--extra-tuple-manifest` inputs. Its checksum sidecar is
-`m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
-alongside every indexed bundle, bundle checksum sidecar, metadata sidecar,
-metadata checksum sidecar, `install.sh`, `m80-bootstrap-selector.tsv`, and
-`m80-release-build.json`.
-Installer/bootstrapper code follows this order: fetch the pinned index and its
-sidecar for the same concrete release tag, verify the index sha256, and only
-then parse JSON or select a host tuple. `file://` fixture indexes use the same
-checksum-sidecar verifier as remote release indexes.
+`--extra-tuple-manifest` inputs. The release-integrity predicate covers the
+index alongside every indexed bundle, metadata sidecar, `install.sh`,
+`m80-bootstrap-selector.tsv`, and `m80-release-build.json`.
+Installer/bootstrapper code follows this order: fetch the pinned release
+integrity material and index for the same concrete release tag, verify the index sha256 from the signed predicate, and only then parse JSON or select a host
+tuple. `file://` fixture indexes use the same release-integrity verifier as
+remote release indexes.
 
-The index uses `schema_version: 1` and has one top-level `release_tag`. Every
+The index uses `schema_version: 2` and has one top-level `release_tag`. Every
 bundle row records:
 
 - `name` and `url`;
 - `sha256` and `size_bytes` for the bundle tarball;
 - `metadata_name` and `metadata_sha256` for the byte-identical bundle metadata
   sidecar;
-- `checksum_name`, `signature_name`, and `attestation_name` proof references;
+- `signature_name` and `attestation_name` proof references;
 - `target`, `os`, and `arch`;
 - `image_kind`;
 - `release_tag` and `m80_version`;
@@ -37,10 +35,10 @@ bundle row records:
 
 The bundle `sha256` and `size_bytes` fields are installer inputs, not advisory
 metadata. Indexed release-tag and bootstrap installs pass them through to the
-release-material verifier with the selected bundle URL and checksum asset name.
-Verification refuses to extract if `size_bytes` is missing, zero, or different
-from the downloaded bundle length, or if the indexed sha256 disagrees with the
-checksum sidecar or computed bundle digest. Explicit local `file://` fixture
+release-material verifier with the selected bundle URL. Verification refuses to
+extract if `size_bytes` is missing, zero, or different from the downloaded
+bundle length, or if the indexed sha256 disagrees with the signed predicate or
+computed bundle digest. Explicit local `file://` fixture
 installs bypass index selection and are the only path that may omit these
 indexed size and digest fields.
 
@@ -69,18 +67,18 @@ for future OS, architecture, or image-kind expansion without changing the
 README quickstart command.
 
 Remote index fetches use explicit 10-second curl connect and 120-second
-total-time bounds for both `m80-release-assets.json` and
-`m80-release-assets.json.sha256`. Slow fixtures, offline endpoints, HTTP
+total-time bounds for `m80-release-assets.json` and release-integrity material.
+Slow fixtures, offline endpoints, HTTP
 failures, and unsupported redirects fail as bounded asset-index selection
 errors. They fail before bundle download, extraction, tuple selection, or
 install-root writes. These fetch bounds only prove the index selection path
 fails promptly; they do not promise later bundle download success.
 
-Fetch diagnostics name the index URL or local path, checksum sidecar URL or
-path, expected sha256, observed sha256, release tag, requested OS/arch, image
-kind, and whether the failure happened before or after checksum verification.
-Missing index bytes, missing sidecars, checksum mismatch, invalid JSON after a
-valid checksum, stale schema, and index `release_tag` drift all fail before
+Fetch diagnostics name the index URL or local path, integrity URL or path,
+expected sha256, observed sha256, release tag, requested OS/arch, image kind,
+and whether the failure happened before or after integrity verification.
+Missing index bytes, missing integrity material, checksum mismatch, invalid JSON
+after a valid checksum, stale schema, and index `release_tag` drift all fail before
 bundle download, extraction, tuple selection, or active install state writes.
 
 Installer JSON failures for asset-index selection are emitted as the final
@@ -140,51 +138,47 @@ POSIX installer path. It contains:
 - `release_tag`;
 - a fixed `columns` row;
 - one `row` per index asset with `os`, `arch`, `image_kind`, bundle name/URL,
-  bundle sha256, `size_bytes`, metadata name/sha256, checksum name, proof asset
-  names, and `m80_version`.
+  bundle sha256, `size_bytes`, metadata name/sha256, proof asset names, and
+  `m80_version`.
 
 The selector is generated mechanically from `m80-release-assets.json`, is
-checksum-covered, appears in `SHA256SUMS`, and is represented in release
-integrity material. Each row's bundle, metadata sidecar, bundle checksum
-sidecar, metadata checksum sidecar, and any named detached signature are also
-represented in both the public checksum manifest and release integrity
-subjects. Selector values are conservative ASCII shell tokens:
-whitespace, control characters, and shell metacharacters are invalid; nullable
-proof fields use `-`. `signature_name` is nullable in schema v1 because there
-is no detached-signature lane, but `attestation_name` is required for official
-signed release rows and names `m80-release-integrity.attestation.jsonl`. It is
-not a second source of truth: verification compares selector rows back to the
-JSON index and rejects stale tag, missing tuple, duplicate tuple, stale
-digest/size, unsupported schema, shell-unsafe tokens, or hand-edited drift.
+represented in release integrity material. Each row's bundle, metadata sidecar,
+and any named detached signature are also represented as release integrity
+subjects. Selector values are conservative ASCII shell tokens: whitespace,
+control characters, and shell metacharacters are invalid; nullable proof fields
+use `-`. `signature_name` is nullable in schema v2 because there is no
+detached-signature lane, but `attestation_name` is required for official signed
+release rows and names `m80-release-integrity.attestation.jsonl`. It is not a
+second source of truth: verification compares selector rows back to the JSON
+index and rejects stale tag, missing tuple, duplicate tuple, stale digest/size,
+unsupported schema, shell-unsafe tokens, or hand-edited drift.
 
 Release publication must generate the index from the actual assembled dist
 files, never by editing JSON or TSV after packaging. To add a tuple, package the
 tuple bundle and metadata sidecar, pass them to
 `scripts/package-release-bundle.py --extra-tuple-manifest`, upload the generated
 dist as a unit, then re-download the public release and validate the index
-against the uploaded tarballs, metadata sidecars, checksum sidecars, build
-manifest, and `SHA256SUMS` with
+against the uploaded tarballs, metadata sidecars, build manifest, and signed
+release-integrity subjects with
 `python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`.
 A new architecture or image kind is a new row in the index, not a new README
 quickstart command.
 
-The current publisher is checksum-covered and attestation-referenced:
+The current publisher is integrity-covered and attestation-referenced:
 `signature_name` is null, and `attestation_name` is
-`m80-release-integrity.attestation.jsonl`. Checksum coverage proves the exact
-bytes that the selector parsed; it is not a substitute for signed release integrity
-verification. Signed-release verification fails closed when an
+`m80-release-integrity.attestation.jsonl`. The signed predicate proves the
+exact bytes that the selector parsed. Signed-release verification fails closed
+when an
 asset-index row omits `signature_name` or `attestation_name`, leaves
 `attestation_name` empty, names a stale attestation bundle, names a signature
 file that is absent from the release dist, or drifts from the release tag,
-bundle metadata version, bundle tarball, metadata sidecar, checksum sidecar, or
-selector row.
+bundle metadata version, bundle tarball, metadata sidecar, or selector row.
 
-The POSIX bootstrapper still performs checksum-only selection first so it can
-find the tuple-specific bundle URL without an installed `m80` binary. That
-selection is only an input to signed parity verification. Before bundle
-download, `install.sh` verifies release integrity material that covers both
+The POSIX bootstrapper performs selector/index selection only after it has
+loaded release integrity material for the concrete tag. Before bundle download,
+`install.sh` verifies release integrity material that covers both
 `m80-release-assets.json` and `m80-bootstrap-selector.tsv`, then compares the
 selected selector tuple back to the canonical index row. If either file is
-hand-edited and its plain `.sha256` sidecar is refreshed, the install still
-fails before bundle download with release tag, OS, arch, image kind, selector
-URL, index URL, and the mismatched tuple field in the diagnostic.
+hand-edited, the install fails before bundle download with release tag, OS,
+arch, image kind, selector URL, index URL, and the mismatched tuple field in the
+diagnostic.

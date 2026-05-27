@@ -12,7 +12,7 @@ mod structured;
 
 pub(crate) use structured::{AssetIndexDiagnostic, AssetIndexDiagnosticCode, AssetIndexFailure};
 
-pub(crate) const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
+pub(crate) const ASSET_INDEX_SCHEMA_VERSION: u32 = 2;
 const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
 const DEFAULT_IMAGE_KIND: &str = "minimal";
 
@@ -30,7 +30,6 @@ pub(crate) struct DirectBundleIndexMaterial {
     pub(crate) bundle_size_bytes: u64,
     pub(crate) metadata_name: String,
     pub(crate) metadata_sha256: String,
-    pub(crate) checksum_name: String,
     pub(crate) attestation_name: Option<String>,
     pub(crate) target: String,
     pub(crate) image_kind: String,
@@ -164,13 +163,6 @@ fn fetch_direct_bundle_index_material_at_index_url(
         return Err(format!(
             "release asset index URL mismatch for {bundle_name}: expected {bundle_url}, got {}",
             asset.url
-        ));
-    }
-    let expected_checksum_name = format!("{bundle_name}.sha256");
-    if asset.checksum_name != expected_checksum_name {
-        return Err(format!(
-            "release asset index checksum_name mismatch for {bundle_name}: expected {expected_checksum_name}, got {}",
-            asset.checksum_name
         ));
     }
     Ok(DirectBundleIndexMaterial::from_verified_asset(
@@ -428,7 +420,6 @@ struct BundleAsset {
     size_bytes: u64,
     metadata_name: String,
     metadata_sha256: String,
-    checksum_name: String,
     signature_name: Option<String>,
     attestation_name: Option<String>,
     target: String,
@@ -450,7 +441,6 @@ impl BundleAsset {
             ("sha256", self.sha256.as_str()),
             ("metadata_name", self.metadata_name.as_str()),
             ("metadata_sha256", self.metadata_sha256.as_str()),
-            ("checksum_name", self.checksum_name.as_str()),
             ("target", self.target.as_str()),
             ("os", self.os.as_str()),
             ("arch", self.arch.as_str()),
@@ -515,7 +505,6 @@ impl DirectBundleIndexMaterial {
             bundle_size_bytes: asset.size_bytes,
             metadata_name: asset.metadata_name.clone(),
             metadata_sha256: asset.metadata_sha256.clone(),
-            checksum_name: asset.checksum_name.clone(),
             attestation_name: asset.attestation_name.clone(),
             target: asset.target.clone(),
             image_kind: asset.image_kind.clone(),

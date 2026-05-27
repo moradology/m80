@@ -24,20 +24,13 @@ LANE_ID = "public-access-latest"
 PROOF_KIND = "public-access-proof"
 SUBSTRATE_KIND = "public-github"
 REQUIRED_PUBLIC_ASSETS = {
-    "SHA256SUMS",
     "install.sh",
-    "install.sh.sha256",
     "m80-bootstrap-selector.tsv",
-    "m80-bootstrap-selector.tsv.sha256",
     "m80-linux-x86_64.bundle.json",
-    "m80-linux-x86_64.bundle.json.sha256",
     "m80-linux-x86_64.tar.gz",
-    "m80-linux-x86_64.tar.gz.sha256",
     "m80-release-assets.json",
-    "m80-release-assets.json.sha256",
     "m80-release-attestation.json",
     "m80-release-build.json",
-    "m80-release-build.json.sha256",
     "m80-release-integrity.attestation.jsonl",
     "m80-release-integrity.json",
 }

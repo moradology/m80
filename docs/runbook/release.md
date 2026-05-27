@@ -70,7 +70,7 @@ tag=<version>
 repo=moradology/m80
 tmp="$(mktemp -d)"
 base="https://github.com/${repo}/releases/download/${tag}"
-for asset in install.sh install.sh.sha256 SHA256SUMS m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
+for asset in install.sh m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
   curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"
 done
 python3 scripts/verify-install-handoff.py "${tmp}" \
@@ -100,8 +100,8 @@ as promoted. `scripts/stable_release_channel.py` validates GitHub release
 metadata and the asset index for future latest bootstrap/freshness lanes.
 `scripts/stable_latest_bootstrap.py` resolves latest to one concrete stable tag,
 checks that latest has not switched before handoff, and emits pinned URLs for
-`install.sh`, the bundle, checksum sidecars, asset index, bootstrap selector,
-release integrity, attestation, and public checksum material. `install.sh`,
+`install.sh`, the bundle, bundle metadata, asset index, bootstrap selector,
+release integrity, attestation, and build manifest. `install.sh`,
 `m80 install --release-tag`, and packaging also reject prerelease-shaped tags
 before network/index work. See
 `docs/behaviors/release/stable-channel.md`.
@@ -233,11 +233,10 @@ safe stderr excerpt for the repair bead.
 
 The verifier also checks that the GitHub latest release metadata contains every
 installer-consumed public asset with the expected name, URL, size when reported,
-and `sha256:` digest. It then reads `SHA256SUMS` and every published
-per-asset `.sha256` sidecar as content, compares those sums to the same
-metadata digests, and records the proving checksum sources in the freshness
-proof. With an asset-index fixture, the bundle and metadata digests must agree
-with the index row before URL liveness checks run.
+and `sha256:` digest. It validates those public asset bytes against the signed
+release-integrity subjects instead of detached checksum sidecars. With an
+asset-index fixture, the bundle and metadata digests must agree with the index
+row before URL liveness checks run.
 Freshness failure handling is configured in
 `docs/behaviors/release/freshness-failure-policy.json` and validated with
 `python3 scripts/verify-freshness-failure-policy.py`. The taxonomy maps
@@ -557,15 +556,13 @@ instead of making the current verifier tolerant.
 `scripts/install.sh` is the versioned installer template. Packaging renders it
 with only the concrete release tag, publishes it as `install.sh`, and embeds the
 same rendered file inside the release bundle. The script downloads the pinned
-release's bootstrap selector and canonical asset index, verifies their checksum
-sidecars, selects the matching host tuple from the selector, then downloads the
-release integrity predicate, attestation bundle, normalized attestation
-metadata, installer asset, metadata sidecar, public checksum manifest, and the
-selected bundle. After verifying the signed predicate, attestation signer,
-selected bundle checksum, and size, it extracts that bundle's `bin/m80` and
-checks that `m80 --json version` agrees with the verified release tag, source
-commit, target, target triple, protocol, schema, and bundle metadata, then hands
-off to `m80 install --bundle-url file://...`.
+release's release-integrity predicate, attestation bundle, normalized
+attestation metadata, bootstrap selector, canonical asset index, build manifest,
+installer asset, metadata sidecar, and selected bundle. It verifies those public
+bytes against the signed predicate, attestation signer, selected bundle digest,
+and size, then extracts that bundle's `bin/m80` and checks that `m80 --json version` agrees with the verified release tag, source commit,
+target, target triple, protocol, schema, and bundle metadata before handing off
+to `m80 install --bundle-url file://...`.
 It must not carry a rendered per-tuple bundle URL, call `scripts/quickstart.sh`,
 or use the legacy artifact-only quickstart flow.
 
@@ -578,16 +575,15 @@ scripts/verify-release-bundle.py \
   --verify-sidecars
 ```
 
-The package step emits a deterministic tarball, checksum sidecars, an
-inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
+The package step emits a deterministic tarball, an inspectable
+`m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
 `m80-release-assets.json` asset index, a shell-safe
 `m80-bootstrap-selector.tsv` projection of that index for the no-installed-binary
-installer path, `m80-release-build.json` for build-input provenance, and a
-public `SHA256SUMS` covering those assets plus their checksum sidecars. Extra
-tuple manifests add their own bundle, metadata sidecar, and checksum sidecars;
-the package command derives the asset index, bootstrap selector, public
-checksum manifest, and integrity predicate from that assembled row set. The
-exact builder contract is
+installer path, `m80-release-build.json` for build-input provenance, and
+`m80-release-integrity.json` as the canonical public digest contract. Extra
+tuple manifests add their own bundle and metadata sidecar; the package command
+derives the asset index, bootstrap selector, and integrity predicate from that
+assembled row set. The exact builder contract is
 captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete installer/bootstrapper-consumed subject set recorded inside
@@ -596,24 +592,16 @@ dist is:
 
 ```text
 m80-linux-x86_64.tar.gz
-m80-linux-x86_64.tar.gz.sha256
 install.sh
-install.sh.sha256
 m80-linux-x86_64.bundle.json
-m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
-m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
-m80-bootstrap-selector.tsv.sha256
 m80-release-build.json
-m80-release-build.json.sha256
-SHA256SUMS
 ```
 
-Multi-tuple releases add each extra row's bundle, bundle checksum sidecar,
-metadata sidecar, and metadata checksum sidecar to that same subject set and to
-public `SHA256SUMS`. The current assembler emits no detached signature files.
-The asset index, selector, public `SHA256SUMS`, and release-integrity predicate
+Multi-tuple releases add each extra row's bundle and metadata sidecar to that
+same subject set. The current assembler emits no detached public checksum or
+signature files. The asset index, selector, and release-integrity predicate
 prove the public dist rows. Full tar contract verification is separate:
 `scripts/verify-release-bundle.py --verify-sidecars` reopens every bundle named
 by the asset index and checks its internal `bundle.json`, guest manifest, build
@@ -626,12 +614,11 @@ It lists every bundle by OS, architecture, image kind, release tag, m80 version,
 guest protocol, manifest schema, expected Firecracker version, tarball digest,
 metadata digest, and integrity-material references. The default Linux
 quickstart tuple is `linux` / `x86_64` / `minimal`. The published file is
-`m80-release-assets.json`; its checksum sidecar and the public `SHA256SUMS`
-cover the index before the publish job re-downloads and validates it. The
-release workflow also publishes the integrity predicate and attestation bundle
-used by the verifier. The asset-index `signature_name` field is nullable in
-schema v1; official signed release rows require `attestation_name:
-m80-release-integrity.attestation.jsonl`.
+`m80-release-assets.json`; `m80-release-integrity.json` covers the index before
+the publish job re-downloads and validates it. The release workflow also
+publishes the integrity predicate and attestation bundle used by the verifier.
+The asset-index schema is v2; official signed release rows require
+`attestation_name: m80-release-integrity.attestation.jsonl`.
 
 The bootstrap selector is generated from the asset index, not maintained by
 hand. It exists so `install.sh` can select a bundle with POSIX shell tooling
@@ -648,8 +635,8 @@ not a quickstart-command change. Use this checklist:
    `metadata_path`, `bundle_name`, and `metadata_name`, then pass it to
    `scripts/package-release-bundle.py --extra-tuple-manifest`.
 3. Let the package command generate `m80-release-assets.json`,
-   `m80-bootstrap-selector.tsv`, their checksum sidecars, public `SHA256SUMS`,
-   and `m80-release-integrity.json`; do not edit generated JSON or TSV by hand.
+   `m80-bootstrap-selector.tsv`, and `m80-release-integrity.json`; do not edit
+   generated JSON or TSV by hand.
 4. Before publishing or promoting the multi-row index, run
    `python3 scripts/verify-release-bundle.py <default-bundle> --release-tag <tag> --verify-sidecars`
    against the exact dist directory so every asset-index row's tar internals are
@@ -683,9 +670,9 @@ GitHub CLI on the target host before reading release proof material, downloading
 official release assets, or touching active install state.
 
 Verify a downloaded dist directory before treating a release as signed. This
-one read-only command verifies the bundle tar contract, bundle checksum,
-installer checksum, metadata sidecar, public sidecars, signed predicate,
-attestation metadata, native attestation bundle, and tag identity. The
+one read-only command verifies the bundle tar contract, bundle digest,
+installer digest, metadata sidecar, signed predicate, attestation metadata,
+native attestation bundle, and tag identity. The
 tag workflow publishes the attestation bundle and normalized metadata; a
 release that lacks those files is not valid for signed installer verification.
 Direct official bundle URLs use the same trust path; the current public proof is
@@ -709,7 +696,7 @@ python3 scripts/verify-release-bundle.py \
 ```
 
 `scripts/verify-release-bundle.py --verify-integrity` drives
-`scripts/verify-release-integrity.py` after public bundle and sidecar checks so
+`scripts/verify-release-integrity.py` after public bundle and material checks so
 humans and automation have one command for the full public dist verification
 path.
 
@@ -726,7 +713,7 @@ installer bytes, failed native attestation bundle verification, unsupported sche
 and bundle metadata or asset-index tag drift.
 
 To add a new architecture or image kind, add a new asset-index row and publish
-the matching bundle, metadata sidecar, checksums, and integrity material. The
+the matching bundle, metadata sidecar, and integrity material. The
 README command stays the same: the installer/bootstrapper reads the verified
 index and selects the matching host tuple without changing README commands. Do
 not add architecture-specific README commands unless the common installer cannot

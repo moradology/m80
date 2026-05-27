@@ -5,10 +5,8 @@ use std::path::{Path, PathBuf};
 use m80_firecracker::FcError;
 use serde::Deserialize;
 
-use super::support::{
-    read_checksum_line, release_material_error, sha256_file, validate_release_asset_name,
-};
-use super::{MaterialExpectation, ReleaseMaterial, ReleaseMaterialPlan, PUBLIC_SHA256SUMS_NAME};
+use super::support::{release_material_error, sha256_file, validate_release_asset_name};
+use super::{MaterialExpectation, ReleaseMaterial, ReleaseMaterialPlan};
 
 pub(super) struct DownloadedReleaseMaterials {
     pub(super) paths: BTreeMap<&'static str, PathBuf>,
@@ -25,11 +23,9 @@ impl DownloadedReleaseMaterials {
 }
 
 pub(super) struct PrebundleVerification {
-    pub(super) public_sha256s: BTreeMap<String, String>,
     pub(super) integrity: ReleaseIntegrityPredicate,
     pub(super) install_sh_sha256: String,
     pub(super) predicate_sha256: String,
-    pub(super) public_sha256s_sha256: String,
     pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
@@ -92,39 +88,6 @@ pub(super) fn read_json<T: for<'de> Deserialize<'de>>(
     })
 }
 
-pub(super) fn parse_sha256s(path: &Path) -> Result<BTreeMap<String, String>, FcError> {
-    let text = fs::read_to_string(path).map_err(|source| FcError::PathIo {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let mut rows = BTreeMap::new();
-    for (line_no, line) in text.lines().enumerate() {
-        let parts = line.split_whitespace().collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(release_material_error(format!(
-                "release material public SHA256SUMS row shape invalid: path={} line={}",
-                path.display(),
-                line_no + 1
-            )));
-        }
-        let digest = parts[0].to_ascii_lowercase();
-        require_sha256("release material public SHA256SUMS digest", &digest)?;
-        validate_release_asset_name(parts[1])?;
-        if rows.insert(parts[1].to_owned(), digest).is_some() {
-            return Err(release_material_error(format!(
-                "release material public SHA256SUMS duplicate asset: asset={}",
-                parts[1]
-            )));
-        }
-    }
-    if rows.is_empty() {
-        return Err(release_material_error(
-            "release material public SHA256SUMS is empty".to_owned(),
-        ));
-    }
-    Ok(rows)
-}
-
 pub(super) fn expected_subjects(
     plan: &ReleaseMaterialPlan,
 ) -> Result<BTreeMap<String, &'static str>, FcError> {
@@ -145,18 +108,11 @@ pub(super) fn expected_subjects(
 pub(super) fn material_subject_kind(material: &ReleaseMaterial) -> Option<&'static str> {
     match material.class {
         "bundle" => Some("release-bundle"),
-        "bundle-checksum"
-        | "bundle-metadata-checksum"
-        | "asset-index-checksum"
-        | "install-script-checksum"
-        | "bootstrap-selector-checksum"
-        | "release-build-checksum" => Some("checksum-sidecar"),
         "bundle-metadata" => Some("bundle-metadata"),
         "asset-index" => Some("asset-index"),
         "install-script" => Some("installer"),
         "bootstrap-selector" => Some("bootstrap-selector"),
         "release-build" => Some("build-manifest"),
-        "public-sha256s" => Some("checksum-manifest"),
         _ => None,
     }
 }
@@ -206,26 +162,6 @@ pub(super) fn verify_subject_set(
     Ok(())
 }
 
-pub(super) fn verify_public_sha256s_complete(
-    rows: &BTreeMap<String, String>,
-    expected_subjects: &BTreeMap<String, &'static str>,
-) -> Result<(), FcError> {
-    let actual = rows.keys().cloned().collect::<BTreeSet<_>>();
-    let expected = expected_subjects
-        .keys()
-        .filter(|name| name.as_str() != PUBLIC_SHA256SUMS_NAME)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if actual != expected {
-        return Err(release_material_error(format!(
-            "release material public SHA256SUMS set mismatch: missing={} extra={}",
-            set_difference(&expected, &actual).join(","),
-            set_difference(&actual, &expected).join(",")
-        )));
-    }
-    Ok(())
-}
-
 pub(super) fn verify_subject_file(
     subjects: &[ReleaseIntegritySubject],
     material: &ReleaseMaterial,
@@ -260,58 +196,6 @@ pub(super) fn verify_subject_file(
             material.context(),
             subject.size_bytes
         )));
-    }
-    Ok(())
-}
-
-pub(super) fn verify_public_sha256s_row(
-    rows: &BTreeMap<String, String>,
-    material: &ReleaseMaterial,
-    path: &Path,
-) -> Result<(), FcError> {
-    let Some(expected_sha256) = rows.get(&material.name) else {
-        return Err(release_material_error(format!(
-            "release material public SHA256SUMS missing row: {}",
-            material.context()
-        )));
-    };
-    let observed_sha256 = sha256_file(path)?;
-    if expected_sha256 != &observed_sha256 {
-        return Err(release_material_error(format!(
-            "release material public SHA256SUMS mismatch: {} expected_sha256={} observed_sha256={observed_sha256}",
-            material.context(),
-            expected_sha256
-        )));
-    }
-    Ok(())
-}
-
-pub(super) fn verify_sidecar(
-    downloaded: &DownloadedReleaseMaterials,
-    asset_class: &'static str,
-    sidecar_class: &'static str,
-) -> Result<(), FcError> {
-    let asset_path = downloaded.path(asset_class)?;
-    let sidecar_path = downloaded.path(sidecar_class)?;
-    let (expected_sha256, expected_name) = read_checksum_line(sidecar_path)?;
-    let observed_sha256 = sha256_file(asset_path)?;
-    if expected_sha256 != observed_sha256 {
-        return Err(release_material_error(format!(
-            "release material sidecar digest mismatch: material_class={asset_class} sidecar_class={sidecar_class} expected_sha256={expected_sha256} observed_sha256={observed_sha256}"
-        )));
-    }
-    if let Some(expected_name) = expected_name {
-        let Some(asset_name) = asset_path.file_name().and_then(|name| name.to_str()) else {
-            return Err(release_material_error(format!(
-                "release material sidecar asset path has no file name: path={}",
-                asset_path.display()
-            )));
-        };
-        if expected_name != asset_name {
-            return Err(release_material_error(format!(
-                "release material sidecar target mismatch: material_class={asset_class} sidecar_class={sidecar_class} expected_name={expected_name} observed_name={asset_name}"
-            )));
-        }
     }
     Ok(())
 }

@@ -79,7 +79,6 @@ class LatestBootstrapResolution:
             "install_root": self.install_root,
             "asset_index": asset_index,
             "asset_urls": self.pinned_asset_urls,
-            "checksum_urls": urls_for_roles(self.pinned_asset_urls, {"checksum"}),
             "proof_urls": urls_for_roles(self.pinned_asset_urls, {"provenance", "attestation"}),
         }
 
@@ -165,7 +164,7 @@ def local_tool_requirements(curl_bin: str) -> tuple[LocalToolRequirement, ...]:
         ),
         LocalToolRequirement(
             "sha256sum",
-            "verify downloaded checksum sidecars before install handoff",
+            "compute local release asset digests before install handoff",
             "install GNU coreutils with: sudo apt-get update && sudo apt-get install -y coreutils",
         ),
         LocalToolRequirement(
