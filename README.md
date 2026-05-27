@@ -124,6 +124,12 @@ diagnostic before launching.
 like a normal command to the caller: stdin goes in, stdout/stderr/exit come
 back, and m80 handles the VM setup and teardown around it.
 
+On supported systemd hosts, m80 launches Firecracker's official jailer through
+a transient `systemd-run` unit and launches the network helper through its own
+transient helper unit. Hosts without supported systemd use the
+`m80-jailer-harden` fallback path. Preflight chooses exactly one launch path;
+launch does not silently switch paths after preflight.
+
 ## Production Deployment
 
 Production operators should read:
@@ -287,7 +293,8 @@ m80 is a Rust workspace split into 23 black-box crates:
 `m80-preflight`; no per-call privilege shim:
 - `m80-proto`, `m80-vsock` — host↔guest wire protocol + transport
 - `m80-image-manifest`, `m80-image-store`, `m80-firecracker-client` — manifest schema, content-addressed artifact store, FC REST API
-- `m80-jailer`, `m80-jailer-harden` — jail materialization + inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) wrapping FC's official jailer
+- `m80-jailer` — jail materialization, plan/recovery state, and official jailer invocation data
+- `m80-jailer-harden` — feature-gated fallback wrapper for hosts without supported systemd; systemd hosts use transient units as the default launch hardening surface
 - `m80-cgroup`, `m80-storage` — cgroup-v2 limits, overlay+pivot rootfs
 - `m80-preflight`, `m80-net-mode` — host capability checks, network mode types
 
@@ -298,7 +305,7 @@ m80 is a Rust workspace split into 23 black-box crates:
 - `m80-observability` — probe + Prometheus render
 
 **Orchestration (1)**:
-- `m80-firecracker` — composes foundation crates; lifecycle state machine, run-root layout, drive hot-plug + tenant-identity verification, warm-pool / persistent-VM modes
+- `m80-firecracker` — composes foundation crates; lifecycle state machine, systemd-first/wrapper-fallback launch dispatch, run-root layout, drive hot-plug + tenant-identity verification, warm-pool / persistent-VM modes
 
 **Binaries (4)**:
 - `m80-image-build` — image construction pipeline (kernel + rootfs + guestd)

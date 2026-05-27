@@ -28,13 +28,17 @@ as Firecracker-jailer `--resource-limit` arguments. The default is
 `no-file=2048`, matching Firecracker's jailer default, with optional `fsize`.
 `memlock` is inherited by default so Firecracker's io_uring-backed async block
 engine can set up its rings under the host operator's locked-memory policy.
-m80 launches the official jailer through `m80-jailer-harden`. The wrapper drops
-supplementary groups, clears inheritable and ambient capabilities, sets
-`PR_SET_NO_NEW_PRIVS`, sets `PR_SET_PDEATHSIG` to `SIGKILL`, resets the signal
-mask, sets umask `0077`, closes inherited fds above stdio with
+m80 starts the official jailer through the preflight-selected launch path. On
+supported systemd hosts, a transient `systemd-run` unit bounds the jailer
+capability set, clears ambient capabilities and supplementary groups, sets
+`NoNewPrivileges=yes`, sets umask `0077`, clears the unit environment, and
+mirrors configured resource limits. On wrapper-fallback hosts,
+`m80-jailer-harden` drops supplementary groups, clears inheritable and ambient
+capabilities, sets `PR_SET_NO_NEW_PRIVS`, sets `PR_SET_PDEATHSIG` to `SIGKILL`,
+resets the signal mask, sets umask `0077`, closes inherited fds above stdio with
 `close_range(3, UINT_MAX, 0)`, clears its environment, and then execs the
-official jailer. m80 also pins stdio: stdin is `/dev/null`; stdout/stderr are the
-configured console log when present and `/dev/null` otherwise.
+official jailer. m80 also pins stdio: stdin is `/dev/null`; stdout/stderr are
+the configured console log when present and `/dev/null` otherwise.
 
 `JailerConfig::new_pid_ns` maps directly to Firecracker-jailer
 `--new-pid-ns`. When disabled, the jailer process execs Firecracker and
@@ -49,6 +53,12 @@ with `dev`, `proc`, or `sys`; the jail must not expose host device nodes,
 
 Runtime evidence:
 
+- `crates/m80-firecracker/src/launch/systemd.rs::tests::vm_launch_directive_snapshot_is_pinned`
+  pins the systemd launch envelope so the default host launch path cannot drift
+  silently from the inherited hardening contract.
+- `crates/m80-firecracker/src/launch/systemd.rs::tests::capability_bounding_set_matches_wrapper_allowlist`
+  proves the systemd VM unit and wrapper fallback share the official-jailer
+  setup capability set.
 - `crates/m80-firecracker/src/launch.rs::tests::launch_jailer_config_enables_pid_namespace`
   pins the orchestrator-to-jailer launch plan so Firecracker launches request
   `--new-pid-ns` by default.

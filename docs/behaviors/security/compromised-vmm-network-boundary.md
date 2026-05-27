@@ -5,11 +5,12 @@
 m80's network modes describe guest networking first. Only some modes imply a
 private network namespace for the Firecracker VMM process.
 
-- `NoEgress` gives the guest no NIC and mutates no host iptables rules. It does
-  create a private empty network namespace for the Firecracker process through
-  `m80-jailer-harden --new-net-ns`. If the VMM process is compromised, ordinary
-  host-namespace TCP/UDP access is outside the `NoEgress` boundary because the
-  VMM is not in the host network namespace.
+- `NoEgress` gives the guest no NIC and mutates no host iptables rules. It asks
+  the selected launch path to create a private empty network namespace for the
+  Firecracker process: `PrivateNetwork=yes` on the systemd path, or
+  `m80-jailer-harden --new-net-ns` on the wrapper path. If the VMM process is
+  compromised, ordinary host-namespace TCP/UDP access is outside the
+  `NoEgress` boundary because the VMM is not in the host network namespace.
 - `AllowOutbound` is guest egress policy: m80 realizes a run-root bridge,
   host/vmm veth pair, and VMM-local TAP/bridge path for guest packets and admits
   destinations through `m80-net-outbound`. The Firecracker VMM process joins the

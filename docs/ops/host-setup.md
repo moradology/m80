@@ -142,7 +142,10 @@ and record these host assumptions before production use:
 - configured jail UID/GID exist and are not root.
 - `/opt/m80`, `/opt/firecracker`, artifact directory, and run root have the
   ownership/mode policy above.
-- `vhost_vsock`, TUN, bridge, `tap`, and `nf_conntrack` support are present.
+- vhost-vsock, TUN, bridge, `br_netfilter`, and `nf_conntrack` support are
+  present. Current preflight also requires `tap` and `bridge` module rows in
+  `/proc/modules`; `m80-t5ujm.1` tracks replacing that with capability-shaped
+  detection for `tun`/built-in bridge hosts.
 - `net.netfilter.nf_conntrack_max` is sized for expected concurrent VMs and
   outbound connections.
 - CPU side-channel status is acceptable for the deployment; `m80-preflight`

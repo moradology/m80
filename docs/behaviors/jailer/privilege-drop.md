@@ -30,12 +30,14 @@ Test: `crates/m80-jailer/tests/recover.rs::live_state_with_own_pid_returns_live_
 inherited limits `nproc`, `memlock`, `address_space`, `core`, and `stack`.
 `m80-jailer` forwards `no_file` and `fsize` to Firecracker's official jailer
 because those are the only upstream `--resource-limit` names it supports.
-`m80-jailer-harden` applies the configured extended set before exec. Firecracker
-inherits address-space, core-dump, and stack limits by default. `memlock` and
-`nproc` remain opt-in: `memlock=0` prevents Firecracker's io_uring-backed async
-block engine from starting, and Linux enforces `nproc` per real uid across the
-whole host, not per VM; applying a low default before the official jailer exec
-can make saturated same-uid hosts fail with `EAGAIN`.
+The selected host launch path applies the extended set before the official
+jailer starts: the systemd path emits `Limit*` unit properties, and the wrapper
+path has `m80-jailer-harden` set equal soft/hard limits before exec.
+Firecracker inherits address-space, core-dump, and stack limits by default.
+`memlock` and `nproc` remain opt-in: `memlock=0` prevents Firecracker's
+io_uring-backed async block engine from starting, and Linux enforces `nproc`
+per real uid across the whole host, not per VM; applying a low default before
+the official jailer exec can make saturated same-uid hosts fail with `EAGAIN`.
 
 Test: `crates/m80-jailer/tests/plan_serde.rs::resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json`.
 Test: `crates/m80-jailer/src/materialized.rs::tests::launch_redirects_stdio_and_passes_hardening_args`.
@@ -43,10 +45,12 @@ Test: `crates/m80-jailer-harden/src/lib.rs::tests::parse_captures_official_jaile
 
 ## cgroup-namespace
 
-`JailerConfig::new_cgroup_ns` asks `m80-jailer-harden` to call
+`JailerConfig::new_cgroup_ns` asks the wrapper path to call
 `unshare(CLONE_NEWCGROUP)` before execing Firecracker's official jailer. This
 hides the host cgroup hierarchy from the jailed process; `m80-cgroup` still
-owns cgroup creation, limit writes, OOM scoring, and PID enrolment.
+owns cgroup creation, limit writes, OOM scoring, and PID enrolment. The
+systemd launch path does not support private cgroup namespace requests in Phase
+1 and fails closed if that flag is requested with `LaunchPath::Systemd`.
 
 Test: `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_new_cgroup_ns_roots_proc_self_cgroup`
 (#[ignore]) starts the wrapper from inside a real `/sys/fs/cgroup/m80-firecracker/<id>`
@@ -54,12 +58,13 @@ leaf and asserts the exec target sees `/proc/self/cgroup` as `0::/`.
 
 ## pre-jailer-capability-pruning
 
-`m80-jailer-harden` narrows the capability surface before it execs
-Firecracker's official jailer. The bounding set is pruned to the official jailer
-minimum: `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
-`CAP_SETUID`, `CAP_SETGID`, and `CAP_SYS_ADMIN`. The effective and permitted
-sets are then retained to only the currently-held members of that same
-allowlist.
+The selected launch path narrows the capability surface before it starts
+Firecracker's official jailer. The bounding set is pruned to the official
+jailer minimum: `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
+`CAP_SETUID`, `CAP_SETGID`, and `CAP_SYS_ADMIN`. On the wrapper path, the
+effective and permitted sets are retained to only the currently-held members of
+that same allowlist. On the systemd path, the transient unit applies the same
+bounding set and clears ambient capabilities.
 
 Host capabilities needed before the wrapper boundary do not survive into the
 official jailer. In particular, `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`,

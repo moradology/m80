@@ -1,9 +1,8 @@
 # `m80-preflight`
 
 Pre-launch host validation: KVM, CPU virtualization flags, kernel modules,
-cgroup mode, binaries, manifest, storage helpers, run-root capacity. Emits a
-tabular report and a
-machine-readable `Discovery` value.
+cgroup mode, launch path, binaries, manifests, storage helpers, and run-root
+capacity. Emits a tabular report and a machine-readable `Discovery` value.
 
 ## Reason for being
 
@@ -56,15 +55,16 @@ which is the right place for a security review to start.
   8. **KVM CPU extensions** — `/proc/cpuinfo` advertises at least one of
      `vmx` or `svm`, so launch failures from disabled hardware
      virtualization surface before Firecracker startup.
-  9. **Kernel modules / devices** — `bridge` and `tap` loaded (read from
-     `/proc/modules`), TUN available through either the `tun` module or
-     `/dev/net/tun`, vhost-vsock available through either the `vhost_vsock`
-     module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
-     NAT. `br_netfilter` must also be available and
+  9. **Kernel modules / devices** — vhost-vsock available through either the
+     `vhost_vsock` module or `/dev/vhost-vsock`, TUN available through either
+     the `tun` module or `/dev/net/tun`, and `nf_conntrack` available for
+     outbound NAT. `br_netfilter` must also be available and
      `/proc/sys/net/bridge/bridge-nf-call-iptables` must be `1`, so bridged
-     TAP traffic traverses the TAP-scoped iptables rules. v0.1 does not
-     attempt to load missing modules or change sysctls; the operator must do
-     that before running preflight.
+     TAP traffic traverses the TAP-scoped iptables rules. Current preflight
+     also still requires `tap` and `bridge` entries in `/proc/modules`; that
+     compatibility drift is tracked by `m80-t5ujm.1`. v0.1 does not attempt
+     to load missing modules or change sysctls; the operator must do that
+     before running preflight.
   10. **KSM disabled** — `/sys/kernel/mm/ksm/run` must be `0` when present.
       Any other value fails with `PreflightError::KsmEnabled`. Operators can
       set `M80_SKIP_CHECK_KSM=1` to record an explicit skip row after accepting
@@ -129,16 +129,25 @@ which is the right place for a security review to start.
      before any configured exact version pin is accepted. After artifact
      verification, the probed version must also match the guest manifest
      `expected_firecracker_version`.
-  23. **Jailer binary** — absolute path, discovered via env override or
+  23. **Firecracker seccomp filter** — absolute path, discovered via env
+      override or default, then verified as non-empty launch material in
+      `host-binaries.manifest.json` for the same Firecracker train.
+  24. **Jailer binary** — absolute path, discovered via env override or
       default. `jailer --version` must parse as an official release and match
       the accepted Firecracker version exactly.
-  24. **Jailer hardening wrapper** — required only when the wrapper launch path
+  25. **systemd launch** — preflight resolves `systemd-run`, requires systemd
+      version `SYSTEMD_MIN_VERSION` or newer, and proves it can create a
+      no-op transient unit with `NoNewPrivileges=yes`. If this succeeds,
+      `LaunchPath::Systemd` is selected. If it fails and the wrapper exists,
+      `LaunchPath::Wrapper` is selected. If both are absent, preflight fails
+      with `LaunchPathUnavailable`.
+  26. **Jailer hardening wrapper** — required only when the wrapper launch path
      is selected. `M80_JAILER_HARDEN_BIN` or
      `/opt/m80/bin/m80-jailer-harden` names the fallback path; systemd-selected
      hosts may omit the binary.
-  25. **Network helper** — `m80-net-helper`, discovered via
+  27. **Network helper** — `m80-net-helper`, discovered via
      `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
-  26. **Host binary manifest** — reads
+  28. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
       `firecracker`, `jailer`, `m80`, and `m80_net_helper`, plus a
       `launch_material` entry for `firecracker_seccomp_filter`.
@@ -152,11 +161,11 @@ which is the right place for a security review to start.
       also compares recorded versions against live Firecracker/jailer
       discovery, m80 helper `--version` output, and the seccomp filter's owning
       Firecracker train.
-  27. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  29. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  28. **Rootfs + manifest + build receipt** — manifest schema validates,
+  30. **Rootfs + manifest + build receipt** — manifest schema validates,
      including `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256.
      `<rootfs>.build-receipt.json` must point at the same manifest, its
      manifest sha256 must match the manifest bytes, and its artifact path/hash
@@ -166,14 +175,14 @@ which is the right place for a security review to start.
      procfs. This is the boot-artifact trust boundary for `m80-firecracker`;
      launch phase 3 does not re-open the original rootfs path.
      Group/world-writable rootfs files and artifact directories fail closed.
-  29. **Run-root** — absolute, must already exist, >= 100 MiB free
+  31. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  30. **Run-root filesystem** — creates a short-lived probe file under the
+  32. **Run-root filesystem** — creates a short-lived probe file under the
      run-root and runs `cp --reflink=always` to report whether the filesystem
      supports metadata-only CoW clones. This advisory is non-blocking:
      unsupported reflinks mean callers should choose explicit byte-copy mode
      for that run-root, or let explicit auto mode select byte-copy.
-  31. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  33. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
   immutable-artifact outputs: `firecracker --version`, `jailer --version`, and

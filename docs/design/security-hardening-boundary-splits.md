@@ -26,10 +26,11 @@ adapter tool catalogs, semantic IDs, or product policy.
 
 ## AllowOutbound Private VMM Netns
 
-`NoEgress` uses `m80-jailer-harden --new-net-ns`, so the Firecracker VMM gets a
-fresh empty network namespace. `AllowOutbound` cannot reuse that shape directly:
-the owned outbound path needs a data path from a VMM-private TAP back to the
-host bridge and NAT policy.
+`NoEgress` asks the selected launch path for a fresh empty network namespace
+for the Firecracker VMM: `PrivateNetwork=yes` on the systemd path, or
+`m80-jailer-harden --new-net-ns` on the wrapper path. `AllowOutbound` cannot
+reuse that shape directly: the owned outbound path needs a data path from a
+VMM-private TAP back to the host bridge and NAT policy.
 
 The implemented hard-cutover design is an m80-owned named namespace for each
 outbound VM:

@@ -29,6 +29,10 @@ Test: if a behavior is "what the system does for the agent", it's not m80's. If 
 - No `m80-common` / `m80-shared` / `m80-utils` junk drawers. Cross-cutting types live in the crate that owns the producing domain.
 - Workspace deps in the root `Cargo.toml`; members use `xxx.workspace = true`. No version pins in member manifests.
 - A change to a crate's public surface updates that crate's README in the same diff. Drift is a bug.
+- Host launch is systemd-first on hosts where preflight can use a supported
+  system `systemd-run`; `m80-jailer-harden` is the feature-gated fallback for
+  hosts without supported systemd. Do not imply systemd closes the
+  final-exec-site capability/seccomp gap; `m80-92eor` owns that investigation.
 - Each closed bead leaf needs **both** a doc at `docs/behaviors/<area>/<topic>.md` AND a test at `crates/<crate>/tests/<area>/<topic>.rs`.
 - **Measurement-shaped beads carry the `requires-verified-close` label.** Their close requires a `verified: <artifact-path> @ <commit>` reason citing the file that contains the real-substrate measurement. Agents may scaffold; only a human (or an agent with explicit operator confirmation of a real-substrate run) closes. Parent epics inherit the label transitively. See [decision 0002](docs/decisions/0002-bead-closure-scaffolded-vs-verified.md). Motivated by the m80-ekbk false close (2026-05-12).
 - **Measurement-shaped beads name an observable, not an action.** Acceptance must read "`<file/artifact>` contains `<named numeric>` <=/>=/=/within `<bound>` on `<substrate>`" or "`<command>` on `<substrate>` exits 0 and emits `<observable>`". NOT "harness runs", "compute layer green", or "tests pass". The observable is what the future verifier checks; the action is what the agent did. See [`.beads/bead-template-measurement.md`](.beads/bead-template-measurement.md). Motivated by m80-ekbk false close (2026-05-12).

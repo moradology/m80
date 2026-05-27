@@ -4,15 +4,17 @@
 
 Group B hardening that must run immediately before Firecracker's final `exec`
 belongs at the process that performs that `exec`. In the current Phase 1
-design, m80 applies inherited one-way hardening in `m80-jailer-harden` before
-Firecracker's official `jailer`; the final `Command::exec()` still belongs to
-the official jailer.
+design, m80 applies inherited one-way hardening before Firecracker's official
+`jailer`: by transient systemd unit on supported systemd hosts, and by
+`m80-jailer-harden` on hosts without supported systemd. The final
+`Command::exec()` still belongs to the official jailer.
 
 m80 does not run these syscalls in `Plan::materialize()` or in the host
-orchestrator process. That would harden the wrong process. Instead,
-`m80-jailer-harden` runs as the spawned child, applies the subset of one-way
-state that survives through the official jailer, and then execs the official
-jailer.
+orchestrator process. That would harden the wrong process. Instead, the
+systemd path applies unit-level state before starting the official jailer. The
+wrapper path runs `m80-jailer-harden` as the spawned child, applies the subset
+of one-way state that survives through the official jailer, and then execs the
+official jailer.
 
 ## Current Phase 1 Scope
 
@@ -27,13 +29,19 @@ jailer already owns the behavior or exposes a stable flag:
   are passed through by m80;
 - `--new-pid-ns` is passed through by m80, with the exited jailer parent reaped
   and represented as `jailer_pid = 0`;
-- `m80-jailer-harden` drops supplementary groups, clears inheritable and ambient
-  capabilities, sets `PR_SET_NO_NEW_PRIVS`, sets `PR_SET_PDEATHSIG=SIGKILL`,
-  sets umask `0077`, resets the signal mask, and closes inherited fds above
-  stdio before execing the official jailer;
-- m80 clears the wrapper environment before spawn, the wrapper clears the
-  environment again before execing the official jailer, and the official jailer
-  clears its inherited environment again before dispatch;
+- on systemd-selected hosts, the transient unit drops supplementary groups,
+  clears ambient capabilities, applies the official jailer bounding set, sets
+  `NoNewPrivileges=yes`, sets `UMask=0077`, uses `KeyringMode=private`, and
+  applies the documented launch-unit hardening directives before starting the
+  official jailer;
+- on wrapper-selected hosts, `m80-jailer-harden` drops supplementary groups,
+  clears inheritable and ambient capabilities, sets `PR_SET_NO_NEW_PRIVS`,
+  sets `PR_SET_PDEATHSIG=SIGKILL`, sets umask `0077`, resets the signal mask,
+  and closes inherited fds above stdio before execing the official jailer;
+- m80 clears the wrapper environment before spawn on the wrapper path, the
+  wrapper clears the environment again before execing the official jailer, the
+  systemd path sets `Environment=`, and the official jailer clears its
+  inherited environment again before dispatch;
 - m80 pins stdin to `/dev/null` and pins stdout/stderr to the configured
   console log or `/dev/null`;
 - the official jailer also closes inherited fds >= 3 with `close_range`.
@@ -73,5 +81,5 @@ There are two viable future paths:
    jailer path.
 
 Until one of those paths is chosen, claims about Group B should distinguish
-between inherited wrapper hardening, which Phase 1 applies and tests, and
+between inherited launch-path hardening, which Phase 1 applies and tests, and
 final-exec-site capability/seccomp hardening, which remains a future shape.

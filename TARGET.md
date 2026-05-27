@@ -60,6 +60,13 @@ In priority order. Update freely as work lands.
    These are real problems, but `launch.rs` and exec/lifecycle refactors touch
    the most failure-sensitive paths and require real-KVM smoke evidence.
 
+Systemd-first launch work is in closeout: `m80-9wm35.5`, `.6`, and `.7` are
+closed. Current behavior is systemd-first on hosts where preflight can create a
+supported system transient unit, with `m80-jailer-harden` retained as the
+feature-gated fallback for hosts without supported systemd. The remaining
+documentation leaf is `m80-9wm35.8`; Phase 2 final-exec-site hardening remains
+`m80-92eor`.
+
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
 produced the nested-KVM public-install smoke artifact for `v0.2.20`. The
 current public installer proof is `v0.2.22`: it keeps the flat

@@ -23,11 +23,15 @@ KVM, binary, or artifact checks run.
 returns `PreflightError::KvmUnavailable`; permission denial returns
 `PreflightError::KvmNotWritable`.
 
-## Kernel Modules And Vsock
+## Kernel Modules And Devices
 
-The host must have both `tap` and `bridge` loaded in `/proc/modules`. m80 reports
-missing modules with `PreflightError::KernelModulesMissing` and does not attempt
-to load them.
+The current implementation still requires both `tap` and `bridge` to appear in
+`/proc/modules`. m80 reports missing modules with
+`PreflightError::KernelModulesMissing` and does not attempt to load them.
+This is intentionally documented as current behavior, but it is also known
+compatibility drift: `tap` is normally provided by the `tun` module and
+`bridge` may be built into the kernel without a `/proc/modules` row. The fix is
+tracked by `m80-t5ujm.1`.
 
 The host must also expose vhost-vsock for Firecracker's host↔guest control
 channel. Preflight accepts either a loaded `vhost_vsock` module in
