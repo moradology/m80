@@ -5,6 +5,8 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [v0.2.26] — 2026-05-27
+
 ### Added
 
 - Added a human-reviewed release-notes pipeline: `/draft-release-notes` drafts
