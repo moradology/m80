@@ -140,7 +140,11 @@ def parse_sections(text: str) -> tuple[dict[str, DraftSection], list[str]]:
         date = header.group("date") if header is not None else None
         body = ""
         if header is not None:
-            body = block[header.end() :].strip()
+            body_region = block[header.end() :]
+            next_top_level = re.search(r"^## ", body_region, re.MULTILINE)
+            if next_top_level is not None:
+                body_region = body_region[: next_top_level.start()]
+            body = body_region.strip()
         if wrapper_tag in sections:
             errors.append(f"duplicate draft section wrapper for {wrapper_tag}")
         sections[wrapper_tag] = DraftSection(

@@ -35,9 +35,21 @@ python3 scripts/verify-backfill-review.py \
 
 ## Land
 
-After the `--require-reviewed` gate passes, copy the accepted sections into
-`CHANGELOG.md` in reverse chronological order after `[Unreleased]`. Leave
-`[Unreleased]` with only work that has not shipped.
+After the `--require-reviewed` gate passes, write the reviewed post-backfill
+`[Unreleased]` body to a temporary file. This file contains only the body below
+`## [Unreleased]`, not the heading itself.
+
+Then apply the reviewed backfill:
+
+```sh
+python3 scripts/apply-backfill-review.py \
+  --review docs/release/backfill-review.md \
+  --changelog CHANGELOG.md \
+  --post-backfill-unreleased /tmp/m80-reviewed-unreleased.md
+```
+
+If there is truly no post-backfill work, use `--empty-unreleased` instead of
+`--post-backfill-unreleased`.
 
 Then prove extraction for every backfilled tag:
 

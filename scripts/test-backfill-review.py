@@ -116,6 +116,13 @@ class VerifyBackfillReviewTest(unittest.TestCase):
         )
         self.assertIn("::error::v0.2.1 section has no bullet lines", result.stderr)
 
+    def test_next_action_is_not_part_of_last_section_body(self) -> None:
+        packet = VALID_PACKET + "\n## Next Action\n\nOperator-only text.\n"
+
+        result = run_verify(packet)
+
+        self.assertEqual(result.returncode, 0)
+
 
 def run_verify(
     packet: str,
