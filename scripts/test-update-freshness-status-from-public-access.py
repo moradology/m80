@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 import freshness_status
+from stable_release_channel import REQUIRED_PUBLIC_ASSETS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ class UpdateFreshnessStatusFromPublicAccessTest(unittest.TestCase):
             self.assertEqual(status["workflow_run_id"], "26263525140")
             self.assertEqual(status["proof_artifacts"][0]["path"], "release-readiness-public-access.json")
             self.assertEqual(status["checked_command_inventory_digest"], freshness_status.command_inventory_digest(REPO_ROOT))
-            self.assertEqual(len(status["public_assets"]), 16)
+            self.assertEqual(len(status["public_assets"]), len(REQUIRED_PUBLIC_ASSETS))
             self.assertEqual(
                 status["safety_floor"],
                 {

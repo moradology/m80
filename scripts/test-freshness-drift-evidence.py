@@ -12,7 +12,7 @@ import unittest
 
 from freshness_drift_evidence import build_evidence, render_json, validate_evidence
 from release_url_contract import release_asset_url
-from stable_release_channel import BUNDLE_NAME, CHECKSUM_NAME
+from stable_release_channel import BUNDLE_NAME, METADATA_NAME
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,16 +49,16 @@ class FreshnessDriftEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["observed"]["status"], "http_failure")
 
     def test_missing_asset_records_expected_asset_and_url(self) -> None:
-        url = release_asset_url("v1.2.3", CHECKSUM_NAME)
+        url = release_asset_url("v1.2.3", METADATA_NAME)
 
         evidence = failure_evidence(
             "failure_class=missing-public-asset; freshness public asset missing: "
-            f"role=checksum asset={CHECKSUM_NAME} url={url} release_tag=v1.2.3"
+            f"role=metadata asset={METADATA_NAME} url={url} release_tag=v1.2.3"
         )
 
         self.assert_valid_failure(evidence, "missing-public-asset")
         self.assertEqual(evidence["source"], {"kind": "url", "value": url, "snippet_id": None})
-        self.assertEqual(evidence["expected"]["asset"], CHECKSUM_NAME)
+        self.assertEqual(evidence["expected"]["asset"], METADATA_NAME)
         self.assertEqual(evidence["expected"]["value"], url)
 
     def test_tag_mismatch_records_expected_and_observed_tags(self) -> None:
