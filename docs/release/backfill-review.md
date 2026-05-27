@@ -38,19 +38,19 @@ Human reviewer checklist for each section:
 | v0.2.5 | 2026-05-06 | v0.2.4..v0.2.5 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.6 | 2026-05-06 | v0.2.5..v0.2.6 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.7 | 2026-05-22 | v0.2.6..v0.2.7 | 755 | pending human review |
-| v0.2.8 | 2026-05-22 | v0.2.7..v0.2.8 | 9 | pending human review |
-| v0.2.9 | 2026-05-22 | v0.2.8..v0.2.9 | 1 | pending human review |
-| v0.2.10 | 2026-05-22 | v0.2.9..v0.2.10 | 1 | pending human review |
-| v0.2.11 | 2026-05-22 | v0.2.10..v0.2.11 | 1 | pending human review |
+| v0.2.8 | 2026-05-22 | v0.2.7..v0.2.8 | 9 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.9 | 2026-05-22 | v0.2.8..v0.2.9 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.10 | 2026-05-22 | v0.2.9..v0.2.10 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.11 | 2026-05-22 | v0.2.10..v0.2.11 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.12 | 2026-05-23 | v0.2.11..v0.2.12 | 224 | pending human review |
-| v0.2.13 | 2026-05-23 | v0.2.12..v0.2.13 | 1 | pending human review |
-| v0.2.14 | 2026-05-23 | v0.2.13..v0.2.14 | 1 | pending human review |
-| v0.2.15 | 2026-05-23 | v0.2.14..v0.2.15 | 1 | pending human review |
-| v0.2.16 | 2026-05-23 | v0.2.15..v0.2.16 | 1 | pending human review |
-| v0.2.17 | 2026-05-23 | v0.2.16..v0.2.17 | 1 | pending human review |
-| v0.2.18 | 2026-05-23 | v0.2.17..v0.2.18 | 1 | pending human review |
-| v0.2.19 | 2026-05-23 | v0.2.18..v0.2.19 | 1 | pending human review |
-| v0.2.20 | 2026-05-23 | v0.2.19..v0.2.20 | 1 | pending human review |
+| v0.2.13 | 2026-05-23 | v0.2.12..v0.2.13 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.14 | 2026-05-23 | v0.2.13..v0.2.14 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.15 | 2026-05-23 | v0.2.14..v0.2.15 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.16 | 2026-05-23 | v0.2.15..v0.2.16 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.17 | 2026-05-23 | v0.2.16..v0.2.17 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.18 | 2026-05-23 | v0.2.17..v0.2.18 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.19 | 2026-05-23 | v0.2.18..v0.2.19 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.20 | 2026-05-23 | v0.2.19..v0.2.20 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.21 | 2026-05-27 | v0.2.20..v0.2.21 | 101 | pending human review |
 | v0.2.22 | 2026-05-27 | v0.2.21..v0.2.22 | 1 | pending human review |
 | v0.2.23 | 2026-05-27 | v0.2.22..v0.2.23 | 31 | pending human review |
@@ -236,11 +236,11 @@ and adds the release machinery used to prove public install artifacts.
 
 Range: `v0.2.7..v0.2.8`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.8] — 2026-05-22
 
-v0.2.8 completes the current-latest repair proof and preserves public installer
+v0.2.8 completes current-latest repair proofing and preserves public installer
 proof-cache material.
 
 ### Added
@@ -257,7 +257,7 @@ proof-cache material.
 
 Range: `v0.2.8..v0.2.9`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.9] — 2026-05-22
 
@@ -272,7 +272,7 @@ v0.2.9 repairs latest-promotion proof ordering.
 
 Range: `v0.2.9..v0.2.10`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.10] — 2026-05-22
 
@@ -287,7 +287,7 @@ v0.2.10 fixes default release install selector placement.
 
 Range: `v0.2.10..v0.2.11`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.11] — 2026-05-22
 
@@ -335,7 +335,7 @@ transaction validation.
 
 Range: `v0.2.12..v0.2.13`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.13] — 2026-05-23
 
@@ -350,7 +350,7 @@ v0.2.13 repairs the release publish artifact handoff.
 
 Range: `v0.2.13..v0.2.14`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.14] — 2026-05-23
 
@@ -365,7 +365,7 @@ v0.2.14 improves repository protection auditing for release tags.
 
 Range: `v0.2.14..v0.2.15`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.15] — 2026-05-23
 
@@ -380,7 +380,7 @@ v0.2.15 broadens acceptable release protection proof for the hosted workflow.
 
 Range: `v0.2.15..v0.2.16`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.16] — 2026-05-23
 
@@ -395,7 +395,7 @@ v0.2.16 fixes release authority checks before draft creation.
 
 Range: `v0.2.16..v0.2.17`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.17] — 2026-05-23
 
@@ -410,7 +410,7 @@ v0.2.17 moves real-KVM proof out of the hosted latest-promotion gate.
 
 Range: `v0.2.17..v0.2.18`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.18] — 2026-05-23
 
@@ -425,7 +425,7 @@ v0.2.18 preserves command lookup behavior inside the public installer.
 
 Range: `v0.2.18..v0.2.19`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.19] — 2026-05-23
 
@@ -440,7 +440,7 @@ v0.2.19 retries transient lag in latest-release receipt generation.
 
 Range: `v0.2.19..v0.2.20`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.20] — 2026-05-23
 
