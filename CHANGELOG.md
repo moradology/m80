@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — release notes pipeline
+
+- Added a human-reviewed release-notes pipeline: `/draft-release-notes` produces
+  draft changelog text for operator review, GitHub Releases now read committed
+  `CHANGELOG.md` sections via `--notes-file`, and pull requests get an advisory
+  changelog warning plus a review checkbox to keep `[Unreleased]` populated.
+
 ### Added — nested-KVM release validation runner
 
 - Added idempotent L0 setup, ephemeral libvirt L1 runner provisioning, and a
