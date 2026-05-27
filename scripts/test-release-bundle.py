@@ -1301,6 +1301,7 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/extract-release-notes.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/verify-backfill-review.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/apply-backfill-review.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/verify-release-notes-proof.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/freshness_failure_policy.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/current_latest_repair_preflight.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
@@ -1313,6 +1314,7 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("python3 scripts/test-extract-release-notes.py", workflow)
         self.assertIn("python3 scripts/test-backfill-review.py", workflow)
         self.assertIn("python3 scripts/test-apply-backfill-review.py", workflow)
+        self.assertIn("python3 scripts/test-release-notes-proof.py", workflow)
         self.assertIn(
             "python3 scripts/verify-backfill-review.py --review "
             "docs/release/backfill-review.md --check-git-ranges",

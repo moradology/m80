@@ -32,3 +32,5 @@ Proof:
 - `scripts/test-release-bundle.py` checks that
   `.github/workflows/release-artifacts.yml` invokes the extractor before
   `gh release create` and uses `--notes-file`.
+- `scripts/verify-release-notes-proof.py` verifies the live GitHub Release body
+  against the committed changelog section before writing the C7 proof artifact.
