@@ -31,6 +31,10 @@ CATEGORY_RE = re.compile(
     re.MULTILINE,
 )
 REVIEWED_RE = re.compile(r"^human-reviewed by .+ on \d{4}-\d{2}-\d{2}$")
+SECTION_MARKER_RE = re.compile(
+    r"^(Draft suggestion — human review required|Human-reviewed by .+ on \d{4}-\d{2}-\d{2})$",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,7 @@ class CoverageRow:
 class DraftSection:
     wrapper_tag: str
     range_text: str | None
+    marker_status: str | None
     header_tag: str | None
     date: str | None
     body: str
@@ -135,6 +140,8 @@ def parse_sections(text: str) -> tuple[dict[str, DraftSection], list[str]]:
         block_end = wrappers[idx + 1].start() if idx + 1 < len(wrappers) else len(text)
         block = text[block_start:block_end]
         range_text = parse_range_line(block)
+        marker = SECTION_MARKER_RE.search(block)
+        marker_status = normalize_marker_status(marker.group(1)) if marker is not None else None
         header = SECTION_HEADER_RE.search(block)
         header_tag = header.group("tag") if header is not None else None
         date = header.group("date") if header is not None else None
@@ -150,6 +157,7 @@ def parse_sections(text: str) -> tuple[dict[str, DraftSection], list[str]]:
         sections[wrapper_tag] = DraftSection(
             wrapper_tag=wrapper_tag,
             range_text=range_text,
+            marker_status=marker_status,
             header_tag=header_tag,
             date=date,
             body=body,
@@ -162,6 +170,14 @@ def parse_range_line(block: str) -> str | None:
     if match is None:
         return None
     return match.group(1)
+
+
+def normalize_marker_status(marker: str) -> str:
+    if marker == "Draft suggestion — human review required":
+        return "pending human review"
+    if marker.startswith("Human-reviewed by "):
+        return "human-reviewed by " + marker.removeprefix("Human-reviewed by ")
+    return marker
 
 
 def validate(
@@ -202,6 +218,11 @@ def validate(
         if row is None or section is None:
             continue
         validate_review_status(row, require_reviewed, errors)
+        if section.marker_status != row.status:
+            errors.append(
+                f"{tag} section marker/status mismatch: coverage has {row.status!r}, "
+                f"section marker has {section.marker_status!r}"
+            )
         if section.range_text != row.range_text:
             errors.append(
                 f"{tag} range mismatch: coverage has {row.range_text!r}, "

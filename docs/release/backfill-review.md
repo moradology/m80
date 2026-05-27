@@ -31,12 +31,12 @@ Human reviewer checklist for each section:
 | Tag | Date | Range | Commits | Review status |
 |---|---:|---|---:|---|
 | v0.2.0 | 2026-05-06 | v0.1.0-smoke-passing..v0.2.0 | 65 | pending human review |
-| v0.2.1 | 2026-05-06 | v0.2.0..v0.2.1 | 1 | pending human review |
-| v0.2.2 | 2026-05-06 | v0.2.1..v0.2.2 | 1 | pending human review |
-| v0.2.3 | 2026-05-06 | v0.2.2..v0.2.3 | 1 | pending human review |
-| v0.2.4 | 2026-05-06 | v0.2.3..v0.2.4 | 1 | pending human review |
-| v0.2.5 | 2026-05-06 | v0.2.4..v0.2.5 | 1 | pending human review |
-| v0.2.6 | 2026-05-06 | v0.2.5..v0.2.6 | 1 | pending human review |
+| v0.2.1 | 2026-05-06 | v0.2.0..v0.2.1 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.2 | 2026-05-06 | v0.2.1..v0.2.2 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.3 | 2026-05-06 | v0.2.2..v0.2.3 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.4 | 2026-05-06 | v0.2.3..v0.2.4 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.5 | 2026-05-06 | v0.2.4..v0.2.5 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.6 | 2026-05-06 | v0.2.5..v0.2.6 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.7 | 2026-05-22 | v0.2.6..v0.2.7 | 755 | pending human review |
 | v0.2.8 | 2026-05-22 | v0.2.7..v0.2.8 | 9 | pending human review |
 | v0.2.9 | 2026-05-22 | v0.2.8..v0.2.9 | 1 | pending human review |
@@ -101,7 +101,7 @@ primitives used by later releases.
 
 Range: `v0.2.0..v0.2.1`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.1] — 2026-05-06
 
@@ -116,7 +116,7 @@ v0.2.1 repairs the release workflow after the initial v0.2.0 cut.
 
 Range: `v0.2.1..v0.2.2`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.2] — 2026-05-06
 
@@ -132,7 +132,7 @@ the release/install path.
 
 Range: `v0.2.2..v0.2.3`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.3] — 2026-05-06
 
@@ -147,7 +147,7 @@ v0.2.3 fixes quickstart install layout after package extraction.
 
 Range: `v0.2.3..v0.2.4`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.4] — 2026-05-06
 
@@ -162,7 +162,7 @@ v0.2.4 repairs CI and smoke configuration for the release path.
 
 Range: `v0.2.4..v0.2.5`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.5] — 2026-05-06
 
@@ -177,7 +177,7 @@ v0.2.5 narrows the quickstart probe so it works without network egress.
 
 Range: `v0.2.5..v0.2.6`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.6] — 2026-05-06
 

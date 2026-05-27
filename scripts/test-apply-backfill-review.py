@@ -30,7 +30,7 @@ Required stable tag range: v0.2.0 through v0.2.1 (captured at leaf claim time).
 
 Range: `v0.1.0-smoke-passing..v0.2.0`
 
-Draft suggestion — human review required
+Human-reviewed by release operator on 2026-05-27
 
 ## [v0.2.0] — 2026-05-06
 
@@ -44,7 +44,7 @@ v0.2.0 adds the first reviewed release-note shape.
 
 Range: `v0.2.0..v0.2.1`
 
-Draft suggestion — human review required
+Human-reviewed by release operator on 2026-05-27
 
 ## [v0.2.1] — 2026-05-07
 

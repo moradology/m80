@@ -92,14 +92,36 @@ class VerifyBackfillReviewTest(unittest.TestCase):
         self.assertIn("::error::v0.2.1 is still pending human review", result.stderr)
 
     def test_require_reviewed_accepts_explicit_human_status(self) -> None:
-        packet = VALID_PACKET.replace(
-            "pending human review",
-            "human-reviewed by release operator on 2026-05-27",
+        packet = (
+            VALID_PACKET.replace(
+                "pending human review",
+                "human-reviewed by release operator on 2026-05-27",
+            )
+            .replace(
+                "Draft suggestion — human review required",
+                "Human-reviewed by release operator on 2026-05-27",
+            )
         )
 
         result = run_verify(packet, require_reviewed=True)
 
         self.assertEqual(result.returncode, 0)
+
+    def test_section_marker_must_match_coverage_status(self) -> None:
+        packet = VALID_PACKET.replace(
+            "| v0.2.1 | 2026-05-06 | v0.2.0..v0.2.1 | 1 | pending human review |",
+            "| v0.2.1 | 2026-05-06 | v0.2.0..v0.2.1 | 1 | human-reviewed by release operator on 2026-05-27 |",
+        )
+
+        result = run_verify(packet, check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "::error::v0.2.1 section marker/status mismatch: coverage has "
+            "'human-reviewed by release operator on 2026-05-27', section marker has "
+            "'pending human review'",
+            result.stderr,
+        )
 
     def test_body_needs_changelog_category_and_bullet(self) -> None:
         packet = VALID_PACKET.replace(
