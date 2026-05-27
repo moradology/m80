@@ -55,9 +55,22 @@ owned directly by m80 while the official jailer performs the final exec:
   setup. Phase 1 verifies the live jailed Firecracker process has zero
   permitted/effective capabilities after the official jailer's uid/gid drop,
   but that drop is still delegated to the official jailer;
+- clearing supplementary groups at the upstream final exec boundary. Phase 1
+  covers this through systemd `SupplementaryGroups=` or the wrapper
+  `setgroups([])`, but the official jailer does not expose this as a final
+  contract;
+- setting inherited `PR_SET_NO_NEW_PRIVS`, resetting the signal mask, and
+  setting umask at the upstream final exec boundary. Phase 1 covers these
+  before the official jailer, but not as a Firecracker-owned final-exec hook;
 - proving `PR_SET_PDEATHSIG` survives the official jailer's final uid/gid
-  transition on every supported kernel;
-- installing any seccomp/AppArmor/SELinux policy at the final exec site.
+  transition on every supported kernel. The Phase 2 proposal intentionally
+  leaves parent-death signal out of the first upstream request because
+  daemonize and new-PID-namespace modes can make the parent exit by design.
+
+Steady-state VMM seccomp is not in this residual list: Firecracker already
+selects and installs its default or custom seccomp filters during VMM startup.
+The residual is only the pre-Firecracker-start window before those filters are
+installed.
 
 ## Rejected Paths
 
@@ -80,6 +93,13 @@ There are two viable future paths:
    cutover and must include root/KVM proofs before replacing the official
    jailer path.
 
-Until one of those paths is chosen, claims about Group B should distinguish
-between inherited launch-path hardening, which Phase 1 applies and tests, and
-final-exec-site capability/seccomp hardening, which remains a future shape.
+Claims about Group B should distinguish between inherited launch-path
+hardening, which Phase 1 applies and tests, Firecracker-owned VMM seccomp,
+which starts after Firecracker initializes, and upstream-owned final-exec
+process-state hardening, which remains a future shape.
+
+Phase 2 investigation chose Path 1 as the next external path, with a bounded
+fallback to accept the documented residual rather than fork Firecracker or build
+an m80-owned launcher. See
+`docs/decisions/0011-phase-2-final-exec-fallback.md` and
+`docs/decisions/0012-phase-2-final-exec-go-forward.md`.

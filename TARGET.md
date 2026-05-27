@@ -63,8 +63,13 @@ In priority order. Update freely as work lands.
 Systemd-first launch work is closed under `m80-9wm35`. Current behavior is
 systemd-first on hosts where preflight can create a supported system transient
 unit, with `m80-jailer-harden` retained as the feature-gated fallback for hosts
-without supported systemd. Phase 2 final-exec-site hardening remains
-`m80-92eor`.
+without supported systemd. Phase 2 final-exec-site investigation is closed
+under `m80-92eor`: ADR 0012 chooses upstream Path A for a future
+`--final-exec-hardening` official-jailer flag, while ADR 0011 says m80 accepts
+the documented residual rather than forking Firecracker or building an m80-owned
+launcher if upstream rejects or stalls. This does not block the next release;
+release notes must keep the claim bounded to inherited launch-path hardening,
+official-jailer setup/uid-gid exec, and Firecracker-owned VMM seccomp.
 
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
 produced the nested-KVM public-install smoke artifact for `v0.2.20`. The
