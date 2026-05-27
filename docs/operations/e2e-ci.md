@@ -147,7 +147,7 @@ Failed runs also try to upload `m80-e2e-run-root.tgz` when
 
 ## Promotion Policy
 
-This workflow is initially informational for pull requests. Do not mark it as
-a required branch-protection check until scheduled and manual runs are stable
-on the selected self-hosted runner. Tag runs are release evidence, but they do
-not replace the separate public-install freshness and release-publish lanes.
+This workflow is broker-dispatched proof, not an automatic branch-protection or
+tag-push lane. Release evidence that needs real KVM must be requested through
+the broker with a disposable runner label, and it does not replace the separate
+public-install freshness and release-publish lanes.
