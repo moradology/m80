@@ -13,7 +13,9 @@ use nix::sys::signal::{SigSet, SigmaskHow, Signal};
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::{geteuid, setgroups};
 
-const OFFICIAL_JAILER_CAPABILITIES: &[Capability] = &[
+/// Capability bounding set required by Firecracker's official jailer before it
+/// drops into the jailed Firecracker process.
+pub const OFFICIAL_JAILER_CAPABILITIES: &[Capability] = &[
     Capability::CAP_CHOWN,
     Capability::CAP_DAC_OVERRIDE,
     Capability::CAP_SYS_CHROOT,

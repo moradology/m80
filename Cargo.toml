@@ -94,6 +94,7 @@ m80-image-manifest = { path = "crates/m80-image-manifest" }
 m80-firecracker-client = { path = "crates/m80-firecracker-client" }
 m80-vsock = { path = "crates/m80-vsock" }
 m80-jailer = { path = "crates/m80-jailer" }
+m80-jailer-harden = { path = "crates/m80-jailer-harden" }
 m80-cgroup = { path = "crates/m80-cgroup" }
 m80-storage = { path = "crates/m80-storage" }
 m80-image-store = { path = "crates/m80-image-store" }

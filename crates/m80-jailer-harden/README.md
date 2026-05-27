@@ -63,6 +63,7 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 | `HardenArgs::new_net_ns()` | Parsed `--new-net-ns` flag for `apply_process_hardening`. |
 | `ResourceLimit { kind, value }` | Public parsed resource-limit row used by tests and callers that inspect parse output. |
 | `ResourceLimitKind` | Supported resource limit names: `NoFile`, `FSize`, `NProc`, `MemLock`, `AddressSpace`, `Core`, and `Stack`. |
+| `OFFICIAL_JAILER_CAPABILITIES` | The seven-cap allowlist retained for the official Firecracker jailer. Systemd-launch directive tests compare against this list so wrapper and systemd paths cannot drift silently. |
 | `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `NotRoot`, `SetGroups`, `ClearCaps` for capability pruning failures, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `NetworkNamespace`, `SetResourceLimit`, `SignalMask`, `CloseRange`, and `Exec`. |
 | `parse_args(args)` | Parses wrapper args from an iterator that starts after argv[0]; validates required `--jailer-bin`, `--uid`, `--gid`, separator, and forwarded jailer args. |
 | `apply_process_hardening(resource_limits, new_cgroup_ns, new_net_ns)` | Applies the inheritable hardening sequence without execing. |

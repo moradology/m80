@@ -63,6 +63,10 @@ mod failure_cleanup;
 mod prepared;
 mod ready;
 mod snapshot_prime;
+// Wired into phase 4 by the launch-branching bead; compiled here so the
+// directive contract is pinned before the kernel-touching switch.
+#[allow(dead_code)]
+mod systemd;
 
 pub use prepared::PreparedSandbox;
 

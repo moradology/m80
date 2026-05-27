@@ -694,6 +694,7 @@ dependencies = [
  "m80-image-manifest",
  "m80-image-store",
  "m80-jailer",
+ "m80-jailer-harden",
  "m80-net-mode",
  "m80-net-outbound",
  "m80-observability",
