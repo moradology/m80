@@ -628,11 +628,17 @@ jobs:
           )
           case "$publication_action" in
             create_draft_upload_publish)
+              notes_file="$RUNNER_TEMP/release-notes-$GITHUB_REF_NAME.md"
+              python3 scripts/extract-release-notes.py \
+                --changelog CHANGELOG.md \
+                --tag "$GITHUB_REF_NAME" \
+                --out "$notes_file" \
+                --print
               gh release create "$GITHUB_REF_NAME" \
                 --verify-tag \
                 --draft \
                 --title "$GITHUB_REF_NAME" \
-                --notes "m80 $GITHUB_REF_NAME release artifacts from ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+                --notes-file "$notes_file"
               gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"
               ;;
             validate_existing_public_release)

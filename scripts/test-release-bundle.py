@@ -1298,6 +1298,7 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_publish_authority.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_evidence_bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_proof_ledger.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/extract-release-notes.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/freshness_failure_policy.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/current_latest_repair_preflight.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
@@ -1307,6 +1308,7 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("python3 scripts/test-current-latest-repair-preflight.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
         self.assertIn("python3 scripts/test-release-proof-ledger.py", workflow)
+        self.assertIn("python3 scripts/test-extract-release-notes.py", workflow)
         self.assertIn(
             "python3 scripts/verify-release-tracker-policy.py --policy-config "
             "docs/behaviors/release/release-tracker-policy.json",
@@ -1470,9 +1472,19 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Resolve release publication plan", workflow)
         self.assertIn("m80-release-publication-plan.json", workflow)
         self.assertIn("create_draft_upload_publish)", workflow)
+        self.assertIn("scripts/extract-release-notes.py", workflow)
+        self.assertIn('notes_file="$RUNNER_TEMP/release-notes-$GITHUB_REF_NAME.md"', workflow)
+        self.assertIn('--tag "$GITHUB_REF_NAME"', workflow)
+        self.assertIn("--print", workflow)
         self.assertIn('gh release create "$GITHUB_REF_NAME"', workflow)
         self.assertIn("--verify-tag", workflow)
         self.assertIn("--draft", workflow)
+        self.assertIn('--notes-file "$notes_file"', workflow)
+        self.assertNotIn('--notes "m80 $GITHUB_REF_NAME release artifacts from', workflow)
+        self.assertLess(
+            workflow.index("scripts/extract-release-notes.py"),
+            workflow.index('gh release create "$GITHUB_REF_NAME"'),
+        )
         self.assertIn('gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag', workflow)
         self.assertIn('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag', workflow)
         self.assertLess(
