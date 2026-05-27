@@ -624,7 +624,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "m80-attack-runner"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "assert_cmd",
  "nix 0.29.0",
@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "m80-cgroup"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "m80-jailer",
  "nix 0.29.0",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "m80-cli"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "m80-firecracker"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "caps",
  "hex",
@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "m80-firecracker-client"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "m80-test-helpers",
@@ -737,7 +737,7 @@ dependencies = [
 
 [[package]]
 name = "m80-guestd"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "caps",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "m80-guestd-malicious"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "m80-proto",
@@ -768,7 +768,7 @@ dependencies = [
 
 [[package]]
 name = "m80-image-build"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "m80-image-manifest"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "serde",
@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "m80-image-store"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "nix 0.29.0",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "m80-jailer"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "m80-cgroup",
  "m80-image-store",
@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "m80-jailer-harden"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "anyhow",
  "caps",
@@ -836,14 +836,14 @@ dependencies = [
 
 [[package]]
 name = "m80-net-helper"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "m80-net-outbound",
 ]
 
 [[package]]
 name = "m80-net-mode"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "ipnet",
  "serde",
@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "m80-net-outbound"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "futures-util",
  "hex",
@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "m80-observability"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "m80-proto",
  "serde",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "m80-preflight"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "caps",
  "hex",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "m80-proto"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "prost",
@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "m80-snapshot"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "m80-firecracker-client",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "m80-snapshot-template"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "m80-snapshot",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "m80-storage"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "hex",
  "nix 0.29.0",
@@ -953,14 +953,14 @@ dependencies = [
 
 [[package]]
 name = "m80-test-helpers"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "m80-vsock"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "m80-proto",
  "sha2",

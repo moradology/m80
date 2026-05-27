@@ -447,7 +447,7 @@ impl FlatPathBackup {
                 }
             }
             Ok(metadata) if metadata.is_dir() => {
-                hardlink_copy_tree(&path, backup)?;
+                backup_directory_tree(&path, backup)?;
                 FlatPathState::Directory {
                     backup: backup.to_path_buf(),
                 }
@@ -496,6 +496,79 @@ impl FlatPathBackup {
     }
 }
 
+fn backup_directory_tree(source: &Path, destination: &Path) -> Result<(), FcError> {
+    let parent = destination_parent(destination)?;
+    fs::create_dir_all(parent).map_err(|source_err| FcError::PathIo {
+        path: parent.to_path_buf(),
+        source: source_err,
+    })?;
+    let tmp = sibling_tmp_path(destination, "backup-tree");
+    remove_path_if_exists(&tmp)?;
+    copy_backup_tree_contents(source, &tmp)?;
+    if let Err(err) = replace_path_with_prepared_tree(&tmp, destination) {
+        let _ = remove_path_if_exists(&tmp);
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn copy_backup_tree_contents(source: &Path, destination: &Path) -> Result<(), FcError> {
+    fs::create_dir(destination).map_err(|source_err| FcError::PathIo {
+        path: destination.to_path_buf(),
+        source: source_err,
+    })?;
+    fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).map_err(|source_err| {
+        FcError::PathIo {
+            path: destination.to_path_buf(),
+            source: source_err,
+        }
+    })?;
+    for entry in fs::read_dir(source).map_err(|source_err| FcError::PathIo {
+        path: source.to_path_buf(),
+        source: source_err,
+    })? {
+        let entry = entry.map_err(|source_err| FcError::PathIo {
+            path: source.to_path_buf(),
+            source: source_err,
+        })?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let metadata =
+            fs::symlink_metadata(&source_path).map_err(|source_err| FcError::PathIo {
+                path: source_path.clone(),
+                source: source_err,
+            })?;
+        if metadata.file_type().is_symlink() {
+            let target = fs::read_link(&source_path).map_err(|source_err| FcError::PathIo {
+                path: source_path.clone(),
+                source: source_err,
+            })?;
+            symlink(&target, &destination_path).map_err(|source_err| FcError::PathIo {
+                path: destination_path,
+                source: source_err,
+            })?;
+        } else if metadata.is_dir() {
+            copy_backup_tree_contents(&source_path, &destination_path)?;
+        } else if metadata.is_file() {
+            fs::hard_link(&source_path, &destination_path).map_err(|source_err| {
+                FcError::PathIo {
+                    path: destination_path,
+                    source: source_err,
+                }
+            })?;
+        } else {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "install.flat_projection",
+                reason: format!(
+                    "flat projection backup contains unsupported file type: {}",
+                    source_path.display()
+                ),
+            }));
+        }
+    }
+    Ok(())
+}
+
 fn flat_managed_paths(install_root: &Path) -> Vec<PathBuf> {
     let bin_dir = install_root.join("bin");
     let artifact_dir = install_root.join("artifacts");
@@ -519,7 +592,7 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::MetadataExt;
 
-    use super::hardlink_copy_tree;
+    use super::{backup_directory_tree, hardlink_copy_tree};
 
     #[test]
     fn hardlink_copy_tree_replaces_stale_destination_entries() {
@@ -546,6 +619,31 @@ mod tests {
         assert_same_inode(
             &source.join("nested/proof.json"),
             &destination.join("nested/proof.json"),
+        );
+    }
+
+    #[test]
+    fn backup_directory_tree_preserves_legacy_symlinks_without_following() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("backup");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("manifest.json"), b"manifest").unwrap();
+        std::os::unix::fs::symlink(
+            "../versions/v0.2.20/artifacts/release-proof-cache",
+            source.join("release-proof-cache"),
+        )
+        .unwrap();
+
+        backup_directory_tree(&source, &destination).unwrap();
+
+        assert_same_inode(
+            &source.join("manifest.json"),
+            &destination.join("manifest.json"),
+        );
+        assert_eq!(
+            fs::read_link(destination.join("release-proof-cache")).unwrap(),
+            std::path::PathBuf::from("../versions/v0.2.20/artifacts/release-proof-cache")
         );
     }
 
