@@ -15,9 +15,9 @@ from current_latest_repair_preflight import evaluate_preflight
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "current_latest_repair_preflight.py"
 SOURCE_COMMIT = "0123456789abcdef0123456789abcdef01234567"
-CURRENT_VERSION = "0.2.24"
+CURRENT_VERSION = "0.2.25"
 CURRENT_RELEASE_TAG = f"v{CURRENT_VERSION}"
-EXISTING_LATEST_TAG = "v0.2.23"
+EXISTING_LATEST_TAG = "v0.2.24"
 EXISTING_LATEST_URL = f"https://github.com/moradology/m80/releases/tag/{EXISTING_LATEST_TAG}"
 
 
@@ -53,12 +53,12 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
         self.assertIn("manual release-state repair", diagnostic["safe_repair_action"])
 
     def test_rejects_tag_version_mismatch(self) -> None:
-        artifact = accepted_fixture(release_tag="v0.2.25")
+        artifact = accepted_fixture(release_tag="v0.2.26")
 
         diagnostic = only_diagnostic(artifact)
         self.assertEqual(diagnostic["field"], "target_tag")
         self.assertEqual(diagnostic["expected"], CURRENT_RELEASE_TAG)
-        self.assertEqual(diagnostic["observed"], "v0.2.25")
+        self.assertEqual(diagnostic["observed"], "v0.2.26")
         self.assertIn("Cargo.toml workspace.package.version", diagnostic["safe_repair_action"])
 
     def test_rejects_attempted_old_release_backfill(self) -> None:

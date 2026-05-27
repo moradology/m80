@@ -11,6 +11,10 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+real-kvm-bench = []
+
 [dependencies]
 m80-proto.workspace = true
 m80-image-manifest.workspace = true
@@ -47,19 +51,24 @@ tempfile.workspace = true
 [[bench]]
 name = "persistent_turn_latency"
 harness = false
+required-features = ["real-kvm-bench"]
 
 [[bench]]
 name = "snapshot_restore_latency"
 harness = false
+required-features = ["real-kvm-bench"]
 
 [[bench]]
 name = "warm_pool_allocation_latency"
 harness = false
+required-features = ["real-kvm-bench"]
 
 [[bench]]
 name = "snapshot_template_restore_latency"
 harness = false
+required-features = ["real-kvm-bench"]
 
 [[bench]]
 name = "drive_sync_latency"
 harness = false
+required-features = ["real-kvm-bench"]

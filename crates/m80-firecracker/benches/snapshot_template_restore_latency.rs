@@ -541,7 +541,8 @@ fn reproduction_command(report: &BenchReport<'_>) -> String {
         ),
     ];
     parts.push(
-        "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency".to_owned(),
+        "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency --features real-kvm-bench"
+            .to_owned(),
     );
     parts.join(" ")
 }

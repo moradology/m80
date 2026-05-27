@@ -74,7 +74,7 @@ fi
 
 mkdir -p "$(dirname "$SNAPSHOT_OUT")"
 cargo build --release -p m80-jailer-harden --features no-systemd-launch
-cargo build --release -p m80-firecracker --bench snapshot_restore_latency
+cargo build --release -p m80-firecracker --bench snapshot_restore_latency --features real-kvm-bench
 
 bench_bin=""
 for candidate in target/release/deps/snapshot_restore_latency-*; do

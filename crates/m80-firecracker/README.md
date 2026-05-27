@@ -324,6 +324,11 @@ Callers may still supply explicit sizing for ordinary launches.
 CPU set. Snapshot restore and warm-pool timing fixtures use the exported
 constants so latency proofs do not drift to a benchmark-only smaller VM.
 
+The real-KVM Cargo benchmark binaries are gated behind the
+`real-kvm-bench` feature. CI-style `cargo test --workspace --all-targets`
+does not execute privileged measurement programs by accident; benchmark
+commands and scripts must opt in with `--features real-kvm-bench`.
+
 ### Cleanup contract vocabulary
 
 `m80-firecracker` exports small enums/constants that pin the cleanup contract

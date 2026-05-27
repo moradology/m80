@@ -766,6 +766,7 @@ def verify_snapshot_doc(path: Path) -> list[str]:
             "sync && echo 3 | sudo tee /proc/sys/vm/drop_caches",
             "sudo -n env",
             "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
+            "--features real-kvm-bench",
         ]:
             check.require(required in command, f"snapshot doc command: missing {required}")
         for env, expected in [
@@ -3530,7 +3531,7 @@ sudo -n env \
   M80_JAIL_UID=1000 M80_JAIL_GID=1000 M80_CGROUP_MODE=disabled \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \
   M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json \
-  cargo bench -p m80-firecracker --bench snapshot_template_restore_latency
+  cargo bench -p m80-firecracker --bench snapshot_template_restore_latency --features real-kvm-bench
 ```
 
 Close reason:

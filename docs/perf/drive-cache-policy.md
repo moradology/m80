@@ -30,7 +30,7 @@ cache-policy win is in the exec I/O phase rather than VM boot.
 Commands:
 
 ```sh
-cargo bench -p m80-firecracker --bench drive_sync_latency --no-run
+cargo bench -p m80-firecracker --bench drive_sync_latency --features real-kvm-bench --no-run
 
 sudo env PATH="$PATH" \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \

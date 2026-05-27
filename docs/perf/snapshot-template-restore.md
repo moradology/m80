@@ -91,7 +91,7 @@ sudo -n env PATH=/home/nathan/.cargo/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   M80_SNAPSHOT_BENCH_LOAD=idle \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \
   M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json \
-  /home/nathan/.cargo/bin/cargo bench -p m80-firecracker --bench snapshot_template_restore_latency
+  /home/nathan/.cargo/bin/cargo bench -p m80-firecracker --bench snapshot_template_restore_latency --features real-kvm-bench
 ```
 
 The close reason must cite:
