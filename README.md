@@ -8,7 +8,7 @@ and the exit code like a normal process.
 On a Linux/KVM machine with `sudo`, `curl`, `python3`, `sha256sum`, and `tar`:
 
 <!-- m80:freshness-status start -->
-Public installer status: pending public proof. The latest command below is the release-channel template; do not treat it as publicly proven until the freshness status becomes `public_green`.
+Public installer status: public proof green for `v0.2.24`.
 <!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->

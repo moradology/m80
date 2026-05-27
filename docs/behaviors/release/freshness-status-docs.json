@@ -1,24 +1,112 @@
 {
   "checked_command_inventory_digest": "sha256:e349e768142c5308c97d9e3c4125e6aca2f06edd299b75f79c9c8758336bbc98",
-  "expected_highest_stable_tag": "v0.2.22",
-  "generated_at": "2026-05-27T05:25:47Z",
-  "install_url_proofs": [],
+  "expected_highest_stable_tag": "v0.2.24",
+  "generated_at": "2026-05-27T10:32:05Z",
+  "install_url_proofs": [
+    {
+      "artifact_path": "release-readiness-public-access.json",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/cb02844e-4eb5-4eb7-a623-8f11541aae25?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-27T11%3A27%3A23Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-27T10%3A26%3A46Z&ske=2026-05-27T11%3A27%3A23Z&sks=b&skv=2018-11-09&sig=EcVMen6H%2BtmwHKY43mELyvU3TA1pKCYmXOqkwq6iUgU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTg3ODIyMCwibmJmIjoxNzc5ODc3OTIwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.n3uNewYMHvHCVXfSRNHmZXrHZGsfHH10A6VFFaXsEUs&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "http_status": 200,
+      "kind": "latest-install",
+      "unauthenticated": true,
+      "url": "https://github.com/moradology/m80/releases/latest/download/install.sh"
+    },
+    {
+      "artifact_path": "release-readiness-public-access.json",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/cb02844e-4eb5-4eb7-a623-8f11541aae25?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-27T11%3A27%3A23Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-27T10%3A26%3A46Z&ske=2026-05-27T11%3A27%3A23Z&sks=b&skv=2018-11-09&sig=EcVMen6H%2BtmwHKY43mELyvU3TA1pKCYmXOqkwq6iUgU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTg3ODIyMCwibmJmIjoxNzc5ODc3OTIwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.n3uNewYMHvHCVXfSRNHmZXrHZGsfHH10A6VFFaXsEUs&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "http_status": 200,
+      "kind": "pinned-install",
+      "unauthenticated": true,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/install.sh"
+    }
+  ],
   "latest_install_url": "https://github.com/moradology/m80/releases/latest/download/install.sh",
   "owner": "moradology",
-  "pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.2.22/install.sh",
-  "proof_artifacts": [],
-  "proof_substrate": "none",
-  "public_assets": [],
+  "pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.2.24/install.sh",
+  "proof_artifacts": [
+    {
+      "artifact_class": "public",
+      "kind": "latest-and-pinned-url-proof",
+      "path": "release-readiness-public-access.json",
+      "sha256": "sha256:8decc482a6dab71ed922a0ad84abf48ba326de95723fac3fafa2e5e5baefde3a"
+    }
+  ],
+  "proof_substrate": "public-unauthenticated",
+  "public_assets": [
+    {
+      "name": "install.sh",
+      "role": "installer",
+      "sha256": "45aa25b56f3a48051ede5aabe194cf71248edbfd7cc2b289e963e70034220147",
+      "size_bytes": 47685,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/install.sh"
+    },
+    {
+      "name": "m80-bootstrap-selector.tsv",
+      "role": "selector",
+      "sha256": "ff90b91143a70176a21e411d54842fa31b8d2ab23d2cfaee0022d3387ea6b1d6",
+      "size_bytes": 537,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-bootstrap-selector.tsv"
+    },
+    {
+      "name": "m80-linux-x86_64.bundle.json",
+      "role": "metadata",
+      "sha256": "0c178636637d30e9936e2c6f0631211db8e0a27bb59f7f9d3dfb6de5c2c51ad3",
+      "size_bytes": 2111,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-linux-x86_64.bundle.json"
+    },
+    {
+      "name": "m80-linux-x86_64.tar.gz",
+      "role": "bundle",
+      "sha256": "eae15963844b686b7d52e5cbef70d82f247af7afdbdfa43b15b7da2f39efce76",
+      "size_bytes": 17275943,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-linux-x86_64.tar.gz"
+    },
+    {
+      "name": "m80-release-assets.json",
+      "role": "asset-index",
+      "sha256": "9c6524f144352a2e56cbe58f8e54439e9321c3c31f049915d2d24097b5a8212e",
+      "size_bytes": 878,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-release-assets.json"
+    },
+    {
+      "name": "m80-release-attestation.json",
+      "role": "attestation",
+      "sha256": "755b6e3f5ef5105561d94c60d055fc9de8734285b8affa7866ab3893a488fb0c",
+      "size_bytes": 518,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-release-attestation.json"
+    },
+    {
+      "name": "m80-release-build.json",
+      "role": "metadata",
+      "sha256": "64b6c7489d9cc9cd53fc2f3b201b8add7cd7c405251f4109e448ffa3cb8f6c15",
+      "size_bytes": 1090,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-release-build.json"
+    },
+    {
+      "name": "m80-release-integrity.attestation.jsonl",
+      "role": "attestation",
+      "sha256": "17513931ed6fce3a5fe4c8451e3734078ac8fc24facd6e67896aec1bc63673a1",
+      "size_bytes": 10729,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-release-integrity.attestation.jsonl"
+    },
+    {
+      "name": "m80-release-integrity.json",
+      "role": "provenance",
+      "sha256": "c16e4ffb9f21b888e7ea1dcb81b3a00ddeb6f7a27de60f0db201355bc25e7629",
+      "size_bytes": 1623,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.24/m80-release-integrity.json"
+    }
+  ],
   "repo": "m80",
-  "resolved_latest_tag": "v0.2.22",
+  "resolved_latest_tag": "v0.2.24",
   "safety_floor": {
     "minimum_safe_tag": null,
-    "published_at": "2026-05-27T03:33:45Z",
+    "published_at": "2026-05-27T10:32:05Z",
     "schema_version": 1,
     "yanked_releases": []
   },
   "schema_version": 1,
-  "source_commit": "1d96489d73f01789b9191d61220b303544b7da47",
-  "status": "pending",
-  "workflow_run_id": "local-pending-sidecar-removal"
+  "source_commit": "f44de951eb73fc805648113bb7e2aea9b63e6e19",
+  "status": "public_green",
+  "workflow_run_id": "26505407662"
 }
