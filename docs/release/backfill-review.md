@@ -30,19 +30,19 @@ Human reviewer checklist for each section:
 
 | Tag | Date | Range | Commits | Review status |
 |---|---:|---|---:|---|
-| v0.2.0 | 2026-05-06 | v0.1.0-smoke-passing..v0.2.0 | 65 | pending human review |
+| v0.2.0 | 2026-05-06 | v0.1.0-smoke-passing..v0.2.0 | 65 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.1 | 2026-05-06 | v0.2.0..v0.2.1 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.2 | 2026-05-06 | v0.2.1..v0.2.2 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.3 | 2026-05-06 | v0.2.2..v0.2.3 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.4 | 2026-05-06 | v0.2.3..v0.2.4 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.5 | 2026-05-06 | v0.2.4..v0.2.5 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.6 | 2026-05-06 | v0.2.5..v0.2.6 | 1 | human-reviewed by nathan on 2026-05-27 |
-| v0.2.7 | 2026-05-22 | v0.2.6..v0.2.7 | 755 | pending human review |
+| v0.2.7 | 2026-05-22 | v0.2.6..v0.2.7 | 755 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.8 | 2026-05-22 | v0.2.7..v0.2.8 | 9 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.9 | 2026-05-22 | v0.2.8..v0.2.9 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.10 | 2026-05-22 | v0.2.9..v0.2.10 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.11 | 2026-05-22 | v0.2.10..v0.2.11 | 1 | human-reviewed by nathan on 2026-05-27 |
-| v0.2.12 | 2026-05-23 | v0.2.11..v0.2.12 | 224 | pending human review |
+| v0.2.12 | 2026-05-23 | v0.2.11..v0.2.12 | 224 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.13 | 2026-05-23 | v0.2.12..v0.2.13 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.14 | 2026-05-23 | v0.2.13..v0.2.14 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.15 | 2026-05-23 | v0.2.14..v0.2.15 | 1 | human-reviewed by nathan on 2026-05-27 |
@@ -63,39 +63,42 @@ Human reviewer checklist for each section:
 
 Range: `v0.1.0-smoke-passing..v0.2.0`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.0] — 2026-05-06
 
-v0.2.0 turns the smoke-passing prototype into the first process-wrapper release:
-the CLI can run commands as constrained Firecracker processes, the image stack
-supports minimal boot images, and the core lifecycle gained the performance
-primitives used by later releases.
+v0.2.0 is the first release where m80 becomes a usable process wrapper rather
+than a Firecracker skeleton. It adds `m80 run`, quickstart examples, minimal
+boot images, guest process IO, and the early lifecycle/performance machinery
+used by later releases.
 
 ### Added
 
-- Added the `m80 run` process-wrapper product surface, including workspace,
-  environment, stdout/stderr, exit-code, and first-run quickstart behavior.
-- Added minimal-image build and manifest support, PID-1 guestd boot, boot-args
-  dispatch by image/kernel kind, and smoke coverage for the minimal image path.
-- Added snapshot capture/restore plumbing, a persistent execution path, idle
-  timeout handling, cancellation, warm-pool groundwork, and per-phase timing
-  instrumentation for launch-latency work.
-- Added storage pivot groundwork: sparse per-VM overlays, host/guest drive
-  layout changes, and guest overlay mount/pivot behavior.
-- Added vsock graceful-stop and inverted-readiness fixes to make shutdown and
-  boot readiness deterministic.
+- Added the `m80 run` product surface, including workspace visibility,
+  environment handling, stdout/stderr capture, exit-code propagation,
+  config/profile loading, and quickstart examples.
+- Added guest process execution support for streaming IO, PTY-style
+  interaction, cancellation, idle timeout handling, and warm-owner lifecycle
+  plumbing.
+- Added minimal-image build support, image/kernel-kind manifest fields,
+  stripped-kernel build work, guest PID-1 mode, and workspace mount setup inside
+  the guest.
+- Added snapshot capture/restore primitives, persistent execution groundwork,
+  warm-pool groundwork, per-phase timing, and benchmark tooling for
+  launch-latency work.
+- Added sparse rootfs overlays, guest overlay mount/pivot behavior, storage
+  layout changes, and vsock-based readiness/shutdown paths.
 
 ### Changed
 
-- Reworked the release and docs surface around the process-wrapper model rather
-  than exposing Firecracker mechanics as the primary user workflow.
+- Reworked the docs and release surface around m80 as a generic process sandbox
+  instead of exposing raw Firecracker mechanics as the main workflow.
 - Tightened ready-probe cadence and removed the earlier smoke retry loop.
 
 ### Fixed
 
-- Fixed the systemd guestd boot ordering cycle and converted readiness to the
-  host-observable vsock path.
+- Fixed guestd boot ordering and readiness by moving from systemd-cycle-prone
+  startup to host-observable vsock readiness.
 
 ### v0.2.1
 
@@ -191,46 +194,49 @@ v0.2.6 is a CI-quality repair release.
 
 Range: `v0.2.6..v0.2.7`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.7] — 2026-05-22
 
-v0.2.7 is a large hardening and release-install epoch. It replaces the active
-wire protocol, expands adversarial coverage, improves jailer/guest isolation,
-and adds the release machinery used to prove public install artifacts.
+v0.2.7 is the big hardening and public-install release. It replaces the wire
+protocol, expands real-KVM and adversarial coverage, strengthens
+guest/jailer/network isolation, and adds the release/latest proof machinery
+needed for public installer confidence.
 
 ### Added
 
-- Added protobuf length-prefixed framing for the host/guest wire protocol,
-  replacing the previous JSON/base64 payload path.
-- Added broad real-KVM and fixture coverage for file operations, streaming,
-  PTY, cancellation, idle timeout, warm pool, snapshot restore, protocol
-  version rejection, diagnostics, cgroup behavior, storage overlays, outbound
-  networking, jailer recovery, and malicious guestd scenarios.
-- Added OutboundNat and JoinNetns networking surfaces, Firecracker drive PATCH
-  and hotplug contracts, guest uevent wait handling, and verified drive attach
-  workflow support.
-- Added guestd hardening improvements, including host liveness detection,
-  Ping/Pong health, CPU/memory hotplug event handling, and PID-1 storage repair
-  fallback.
-- Added jailer/security parity work covering cgroup setup, jail recovery,
-  daemonized launch, Bestiary conveyor-belt primitives, and attack-runner
-  harnesses.
-- Added release/public-install proof machinery for current-latest repair,
-  freshness policy, workflow policy checks, public access receipts, and release
-  asset verification.
+- Added protobuf length-prefixed framing and typed protocol surfaces for process
+  execution, file operations, PTY, streaming output, cancellation, health
+  checks, and hotplug coordination.
+- Added broad real-KVM and fixture coverage for launch, file operations,
+  streaming, PTY, cancellation, idle timeout, warm pools, snapshot restore,
+  protocol rejection, storage overlays, outbound networking, cgroups, jailer
+  recovery, and malicious guest behavior.
+- Added OutboundNat and JoinNetns networking surfaces, Firecracker drive
+  PATCH/hotplug support, guest uevent waiting, verified drive attach flow, and
+  stronger network setup/teardown recovery.
+- Added guestd hardening for host liveness, Ping/Pong health, CPU/memory
+  hotplug events, PID-1 storage repair fallback, bounded stdin payloads, and
+  cancellation crash paths.
+- Added jailer/security parity work covering cgroup setup, daemonized launch,
+  private Firecracker executable handling, jail recovery, attack-runner
+  harnesses, and isolation behavior docs.
+- Added stable public install machinery: asset indexes, installer verification,
+  freshness/update status, direct URL verification, proof ledgers, workflow
+  policy checks, and public release receipt validation.
 
 ### Changed
 
-- Hard-cut the wire protocol to protobuf framing with no active NDJSON fallback.
-- Simplified and normalized crate APIs, READMEs, and test helpers through
-  multi-round trim/refactor work.
+- Hard-cut the host/guest wire protocol to protobuf framing, with no active
+  NDJSON compatibility path.
+- Normalized crate APIs, READMEs, behavior docs, and test helpers through the
+  cleanup/refactor passes that followed the protocol and isolation work.
 
 ### Fixed
 
-- Fixed multiple launch, cancellation, cleanup, storage, network, cgroup, and
-  release-publication regressions found while expanding the hardening/test
-  surface.
+- Fixed launch, cleanup, cancellation, storage, networking, cgroup, jailer, and
+  release-publication regressions discovered by the expanded proof and
+  adversarial test surface.
 
 ### v0.2.8
 
@@ -302,34 +308,42 @@ v0.2.11 hardens generated VM identifier handling before launch.
 
 Range: `v0.2.11..v0.2.12`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.12] — 2026-05-23
 
-v0.2.12 consolidates the release-install epoch and adds operator support
-artifacts around freshness, bug reporting, proof ledgers, and install
-transaction validation.
+v0.2.12 closes out the release-install epoch. It improves the public installer,
+gives operators better diagnostics for install/update failures, and records the
+proof artifacts needed to trust latest, freshness, and release-readiness state.
 
 ### Added
 
-- Added the redacted `m80 bug-report` support bundle and related operator
-  diagnostic material.
-- Added release proof asset emission, proof-ledger validation, public-access
-  receipt handling, install-handoff verification, release readiness receipts,
-  and freshness/status renderer coverage.
-- Added troubleshooting coverage for quickstart and release-install failure
-  modes.
+- Added the redacted `m80 bug-report` support bundle for collecting operator
+  diagnostics without leaking sensitive host data.
+- Added quickstart troubleshooting taxonomy, generated troubleshooting
+  matrices, and coverage reports for common install/update failure modes.
+- Added install transaction proofing, install cleanup support, lock repair
+  guards, path canonicalization, selector preservation, extraction sandboxing,
+  host-binary manifest verification, and release-binary PATH installation.
+- Added release evidence artifacts for public install/status proof, freshness
+  drift and repair commands, provenance contents, public assets, latest
+  promotion, readiness decisions, repository protection, and publish authority.
+- Added freshness/update status rendering and safety-floor validation so
+  operators can distinguish stale latest, offline cache, policy failures, and
+  repairable local state.
 
 ### Changed
 
-- Consolidated release install epoch tracker state and command inventories.
-- Hardened install transaction proof handling and freshness command digest
-  generation.
+- Split installer, quickstart, environment, and preflight code into smaller
+  modules while keeping the public installer-first workflow.
+- Refreshed release runbooks, command inventories, proof digests, and
+  CI/workflow policy checks around the public install path.
 
 ### Fixed
 
-- Repaired release proof citations and generated documentation assertions found
-  while closing the release-install proof graph.
+- Fixed release proof citations, troubleshooting proof envelopes, install
+  handoff identity checks, upgrade/rollback atomicity, and freshness-status
+  documentation drift found while closing the release-install proof graph.
 
 ### v0.2.13
 
