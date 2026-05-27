@@ -5,6 +5,8 @@ any section below lands in `CHANGELOG.md`.
 
 Generated: 2026-05-27
 
+Required stable tag range: v0.2.0 through v0.2.25 (captured at leaf claim time).
+
 Source command shape:
 
 ```sh
@@ -570,4 +572,5 @@ privileged measurement benchmarks out of ordinary CI/test builds.
 
 This file is ready for human review. After review, the accepted sections should
 be edited into `CHANGELOG.md` in reverse-chronological order, leaving
-`[Unreleased]` with only post-backfill work.
+`[Unreleased]` with only post-backfill work. Follow
+`docs/release/backfill-landing.md` for the review, verifier, and landing gate.
