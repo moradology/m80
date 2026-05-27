@@ -152,6 +152,11 @@ if command -v mkfs.erofs >/dev/null 2>&1; then
     have_mkfs_erofs=1
 fi
 
+have_systemd=0
+if command -v systemd-run >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+    have_systemd=1
+fi
+
 have_docker=0
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     have_docker=1
@@ -317,6 +322,7 @@ allowed = {
     "requires-debugfs",
     "requires-erofs-tool",
     "requires-pmem",
+    "requires-systemd",
     "measurement",
     "manual",
 }
@@ -430,6 +436,10 @@ skip_reason_for() {
     fi
     if has_token requires-pmem && [[ "$pmem_artifacts" -ne 1 ]]; then
         echo "missing-pmem-artifacts"
+        return
+    fi
+    if has_token requires-systemd && [[ "$have_systemd" -ne 1 ]]; then
+        echo "requires-systemd"
         return
     fi
     if has_token requires-external-network && [[ "$external_network_enabled" -ne 1 ]]; then

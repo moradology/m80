@@ -24,6 +24,7 @@ ALLOWED = {
     "requires-debugfs",
     "requires-erofs-tool",
     "requires-pmem",
+    "requires-systemd",
     "measurement",
     "manual",
 }
