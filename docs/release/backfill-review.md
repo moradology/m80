@@ -51,11 +51,11 @@ Human reviewer checklist for each section:
 | v0.2.18 | 2026-05-23 | v0.2.17..v0.2.18 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.19 | 2026-05-23 | v0.2.18..v0.2.19 | 1 | human-reviewed by nathan on 2026-05-27 |
 | v0.2.20 | 2026-05-23 | v0.2.19..v0.2.20 | 1 | human-reviewed by nathan on 2026-05-27 |
-| v0.2.21 | 2026-05-27 | v0.2.20..v0.2.21 | 101 | pending human review |
-| v0.2.22 | 2026-05-27 | v0.2.21..v0.2.22 | 1 | pending human review |
-| v0.2.23 | 2026-05-27 | v0.2.22..v0.2.23 | 31 | pending human review |
-| v0.2.24 | 2026-05-27 | v0.2.23..v0.2.24 | 1 | pending human review |
-| v0.2.25 | 2026-05-27 | v0.2.24..v0.2.25 | 2 | pending human review |
+| v0.2.21 | 2026-05-27 | v0.2.20..v0.2.21 | 101 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.22 | 2026-05-27 | v0.2.21..v0.2.22 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.23 | 2026-05-27 | v0.2.22..v0.2.23 | 31 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.24 | 2026-05-27 | v0.2.23..v0.2.24 | 1 | human-reviewed by nathan on 2026-05-27 |
+| v0.2.25 | 2026-05-27 | v0.2.24..v0.2.25 | 2 | human-reviewed by nathan on 2026-05-27 |
 
 ## Draft Sections
 
@@ -456,7 +456,7 @@ prior release line.
 
 Range: `v0.2.20..v0.2.21`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.21] — 2026-05-27
 
@@ -489,7 +489,7 @@ disposable, broker-addressed real-KVM runs.
 
 Range: `v0.2.21..v0.2.22`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.22] — 2026-05-27
 
@@ -504,7 +504,7 @@ v0.2.22 fixes a legacy flat-cache installer backup case.
 
 Range: `v0.2.22..v0.2.23`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.23] — 2026-05-27
 
@@ -528,7 +528,7 @@ investigation work, while updating privileged E2E proof targets.
 
 Range: `v0.2.23..v0.2.24`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.24] — 2026-05-27
 
@@ -544,7 +544,7 @@ v0.2.24 restores the complete flat binary projection for systemd-selected hosts.
 
 Range: `v0.2.24..v0.2.25`
 
-Draft suggestion — human review required
+Human-reviewed by nathan on 2026-05-27
 
 ## [v0.2.25] — 2026-05-27
 
