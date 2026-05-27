@@ -120,7 +120,9 @@ The VM-launch path deliberately does **not** add an outer
 Firecracker itself does not need (`mount`, `pivot_root`, `mknod`, namespace
 setup), while Firecracker installs its own restrictive seccomp filter once
 it starts. A looser outer filter adds little; a tighter one breaks the
-jailer. Phase 2 (`m80-92eor`) owns any final-exec-site seccomp change.
+jailer. Phase 2 (`m80-92eor`) owns any final-exec process-state change;
+ADR 0012 later records that steady-state VMM seccomp is already
+Firecracker-owned.
 For the same reason, the VM-launch path deliberately does **not** add
 `RestrictNamespaces=`: the official jailer must be able to create or join the
 mount, pid, and network namespaces that form the jail.
@@ -232,14 +234,14 @@ unchanged and is out of scope for this ADR.
 
 ### I. Sequencing note for Phase 2
 
-The Phase 2 investigation (`m80-92eor`) may prove the final-exec-site gap is
-empty or smaller than expected because Firecracker already drops privilege and
-installs its own seccomp filter at startup. That result would narrow the value
-of Phase 1 but would not make Phase 1 useless: systemd still hardens the
-privileged official-jailer setup window and the network helper. The
-implementation may proceed, but the final release note must keep the claim
-bounded to Phase 1 and must not imply that systemd closes final-exec-site
-capability/seccomp ownership.
+The Phase 2 investigation (`m80-92eor`) later proved the final-exec-site gap is
+smaller than expected because Firecracker owns steady-state VMM seccomp at
+startup, but not empty because upstream still lacks a final-exec process-state
+hook. That result narrows the value of Phase 1 but does not make Phase 1
+useless: systemd still hardens the privileged official-jailer setup window and
+the network helper. Release notes must keep the claim bounded to Phase 1 and
+must not imply that systemd closes upstream-owned final-exec process-state
+ownership. See ADR 0012.
 
 ## Alternatives considered
 
@@ -250,7 +252,7 @@ capability/seccomp ownership.
 | OCI container runtime (Kata-style, firecracker-containerd) | Strong declarative hardening via OCI runtime spec | m80 is itself the sandbox; layering an outer container doubles the work and pushes the security boundary out to whatever runs the container | Wrong shape for m80 |
 | Inline `pre_exec` closure in `m80-jailer` | No extra binary on disk; same security delivered as wrapper | Loses the testable process boundary; raw FFI inside `m80-jailer` grows the audit-sweep-ineligible surface; needs a new safe-wrapper crate anyway, which is what the existing wrapper already is | Same code with worse testability |
 | Generic sandbox wrapper (`minijail`, `nsjail`, `bubblewrap`) | Battle-tested upstream | ~10k LOC of C as a runtime dep, with per-distro variation; not part of Firecracker's documented launch path | Wrong dep surface |
-| Patch upstream Firecracker's jailer (Phase 2 Path A) | Closes the final-exec-site gap this ADR cannot close | Multi-month upstream cycle with no certainty; gates only on Phase 2 not Phase 1 | Different scope; tracked separately in `m80-92eor` |
+| Patch upstream Firecracker's jailer (Phase 2 Path A) | Closes the final-exec process-state gap this ADR cannot close | Multi-month upstream cycle with no certainty; gates only on Phase 2 not Phase 1 | Different scope; tracked separately in `m80-92eor` and ADR 0012 |
 | Build an m80-owned launcher replacing the official jailer (Phase 2 Path B) | Full control of the final exec site | ~1000–2000 LOC of new safe-syscall-wrapper code; inherits every jailer CVE class; no seccomp-construction infrastructure exists in m80 today | Different scope; deferred |
 | Do nothing | Zero maintenance | Drops NNP, fd closure, ambient-cap clear, supplementary-group drop, extended rlimits. Unacceptable for the multi-tenant hostile-guest threat model | Wrong for threat model |
 
@@ -337,12 +339,12 @@ crash/recovery proof before the systemd path becomes the default.
   feature flag for the non-systemd path.
 - The official Firecracker jailer's role. Both paths exec the official
   jailer; m80 does not replace it.
-- Phase 2 final-exec-site capability/seccomp hardening of the Firecracker
-  process itself. See `docs/design/jailer-group-b-exec-site.md` and the
-  investigation epic `m80-92eor`. systemd inherits hardening across exec
-  but cannot apply a stricter policy *between* the jailer exec and the
-  Firecracker exec inside a single unit, so the Phase 2 gap is unchanged
-  by this ADR.
+- Phase 2 upstream-owned final-exec process-state hardening of the
+  Firecracker process itself. See `docs/design/jailer-group-b-exec-site.md`,
+  ADR 0012, and the investigation epic `m80-92eor`. systemd inherits hardening
+  across exec but cannot apply a stricter policy *between* the jailer exec and
+  the Firecracker exec inside a single unit, so the Phase 2 gap is unchanged by
+  this ADR.
 - `CLAUDE.md` or `AGENTS.md` prohibition on systemd. There was no such
   prohibition; this ADR is new doctrine, not a reversal of an existing
   one.
@@ -380,4 +382,5 @@ default path. The fallback still has it; the default no longer does.
 - `crates/m80-preflight/src/checks.rs` — where the new `check_systemd`
   lands.
 - Implementation epic `m80-9wm35` — this ADR is its `.1` child.
-- Phase 2 investigation epic `m80-92eor` — out of scope for this ADR.
+- Phase 2 investigation epic `m80-92eor` and ADR 0012 — out of scope for this
+  ADR, but now the recorded follow-up decision.
