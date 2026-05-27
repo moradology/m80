@@ -330,10 +330,7 @@ fn profile_report(
     if !explicit_override && profile.body_source != ProfileBodySource::BuiltinEnv {
         validate_installed_profile_paths(install_root, profile, diagnostics);
     }
-    let version_dir = profile
-        .artifact_dir
-        .as_deref()
-        .and_then(version_dir_from_artifact_dir);
+    let version_dir = version_dir_from_profile(install_root, profile);
     InstallProfileReport {
         name: profile.name.clone(),
         selection_source: profile.selection_source,
@@ -383,17 +380,13 @@ fn validate_installed_profile_paths(
             validate_profile_path_has_no_traversal(field, path, diagnostics);
         }
     }
-    match profile
-        .artifact_dir
-        .as_deref()
-        .and_then(version_dir_from_artifact_dir)
-    {
+    match version_dir_from_profile(install_root, profile) {
         Some(_) => {}
         None => diagnostics.push(diagnostic(
             InstallStateDiagnosticCode::ProfileArtifactDirMalformed,
             Some("artifact_dir"),
             profile.artifact_dir.clone(),
-            "profile artifact_dir must be <install-root>/versions/<tag>/artifacts".to_owned(),
+            "profile artifact_dir must be <install-root>/artifacts or <install-root>/versions/<tag>/artifacts".to_owned(),
         )),
     }
 }
@@ -463,6 +456,17 @@ fn version_dir_from_artifact_dir(artifact_dir: &Path) -> Option<PathBuf> {
         return None;
     }
     Some(version_dir.to_path_buf())
+}
+
+fn version_dir_from_profile(install_root: &Path, profile: &RuntimeProfile) -> Option<PathBuf> {
+    let artifact_dir = profile.artifact_dir.as_deref()?;
+    if artifact_dir == install_root.join(ARTIFACTS_DIR_NAME) {
+        return profile
+            .release_tag
+            .as_deref()
+            .map(|tag| install_root.join(VERSIONS_DIR_NAME).join(tag));
+    }
+    version_dir_from_artifact_dir(artifact_dir)
 }
 
 fn release_tag_from_version_dir(version_dir: &Path) -> Option<String> {

@@ -43,7 +43,7 @@ SHA256SUMS
 ```
 
 The copied guest manifest and build receipt are rewritten from release-local
-paths to the final installed `artifacts/` paths. The rewrite is not silent:
+paths to the final versioned `artifacts/` paths. The rewrite is not silent:
 `artifacts/install-provenance.json` records the source hash, installed hash,
 release tag, and `install_path_rewrite` transform for both rewritten JSON
 artifacts. The installed `bundle.json` and installed `SHA256SUMS` are rewritten
@@ -52,25 +52,55 @@ For official release installs, the original public `SHA256SUMS` is preserved in
 `artifacts/release-proof-cache/` with the rest of the verified public proof
 material.
 
-The executable entrypoint is `bin/m80`; guest metadata is rooted at
-`artifacts/output.ext4.manifest.json`.
+The installer also publishes a flat hardlink projection:
+
+```text
+<install-root>/bin/m80
+<install-root>/bin/m80-jailer-harden
+<install-root>/bin/m80-net-helper
+<install-root>/artifacts/vmlinux
+<install-root>/artifacts/output.ext4
+<install-root>/artifacts/output.ext4.manifest.json
+<install-root>/artifacts/output.ext4.build-receipt.json
+<install-root>/artifacts/m80-guestd
+<install-root>/artifacts/install-provenance.json
+<install-root>/artifacts/host-binaries.manifest.json
+```
+
+The flat binaries and payload artifacts are hardlinks to the selected versioned
+directory, not symlinks. Flat guest metadata is regenerated with flat absolute
+paths and published before the flat `host-binaries.manifest.json`; the host
+manifest is written last so clients see either the previous complete projection
+or the new complete projection. `release-proof-cache/` is hardlink-copied when
+official release proof material is present. The versioned metadata remains the
+install record used for rollback and multi-version coexistence.
+
+The canonical executable entrypoint is `<install-root>/bin/m80` (`bin/m80`
+inside the flat projection); guest metadata is rooted at
+`<install-root>/artifacts/output.ext4.manifest.json`
+(`artifacts/output.ext4.manifest.json`).
 
 The installer also publishes `<bin-dir>/m80` as a symlink to the installed
 release binary and verifies that `command -v m80` resolves to that path before
 flipping `<install-root>/active`. The default bin directory is `/usr/local/bin`
 for `/opt/m80` installs and `<install-root>/bin` for explicit fixture/proof
-roots; `--bin-dir <PATH>` overrides it. The detailed command handoff contract is
-captured in [`installer-path-handoff.md`](installer-path-handoff.md).
+roots; `--bin-dir <PATH>` overrides it. When the command handoff path is the
+flat `<install-root>/bin/m80`, the installer verifies the hardlink instead of
+replacing it with a symlink. The detailed command handoff contract is captured
+in [`installer-path-handoff.md`](installer-path-handoff.md).
 
 For the default install root `/opt/m80`, `/etc/m80/profiles/default.toml`
-points at the installed artifact paths, generated host-binaries manifest, and
-installed m80 helper binaries under the version directory.
+points at the flat artifact paths, generated flat host-binaries manifest, and
+flat m80 helper binaries.
 `/etc/m80/config.toml` selects that profile as `default`. For explicit
 `--install-root` fixture/proof installs, the same selector files are rooted at
 `<install-root>/profiles/default.toml` and `<install-root>/config.toml`.
 `<install-root>/active` is an absolute symlink to the selected version
 directory and changes only after the finalization transaction succeeds. The
-host manifest path is `artifacts/host-binaries.manifest.json`.
+client-facing host manifest path is
+`<install-root>/artifacts/host-binaries.manifest.json`; the version directory
+keeps its own `artifacts/host-binaries.manifest.json` as the versioned install
+record.
 
 ## Failure Contract
 

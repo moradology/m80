@@ -2,12 +2,9 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
-
-use crate::args::InstallSmokeGateArg;
 
 use super::super::quickstart::profile_writer::{
     write_installed_default_profile, InstalledDefaultProfile, InstalledProfileTransaction,
@@ -17,18 +14,25 @@ use bundle::{
     extract_bundle, list_bundle_entries, verify_entry_set, verify_extracted_tree,
     REQUIRED_BUNDLE_FILES,
 };
+use flat_projection::publish_flat_projection;
 use metadata::{
     read_bundle_metadata, rewrite_installed_metadata, set_final_modes, verify_bundle_metadata,
     verify_metadata_hashes, verify_sha256s_file, INSTALL_PROVENANCE_FILE,
 };
+use path_handoff::{install_path_handoff, path_handoff_rollback_error};
+use smoke_gate::{host_prerequisite_status, verify_smoke_gate};
 use source::{stage_bundle_source, validate_bundle_source_url};
 
 mod bundle;
+mod flat_projection;
 mod lock;
 mod metadata;
+mod path_handoff;
 mod proof_cache;
 mod reinstall;
+mod reinstall_flat;
 mod release_material;
+mod smoke_gate;
 mod source;
 
 const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
@@ -235,7 +239,15 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let mut final_dir_guard = PublishedVersionGuard::armed(final_dir.clone());
 
     let binary_config = installed_binary_config(&final_dir, &metadata);
-    let host_binaries_manifest = write_install_host_binaries_manifest(&final_dir, &binary_config)?;
+    let _versioned_host_binaries_manifest =
+        write_install_host_binaries_manifest(&final_dir, &binary_config)?;
+    let (flat_projection, mut flat_guard) = publish_flat_projection(
+        &install_root,
+        &final_dir,
+        &binary_config,
+        &metadata.release_tag,
+        staging_dir.path(),
+    )?;
     let run_root = install_root.join("run");
     fs::create_dir_all(&run_root).map_err(|source| FcError::PathIo {
         path: run_root.clone(),
@@ -246,14 +258,14 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let mut selector_transaction =
         InstalledProfileTransaction::capture(&default_profile, &selector_paths.config_path)?;
     let profile_path = write_installed_default_profile(InstalledDefaultProfile {
-        artifact_dir: &final_dir.join("artifacts"),
+        artifact_dir: &flat_projection.artifact_dir,
         run_root: &run_root,
         profile_dir: &selector_paths.profile_dir,
         config_path: &selector_paths.config_path,
-        binary_config,
+        binary_config: flat_projection.binary_config.clone(),
         release_tag: Some(metadata.release_tag.clone()),
         m80_version: plan.binary_version.clone(),
-        host_binaries_manifest: &host_binaries_manifest,
+        host_binaries_manifest: &flat_projection.host_binaries_manifest,
         adopt_existing_config: plan.adopt_existing_config,
         adoption_command: adoption_command(bundle_url, &install_root),
     })?;
@@ -282,9 +294,10 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         return Err(err);
     }
     handoff.commit();
+    flat_guard.disarm();
     final_dir_guard.disarm();
 
-    let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
+    let install_provenance = flat_projection.artifact_dir.join(INSTALL_PROVENANCE_FILE);
     let release_material = verified_official_bundle.as_ref().map(|verified_bundle| {
         let mut summary =
             ReleaseMaterialInstallSummary::from_verification(&verified_bundle.summary, &final_dir);
@@ -303,7 +316,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         active_bundle_path: final_dir.display().to_string(),
         files_copied: REQUIRED_BUNDLE_FILES.len() + 1,
         install_provenance: install_provenance.display().to_string(),
-        host_binaries_manifest: host_binaries_manifest.display().to_string(),
+        host_binaries_manifest: flat_projection.host_binaries_manifest.display().to_string(),
         default_profile: default_profile.display().to_string(),
         profile_path: profile_path.display().to_string(),
         active_pointer: active_pointer.display().to_string(),
@@ -348,87 +361,6 @@ fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
     final_dir.join("artifacts").join("release-proof-cache")
 }
 
-#[derive(Debug)]
-struct PathHandoffSummary {
-    installed_m80_path: String,
-    installed_m80_version: String,
-    link_path: PathBuf,
-    backup_link: PathBuf,
-    had_previous_link: bool,
-}
-
-fn install_path_handoff(final_dir: &Path, bin_dir: &Path) -> Result<PathHandoffSummary, FcError> {
-    fs::create_dir_all(bin_dir).map_err(|source| FcError::PathIo {
-        path: bin_dir.to_path_buf(),
-        source,
-    })?;
-    let installed_m80 = final_dir.join("bin/m80");
-    let link_path = bin_dir.join("m80");
-    let temp_link = bin_dir.join(format!(".m80.install.{}", std::process::id()));
-    let backup_link = bin_dir.join(format!(".m80.install.previous.{}", std::process::id()));
-    if temp_link.exists() {
-        fs::remove_file(&temp_link).map_err(|source| FcError::PathIo {
-            path: temp_link.clone(),
-            source,
-        })?;
-    }
-    if backup_link.exists() {
-        fs::remove_file(&backup_link).map_err(|source| FcError::PathIo {
-            path: backup_link.clone(),
-            source,
-        })?;
-    }
-    let previous_link = previous_m80_link_state(&link_path)?;
-    symlink(&installed_m80, &temp_link).map_err(|source| FcError::PathIo {
-        path: temp_link.clone(),
-        source,
-    })?;
-    if previous_link.exists {
-        fs::rename(&link_path, &backup_link).map_err(|source| FcError::PathIo {
-            path: link_path.clone(),
-            source,
-        })?;
-    }
-    fs::rename(&temp_link, &link_path).map_err(|source| FcError::PathIo {
-        path: link_path.clone(),
-        source,
-    })?;
-
-    let handoff = verify_path_handoff(&link_path, bin_dir);
-    if handoff.is_err() {
-        restore_previous_m80_link(&link_path, &backup_link, previous_link.exists)?;
-    }
-    let installed_m80_version = handoff?;
-    Ok(PathHandoffSummary {
-        installed_m80_path: link_path.display().to_string(),
-        installed_m80_version,
-        link_path,
-        backup_link,
-        had_previous_link: previous_link.exists,
-    })
-}
-
-impl PathHandoffSummary {
-    fn rollback(&self) -> Result<(), FcError> {
-        restore_previous_m80_link(&self.link_path, &self.backup_link, self.had_previous_link)
-    }
-
-    fn commit(&self) {
-        if self.had_previous_link {
-            let _ = fs::remove_file(&self.backup_link);
-        }
-    }
-}
-
-fn path_handoff_rollback_error(primary: FcError, rollback: FcError) -> FcError {
-    FcError::Config(ConfigError::InvalidValue {
-        field: "install.bin_dir",
-        reason: format!(
-            "active pointer flip failed after PATH handoff, and PATH handoff rollback also failed; primary_error={primary}; rollback_error={rollback}"
-        ),
-    })
-}
-
 struct PublishedVersionGuard {
     path: PathBuf,
     armed: bool,
@@ -450,11 +382,6 @@ impl Drop for PublishedVersionGuard {
             let _ = fs::remove_dir_all(&self.path);
         }
     }
-}
-
-#[derive(Debug)]
-struct PreviousM80Link {
-    exists: bool,
 }
 
 struct PreviousActiveCandidate {
@@ -494,113 +421,6 @@ fn previous_active_candidate(
     }))
 }
 
-fn previous_m80_link_state(link_path: &Path) -> Result<PreviousM80Link, FcError> {
-    match link_path.symlink_metadata() {
-        Ok(metadata) => {
-            let kind = metadata.file_type();
-            if kind.is_file() || kind.is_symlink() {
-                Ok(PreviousM80Link { exists: true })
-            } else {
-                Err(FcError::Config(ConfigError::InvalidValue {
-                    field: "install.bin_dir",
-                    reason: format!(
-                        "{} already exists but is not a file or symlink",
-                        link_path.display()
-                    ),
-                }))
-            }
-        }
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {
-            Ok(PreviousM80Link { exists: false })
-        }
-        Err(source) => Err(FcError::PathIo {
-            path: link_path.to_path_buf(),
-            source,
-        }),
-    }
-}
-
-fn verify_path_handoff(link_path: &Path, bin_dir: &Path) -> Result<String, FcError> {
-    match command_v_m80()? {
-        Some(resolved) if resolved == link_path => installed_m80_version(link_path),
-        Some(resolved) => Err(path_handoff_error(bin_dir, link_path, Some(&resolved))),
-        None => Err(path_handoff_error(bin_dir, link_path, None)),
-    }
-}
-
-fn path_handoff_error(bin_dir: &Path, link_path: &Path, resolved: Option<&Path>) -> FcError {
-    let observed = resolved
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "no m80 on PATH".to_owned());
-    FcError::Config(ConfigError::InvalidValue {
-        field: "install.bin_dir",
-        reason: format!(
-            "PATH handoff failed: command -v m80 resolved {observed} but expected {}; repair with: export PATH={}:$PATH",
-            link_path.display(),
-            bin_dir.display()
-        ),
-    })
-}
-
-fn command_v_m80() -> Result<Option<PathBuf>, FcError> {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("command -v m80")
-        .output()
-        .map_err(|source| FcError::CommandSpawnFailed {
-            command: "resolve installed m80",
-            source,
-        })?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    Ok(Some(PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim().to_owned(),
-    )))
-}
-
-fn installed_m80_version(path: &Path) -> Result<String, FcError> {
-    let output = Command::new(path)
-        .arg("--version")
-        .output()
-        .map_err(|source| FcError::CommandSpawnFailed {
-            command: "installed m80 --version",
-            source,
-        })?;
-    if !output.status.success() {
-        return Err(FcError::CommandFailed {
-            command: "installed m80 --version",
-            status: output.status,
-            output: String::from_utf8_lossy(&output.stderr).into_owned(),
-        });
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-fn restore_previous_m80_link(
-    link_path: &Path,
-    backup_link: &Path,
-    had_previous_link: bool,
-) -> Result<(), FcError> {
-    match fs::remove_file(link_path) {
-        Ok(()) => {}
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(FcError::PathIo {
-                path: link_path.to_path_buf(),
-                source,
-            });
-        }
-    }
-    if had_previous_link {
-        fs::rename(backup_link, link_path).map_err(|source| FcError::PathIo {
-            path: link_path.to_path_buf(),
-            source,
-        })?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallSelectorPaths {
     profile_dir: PathBuf,
@@ -619,11 +439,9 @@ pub(super) fn planned_version_dir(install_root: &Path, release_tag: &str) -> Pat
 
 pub(super) fn planned_host_binaries_manifest_path(
     install_root: &Path,
-    release_tag: &str,
+    _release_tag: &str,
 ) -> PathBuf {
-    planned_version_dir(install_root, release_tag)
-        .join("artifacts")
-        .join("host-binaries.manifest.json")
+    install_root.join("artifacts/host-binaries.manifest.json")
 }
 
 pub(super) fn planned_default_profile_path(install_root: &Path) -> PathBuf {
@@ -670,7 +488,12 @@ fn idempotent_reinstall_summary(
     reinstall: proof_cache::ProofCacheReinstallReport,
 ) -> LayoutInstallSummary {
     let host_binaries_manifest = final_dir
-        .join("artifacts")
+        .parent()
+        .and_then(Path::parent)
+        .map_or_else(
+            || final_dir.join("artifacts"),
+            |root| root.join("artifacts"),
+        )
         .join("host-binaries.manifest.json");
     let selector_paths = install_selector_paths(install_root);
     let default_profile = selector_paths.default_profile_path();
@@ -686,7 +509,12 @@ fn idempotent_reinstall_summary(
         active_bundle_path: final_dir.display().to_string(),
         files_copied: 0,
         install_provenance: final_dir
-            .join("artifacts")
+            .parent()
+            .and_then(Path::parent)
+            .map_or_else(
+                || final_dir.join("artifacts"),
+                |root| root.join("artifacts"),
+            )
             .join(INSTALL_PROVENANCE_FILE)
             .display()
             .to_string(),
@@ -731,9 +559,8 @@ pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
         installed_m80_version: "m80 v0.0.0".to_owned(),
         active_bundle_path: "/opt/m80/versions/v0.0.0".to_owned(),
         files_copied: 0,
-        install_provenance: "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json".to_owned(),
-        host_binaries_manifest: "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"
-            .to_owned(),
+        install_provenance: "/opt/m80/artifacts/install-provenance.json".to_owned(),
+        host_binaries_manifest: "/opt/m80/artifacts/host-binaries.manifest.json".to_owned(),
         default_profile: "/etc/m80/profiles/default.toml".to_owned(),
         profile_path: "/etc/m80/profiles/default.toml".to_owned(),
         active_pointer: "/opt/m80/active".to_owned(),
@@ -1007,154 +834,6 @@ fn write_install_host_binaries_manifest(
     Ok(path)
 }
 
-struct SmokeGateResult {
-    selected_gate: &'static str,
-    preflight_gate: &'static str,
-    run_smoke_command: Option<Vec<String>>,
-}
-
-fn verify_smoke_gate(
-    plan: &InstallPlan,
-    bundle_url: &str,
-    final_dir: &Path,
-    selector_paths: &InstallSelectorPaths,
-) -> Result<SmokeGateResult, FcError> {
-    match plan.smoke_gate {
-        InstallSmokeGateArg::PreflightOnly => {
-            let preflight_gate = verify_preflight_gate(bundle_url)?;
-            Ok(SmokeGateResult {
-                selected_gate: "preflight-only",
-                preflight_gate,
-                run_smoke_command: None,
-            })
-        }
-        InstallSmokeGateArg::RunSmoke => {
-            let preflight_gate = verify_live_preflight_for_run_smoke(bundle_url, plan, final_dir)?;
-            let command = run_process_smoke(final_dir, selector_paths)?;
-            Ok(SmokeGateResult {
-                selected_gate: "run-smoke",
-                preflight_gate,
-                run_smoke_command: Some(command),
-            })
-        }
-    }
-}
-
-fn verify_preflight_gate(bundle_url: &str) -> Result<&'static str, FcError> {
-    let config = m80_preflight::HostFeaturePreflightConfig::from_env()?;
-    let discovery = if use_hostless_fixture_preflight(bundle_url)? {
-        m80_preflight::verify_host_substrate_fixture(
-            config,
-            &m80_preflight::HostSubstrateFixture::supported_root(),
-        )?
-    } else {
-        m80_preflight::verify_host_substrate(config)?
-    };
-    Ok(match discovery.proof_kind {
-        m80_preflight::HostSubstrateProofKind::LivePreflight => "live_preflight",
-        m80_preflight::HostSubstrateProofKind::HostlessFixture => "hostless_fixture",
-    })
-}
-
-fn verify_live_preflight_for_run_smoke(
-    bundle_url: &str,
-    plan: &InstallPlan,
-    final_dir: &Path,
-) -> Result<&'static str, FcError> {
-    let resolved_tag = resolved_tag_from_version_dir(final_dir);
-
-    if use_hostless_fixture_preflight(bundle_url)? {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field: "install.smoke_gate",
-            reason: format!(
-                "selected_gate=run-smoke resolved_tag={resolved_tag} preflight_output=hostless_fixture_refused requires live KVM and cannot use hostless fixture; install_root={}; repair_command=m80 install --bundle-url {} --install-root {} --smoke-gate preflight-only",
-                plan.install_root,
-                shell_single_quote(bundle_url),
-                shell_single_quote(&plan.install_root),
-            ),
-        }));
-    }
-    let preflight_gate = verify_preflight_gate(bundle_url)?;
-    if preflight_gate != "live_preflight" {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field: "install.smoke_gate",
-            reason: format!(
-                "selected_gate=run-smoke resolved_tag={resolved_tag} preflight_output={preflight_gate} requires live_preflight, got {preflight_gate}; install_root={}",
-                plan.install_root
-            ),
-        }));
-    }
-    Ok(preflight_gate)
-}
-
-fn run_process_smoke(
-    final_dir: &Path,
-    selector_paths: &InstallSelectorPaths,
-) -> Result<Vec<String>, FcError> {
-    let installed_m80 = final_dir.join("bin/m80");
-    let command = process_smoke_command(final_dir);
-    let resolved_tag = resolved_tag_from_version_dir(final_dir);
-
-    let output = Command::new(&installed_m80)
-        .args(["run", "--", "echo", "hello"])
-        .output()
-        .map_err(|source| FcError::PathIo {
-            path: installed_m80.clone(),
-            source,
-        })?;
-    if !output.status.success() || output.stdout != b"hello\n" {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field: "install.smoke_gate",
-            reason: format!(
-                "selected_gate=run-smoke resolved_tag={resolved_tag} preflight_output=live_preflight command={} exit_status={} stdout={} stderr={} active_profile=default config_path={} profile_dir={} repair_command=m80 preflight",
-                command.join(" "),
-                output
-                    .status
-                    .code()
-                    .map_or_else(|| "signal".to_owned(), |code| code.to_string()),
-                String::from_utf8_lossy(&output.stdout).trim_end(),
-                String::from_utf8_lossy(&output.stderr).trim_end(),
-                selector_paths.config_path.display(),
-                selector_paths.profile_dir.display(),
-            ),
-        }));
-    }
-    Ok(command)
-}
-
-fn process_smoke_command(final_dir: &Path) -> Vec<String> {
-    vec![
-        final_dir.join("bin/m80").display().to_string(),
-        "run".to_owned(),
-        "--".to_owned(),
-        "echo".to_owned(),
-        "hello".to_owned(),
-    ]
-}
-
-fn resolved_tag_from_version_dir(final_dir: &Path) -> &str {
-    final_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("<unknown>")
-}
-
-fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
-    #[cfg(debug_assertions)]
-    {
-        if std::env::var_os("M80_INSTALL_TEST_HOSTLESS_OFFICIAL").is_some() {
-            return Ok(true);
-        }
-        Ok(std::env::var_os("M80_INSTALL_HOSTLESS_FIXTURE").is_some()
-            && source::is_fixture_bundle_url(bundle_url)?)
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = bundle_url;
-        Ok(false)
-    }
-}
-
 fn flip_active_pointer(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
     maybe_inject_active_flip_failure()?;
     require_absolute_path("active_pointer", active_pointer)?;
@@ -1236,15 +915,6 @@ fn maybe_inject_active_flip_failure() -> Result<(), FcError> {
     Ok(())
 }
 
-fn host_prerequisite_status(preflight_gate: &str) -> String {
-    match preflight_gate {
-        "live_preflight" => "passed:live_preflight",
-        "hostless_fixture" => "passed:hostless_fixture",
-        other => other,
-    }
-    .to_owned()
-}
-
 fn finalization_order(include_release_proof_cache: bool) -> Vec<&'static str> {
     let mut order = vec![
         "bundle_verification",
@@ -1256,6 +926,7 @@ fn finalization_order(include_release_proof_cache: bool) -> Vec<&'static str> {
     }
     order.extend([
         "host_binaries_manifest",
+        "flat_projection",
         "default_profile",
         "preflight_smoke_gate",
         "active_pointer_flip",

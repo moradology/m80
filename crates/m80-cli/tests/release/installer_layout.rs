@@ -1,5 +1,5 @@
 use std::fs;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{symlink, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
@@ -118,7 +118,7 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("finalization_order=bundle_verification,host_prerequisite_verification,install_provenance,host_binaries_manifest,default_profile,preflight_smoke_gate,active_pointer_flip"),
+        stdout.contains("finalization_order=bundle_verification,host_prerequisite_verification,install_provenance,host_binaries_manifest,flat_projection,default_profile,preflight_smoke_gate,active_pointer_flip"),
         "{stdout}"
     );
 
@@ -152,10 +152,7 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         stdout.contains(&format!("active_bundle_path={}", version_dir.display())),
         "{stdout}"
     );
-    assert_eq!(
-        fs::read_link(&installed_m80).unwrap(),
-        version_dir.join("bin/m80")
-    );
+    assert_hardlinked(&version_dir.join("bin/m80"), &installed_m80);
     for relpath in REQUIRED_INSTALLED_FILES {
         assert!(
             version_dir.join(relpath).is_file(),
@@ -173,10 +170,17 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
     );
 
     let artifacts = version_dir.join("artifacts");
-    let host_binaries_manifest = artifacts.join("host-binaries.manifest.json");
+    let versioned_host_binaries_manifest = artifacts.join("host-binaries.manifest.json");
+    assert!(
+        versioned_host_binaries_manifest.is_file(),
+        "installer must keep versioned host-binaries manifest"
+    );
+    let flat_bin = install_root.join("bin");
+    let flat_artifacts = install_root.join("artifacts");
+    let host_binaries_manifest = flat_artifacts.join("host-binaries.manifest.json");
     assert!(
         host_binaries_manifest.is_file(),
-        "installer must emit host-binaries manifest"
+        "installer must emit flat host-binaries manifest"
     );
     assert!(
         stdout.contains(&format!(
@@ -185,6 +189,12 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         )),
         "{stdout}"
     );
+    for name in ["m80", "m80-jailer-harden", "m80-net-helper"] {
+        assert_hardlinked(&version_dir.join("bin").join(name), &flat_bin.join(name));
+    }
+    for name in ["m80-guestd", "output.ext4", "vmlinux"] {
+        assert_hardlinked(&artifacts.join(name), &flat_artifacts.join(name));
+    }
     let profile_path = install_root.join("profiles/default.toml");
     assert!(
         profile_path.is_file(),
@@ -222,17 +232,12 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
     );
     assert!(profile.contains("jailer_harden_bin = "), "{profile}");
     assert!(
-        profile.contains(
-            &version_dir
-                .join("bin/m80-jailer-harden")
-                .display()
-                .to_string()
-        ),
+        profile.contains(&flat_bin.join("m80-jailer-harden").display().to_string()),
         "{profile}"
     );
     assert!(profile.contains("net_helper_bin = "), "{profile}");
     assert!(
-        profile.contains(&version_dir.join("bin/m80-net-helper").display().to_string()),
+        profile.contains(&flat_bin.join("m80-net-helper").display().to_string()),
         "{profile}"
     );
     let config = fs::read_to_string(install_root.join("config.toml")).unwrap();
@@ -280,6 +285,79 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         "artifacts/output.ext4.build-receipt.json",
         &receipt_path,
     );
+
+    let flat_manifest_path = flat_artifacts.join("output.ext4.manifest.json");
+    let flat_manifest = Manifest::read(&flat_manifest_path).unwrap();
+    assert_eq!(flat_manifest.kernel_image, flat_artifacts.join("vmlinux"));
+    assert_eq!(
+        flat_manifest.output_rootfs_image,
+        flat_artifacts.join("output.ext4")
+    );
+    assert_eq!(
+        flat_manifest.daemon_binary_path,
+        flat_artifacts.join("m80-guestd")
+    );
+    flat_manifest.verify(&flat_artifacts).unwrap();
+
+    let flat_receipt_path = flat_artifacts.join("output.ext4.build-receipt.json");
+    let flat_receipt = BuildReceipt::read(&flat_receipt_path).unwrap();
+    assert_eq!(flat_receipt.manifest_path, flat_manifest_path);
+    assert_eq!(
+        flat_receipt.manifest_sha256,
+        sha256_hex(&flat_manifest_path)
+    );
+    assert_receipt_artifact(
+        &flat_receipt,
+        BuildReceiptArtifactKind::KernelImage,
+        &flat_artifacts.join("vmlinux"),
+    );
+    assert_receipt_artifact(
+        &flat_receipt,
+        BuildReceiptArtifactKind::OutputRootfsImage,
+        &flat_artifacts.join("output.ext4"),
+    );
+    assert_receipt_artifact(
+        &flat_receipt,
+        BuildReceiptArtifactKind::DaemonBinaryPath,
+        &flat_artifacts.join("m80-guestd"),
+    );
+
+    let flat_provenance_path = flat_artifacts.join("install-provenance.json");
+    let flat_provenance = InstallProvenance::read(&flat_provenance_path).unwrap();
+    assert_eq!(flat_provenance.release_tag.as_deref(), Some(RELEASE_TAG));
+    assert_rewrite_record(
+        &flat_provenance,
+        InstallProvenanceArtifact::GuestManifest,
+        "artifacts/output.ext4.manifest.json",
+        &flat_manifest_path,
+    );
+    assert_rewrite_record(
+        &flat_provenance,
+        InstallProvenanceArtifact::BuildReceipt,
+        "artifacts/output.ext4.build-receipt.json",
+        &flat_receipt_path,
+    );
+
+    let host_manifest_json: Value =
+        serde_json::from_str(&fs::read_to_string(&host_binaries_manifest).unwrap()).unwrap();
+    let binary_paths = host_manifest_json["binaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        binary_paths.contains(&flat_bin.join("m80").to_str().unwrap()),
+        "{binary_paths:?}"
+    );
+    assert!(
+        binary_paths.contains(&flat_bin.join("m80-jailer-harden").to_str().unwrap()),
+        "{binary_paths:?}"
+    );
+    assert!(
+        binary_paths.contains(&flat_bin.join("m80-net-helper").to_str().unwrap()),
+        "{binary_paths:?}"
+    );
 }
 
 #[test]
@@ -326,7 +404,7 @@ fn install_json_success_uses_short_machine_summary_fields() {
     let data = &value["data"];
     let version_dir = install_root.join("versions").join(&bundle.release_tag);
     let default_profile = install_root.join("profiles/default.toml");
-    let host_binaries_manifest = version_dir.join("artifacts/host-binaries.manifest.json");
+    let host_binaries_manifest = install_root.join("artifacts/host-binaries.manifest.json");
 
     assert_eq!(data["state"], "installed");
     assert_eq!(data["release_tag"], bundle.release_tag);
@@ -472,6 +550,14 @@ fn install_preflight_only_failure_leaves_version_inactive() {
     assert!(
         !install_root.join("active").exists(),
         "failed preflight-only gate must not activate the attempted version"
+    );
+    assert!(
+        !install_root.join("bin").exists(),
+        "failed first install must remove flat bin projection"
+    );
+    assert!(
+        !install_root.join("artifacts").exists(),
+        "failed first install must remove flat artifact projection"
     );
 }
 
@@ -629,7 +715,7 @@ fn install_bundle_layout_rejects_existing_command_directory_before_handoff_mutat
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
-        stderr.contains("already exists but is not a file or symlink"),
+        stderr.contains("flat projection target already exists as directory"),
         "{stderr}"
     );
     assert_eq!(
@@ -1086,6 +1172,23 @@ fn write_raw_install_lock(install_root: &Path, contents: &[u8]) -> PathBuf {
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     set_mode(path, 0o755);
+}
+
+fn assert_hardlinked(expected: &Path, observed: &Path) {
+    let expected_meta = fs::metadata(expected).unwrap();
+    let observed_meta = fs::symlink_metadata(observed).unwrap();
+    assert!(
+        observed_meta.is_file() && !observed_meta.file_type().is_symlink(),
+        "{} must be a regular file",
+        observed.display()
+    );
+    assert_eq!(
+        (observed_meta.dev(), observed_meta.ino()),
+        (expected_meta.dev(), expected_meta.ino()),
+        "{} must be a hardlink to {}",
+        observed.display(),
+        expected.display()
+    );
 }
 
 fn assert_malformed_bundle_fails_before_activation(

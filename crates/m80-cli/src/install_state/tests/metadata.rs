@@ -422,6 +422,54 @@ pub(super) fn write_complete_install_metadata(fixture: &InstallStateFixture, tag
     proof_fixture::write_proof_cache(&artifacts.join("release-proof-cache"), tag);
 }
 
+pub(super) fn write_flat_projection_metadata(fixture: &InstallStateFixture, tag: &str) {
+    let version_dir = fixture.install_root().join("versions").join(tag);
+    let version_artifacts = version_dir.join("artifacts");
+    let flat_artifacts = fixture.install_root().join("artifacts");
+    fs::create_dir_all(&flat_artifacts).expect("create flat artifacts");
+    for name in [
+        "vmlinux",
+        "output.ext4",
+        "output.ext4.manifest.json",
+        "output.ext4.build-receipt.json",
+        "m80-guestd",
+    ] {
+        fs::copy(version_artifacts.join(name), flat_artifacts.join(name))
+            .expect("copy flat artifact");
+    }
+    let guest_manifest = flat_artifacts.join("output.ext4.manifest.json");
+    let build_receipt = flat_artifacts.join("output.ext4.build-receipt.json");
+    InstallProvenance::new(
+        Some(tag.to_owned()),
+        vec![
+            install_transform(
+                InstallProvenanceArtifact::GuestManifest,
+                "artifacts/output.ext4.manifest.json",
+                &guest_manifest,
+            ),
+            install_transform(
+                InstallProvenanceArtifact::BuildReceipt,
+                "artifacts/output.ext4.build-receipt.json",
+                &build_receipt,
+            ),
+        ],
+    )
+    .write(&flat_artifacts.join("install-provenance.json"))
+    .expect("write flat install provenance");
+    HostBinariesManifest::new(
+        vec![host_binary(
+            HostBinaryName::Firecracker,
+            "/opt/firecracker/bin/firecracker",
+        )],
+        vec![host_material(
+            HostLaunchMaterialName::FirecrackerSeccompFilter,
+            "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        )],
+    )
+    .write(&flat_artifacts.join("host-binaries.manifest.json"))
+    .expect("write flat host-binaries manifest");
+}
+
 fn installed_fixture() -> InstallStateFixture {
     let fixture = InstallStateFixture::new();
     fixture.write_installed_profile(TAG);

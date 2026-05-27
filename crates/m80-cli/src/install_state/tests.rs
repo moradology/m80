@@ -78,6 +78,40 @@ fn resolver_reports_healthy_active_release() {
 }
 
 #[test]
+fn resolver_accepts_flat_installed_profile_for_active_release() {
+    let fixture = InstallStateFixture::new();
+    let artifact_dir = fixture.install_root().join("artifacts");
+    fixture.write_profile_with_artifact_dir("default", "v1.2.3", artifact_dir);
+    metadata::write_complete_install_metadata(&fixture, "v1.2.3");
+    metadata::write_flat_projection_metadata(&fixture, "v1.2.3");
+    fixture.write_system_config("default");
+    fixture.point_active_at("v1.2.3");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::HealthyActiveRelease);
+    let expected_version_dir = fixture.install_root().join("versions/v1.2.3");
+    assert_eq!(
+        report
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.version_dir.as_deref()),
+        Some(expected_version_dir.as_path())
+    );
+    let expected_host_manifest = fixture
+        .install_root()
+        .join("artifacts/host-binaries.manifest.json");
+    assert_eq!(
+        report
+            .metadata
+            .as_ref()
+            .map(|metadata| metadata.host_binaries_manifest.path.as_path()),
+        Some(expected_host_manifest.as_path())
+    );
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+}
+
+#[test]
 fn resolver_reports_missing_active_pointer() {
     let fixture = InstallStateFixture::new();
     fixture.write_installed_profile("v1.2.3");

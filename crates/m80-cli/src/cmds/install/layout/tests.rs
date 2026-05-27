@@ -24,7 +24,7 @@ fn install_root_override_uses_root_local_selector_paths() {
 fn run_smoke_command_uses_installed_binary_and_public_echo_probe() {
     let final_dir = Path::new("/opt/m80/versions/v1.2.3");
 
-    let command = process_smoke_command(final_dir);
+    let command = smoke_gate::process_smoke_command(final_dir);
 
     assert_eq!(
         command,

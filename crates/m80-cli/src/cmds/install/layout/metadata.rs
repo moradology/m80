@@ -296,6 +296,74 @@ pub(in crate::cmds::install::layout) fn rewrite_installed_metadata(
     rewrite_installed_sha256s(root)
 }
 
+pub(in crate::cmds::install::layout) fn write_flat_artifact_metadata(
+    version_artifacts: &Path,
+    output_artifacts: &Path,
+    installed_artifacts: &Path,
+    release_tag: &str,
+) -> Result<(), FcError> {
+    fs::create_dir_all(output_artifacts).map_err(|source| FcError::PathIo {
+        path: output_artifacts.to_path_buf(),
+        source,
+    })?;
+    let source_manifest_path = version_artifacts.join("output.ext4.manifest.json");
+    let source_receipt_path = version_artifacts.join("output.ext4.build-receipt.json");
+    let output_manifest_path = output_artifacts.join("output.ext4.manifest.json");
+    let output_receipt_path = output_artifacts.join("output.ext4.build-receipt.json");
+    let installed_manifest_path = installed_artifacts.join("output.ext4.manifest.json");
+    let installed_receipt_path = installed_artifacts.join("output.ext4.build-receipt.json");
+    let source_manifest_sha = sha256_file(&source_manifest_path)?;
+    let source_receipt_sha = sha256_file(&source_receipt_path)?;
+
+    let mut manifest = Manifest::read(&source_manifest_path).map_err(FcError::Manifest)?;
+    manifest.daemon_binary_path = installed_artifacts.join("m80-guestd");
+    manifest.kernel_image = installed_artifacts.join("vmlinux");
+    manifest.output_rootfs_image = installed_artifacts.join("output.ext4");
+    manifest
+        .write(&output_manifest_path)
+        .map_err(FcError::Manifest)?;
+    let flat_manifest_sha = sha256_file(&output_manifest_path)?;
+
+    let mut receipt = BuildReceipt::read(&source_receipt_path).map_err(FcError::Manifest)?;
+    receipt.manifest_path = installed_manifest_path.clone();
+    receipt.manifest_sha256 = flat_manifest_sha.clone();
+    for artifact in &mut receipt.artifacts {
+        artifact.path = match artifact.kind {
+            BuildReceiptArtifactKind::KernelImage => installed_artifacts.join("vmlinux"),
+            BuildReceiptArtifactKind::OutputRootfsImage => installed_artifacts.join("output.ext4"),
+            BuildReceiptArtifactKind::DaemonBinaryPath => installed_artifacts.join("m80-guestd"),
+            BuildReceiptArtifactKind::SourceRootfsImage => artifact.path.clone(),
+        };
+    }
+    receipt
+        .write(&output_receipt_path)
+        .map_err(FcError::Manifest)?;
+    let flat_receipt_sha = sha256_file(&output_receipt_path)?;
+
+    let provenance = InstallProvenance::new(
+        Some(release_tag.to_owned()),
+        vec![
+            install_path_rewrite_transform(
+                InstallProvenanceArtifact::GuestManifest,
+                "artifacts/output.ext4.manifest.json",
+                installed_manifest_path,
+                source_manifest_sha,
+                flat_manifest_sha,
+            ),
+            install_path_rewrite_transform(
+                InstallProvenanceArtifact::BuildReceipt,
+                "artifacts/output.ext4.build-receipt.json",
+                installed_receipt_path,
+                source_receipt_sha,
+                flat_receipt_sha,
+            ),
+        ],
+    );
+    provenance
+        .write(&output_artifacts.join(INSTALL_PROVENANCE_FILE))
+        .map_err(FcError::Manifest)
+}
+
 fn install_path_rewrite_transform(
     artifact: InstallProvenanceArtifact,
     source_path: &str,

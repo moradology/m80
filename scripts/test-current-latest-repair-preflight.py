@@ -15,6 +15,10 @@ from current_latest_repair_preflight import evaluate_preflight
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "current_latest_repair_preflight.py"
 SOURCE_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+CURRENT_VERSION = "0.2.21"
+CURRENT_RELEASE_TAG = f"v{CURRENT_VERSION}"
+EXISTING_LATEST_TAG = "v0.2.20"
+EXISTING_LATEST_URL = f"https://github.com/moradology/m80/releases/tag/{EXISTING_LATEST_TAG}"
 
 
 class CurrentLatestRepairPreflightTest(unittest.TestCase):
@@ -23,10 +27,10 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
         self.assertEqual(artifact["schema_version"], 2)
         self.assertTrue(artifact["decision"]["ok"])
-        self.assertEqual(artifact["target_tag"], "v0.2.20")
-        self.assertEqual(artifact["expected_release_tag"], "v0.2.20")
+        self.assertEqual(artifact["target_tag"], CURRENT_RELEASE_TAG)
+        self.assertEqual(artifact["expected_release_tag"], CURRENT_RELEASE_TAG)
         self.assertFalse(artifact["dirty_tree"]["dirty"])
-        self.assertEqual(artifact["existing_latest"]["tag"], "v0.2.11")
+        self.assertEqual(artifact["existing_latest"]["tag"], EXISTING_LATEST_TAG)
         self.assertTrue(artifact["release_order"]["candidate_is_newer_than_existing_latest"])
         self.assertNotIn("missing_installer_latest_tag", artifact)
         self.assertNotIn("supersedes_missing_installer_latest_state", artifact)
@@ -49,12 +53,12 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
         self.assertIn("manual release-state repair", diagnostic["safe_repair_action"])
 
     def test_rejects_tag_version_mismatch(self) -> None:
-        artifact = accepted_fixture(release_tag="v0.2.14")
+        artifact = accepted_fixture(release_tag="v0.2.22")
 
         diagnostic = only_diagnostic(artifact)
         self.assertEqual(diagnostic["field"], "target_tag")
-        self.assertEqual(diagnostic["expected"], "v0.2.20")
-        self.assertEqual(diagnostic["observed"], "v0.2.14")
+        self.assertEqual(diagnostic["expected"], CURRENT_RELEASE_TAG)
+        self.assertEqual(diagnostic["observed"], "v0.2.22")
         self.assertIn("Cargo.toml workspace.package.version", diagnostic["safe_repair_action"])
 
     def test_rejects_attempted_old_release_backfill(self) -> None:
@@ -66,7 +70,7 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
         diagnostic = only_diagnostic(artifact)
         self.assertEqual(diagnostic["field"], "release_order")
-        self.assertEqual(diagnostic["expected"], ">v0.2.11")
+        self.assertEqual(diagnostic["expected"], f">{EXISTING_LATEST_TAG}")
         self.assertIn("do not backfill old release assets", diagnostic["safe_repair_action"])
 
     def test_rejects_missing_existing_latest_metadata(self) -> None:
@@ -93,15 +97,15 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
                     "python3",
                     str(SCRIPT),
                     "--release-tag",
-                    "v0.2.20",
+                    CURRENT_RELEASE_TAG,
                     "--source-commit",
                     SOURCE_COMMIT,
                     "--tag-commit",
                     SOURCE_COMMIT,
                     "--existing-latest-tag",
-                    "v0.2.11",
+                    EXISTING_LATEST_TAG,
                     "--existing-latest-url",
-                    "https://github.com/moradology/m80/releases/tag/v0.2.11",
+                    EXISTING_LATEST_URL,
                     "--dirty-status",
                     "clean",
                     "--generated-at",
@@ -117,8 +121,8 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(out.read_text())
-        self.assertEqual(payload["workspace_package_version"], "0.2.20")
-        self.assertEqual(payload["expected_release_tag"], "v0.2.20")
+        self.assertEqual(payload["workspace_package_version"], CURRENT_VERSION)
+        self.assertEqual(payload["expected_release_tag"], CURRENT_RELEASE_TAG)
         self.assertEqual(payload["decision"]["status"], "accepted")
 
     def test_cli_writes_rejected_artifact_before_exiting_nonzero(self) -> None:
@@ -162,12 +166,12 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
 
 def accepted_fixture(**overrides: object) -> dict:
     values = {
-        "release_tag": "v0.2.20",
+        "release_tag": CURRENT_RELEASE_TAG,
         "source_commit": SOURCE_COMMIT,
-        "workspace_package_version": "0.2.20",
+        "workspace_package_version": CURRENT_VERSION,
         "tag_commit": SOURCE_COMMIT,
-        "existing_latest_tag": "v0.2.11",
-        "existing_latest_url": "https://github.com/moradology/m80/releases/tag/v0.2.11",
+        "existing_latest_tag": EXISTING_LATEST_TAG,
+        "existing_latest_url": EXISTING_LATEST_URL,
         "dirty_entries": [],
         "generated_at": "2026-05-21T00:00:00Z",
     }

@@ -9,6 +9,7 @@ use m80_image_manifest::{
 };
 
 use super::super::InstallPlan;
+use super::reinstall_flat::verify_flat_projection;
 use super::{bundle, metadata};
 
 const INSTALLED_RELEASE_FILES: &[&str] = &[
@@ -73,9 +74,9 @@ pub(super) fn verify_same_version_reinstall(
     compare_expected_release_files(final_dir, expected_dir, &repair_command)?;
     verify_installed_bundle_metadata(final_dir, &repair_command)?;
     verify_default_config(install_root, &repair_command)?;
-    let profile =
-        verify_default_profile(plan, install_root, final_dir, release_tag, &repair_command)?;
-    verify_host_binaries_manifest(final_dir, &profile, &repair_command)?;
+    let profile = verify_default_profile(plan, install_root, release_tag, &repair_command)?;
+    verify_flat_projection(install_root, final_dir, release_tag, &repair_command)?;
+    verify_host_binaries_manifest(install_root, final_dir, &profile, &repair_command)?;
     Ok(SameVersionReinstallVerification { repair_command })
 }
 
@@ -196,7 +197,6 @@ fn verify_default_config(install_root: &Path, repair_command: &str) -> Result<()
 fn verify_default_profile(
     plan: &InstallPlan,
     install_root: &Path,
-    final_dir: &Path,
     release_tag: &str,
     repair_command: &str,
 ) -> Result<InstalledProfilePaths, FcError> {
@@ -209,7 +209,8 @@ fn verify_default_profile(
         "installed default profile",
         repair_command,
     )?;
-    let artifacts = final_dir.join("artifacts");
+    let artifacts = install_root.join("artifacts");
+    let bin = install_root.join("bin");
     for (field, expected) in [
         ("artifact_dir", artifacts.clone()),
         ("kernel_image", artifacts.join("vmlinux")),
@@ -231,8 +232,8 @@ fn verify_default_profile(
             "host_binaries_manifest",
             artifacts.join("host-binaries.manifest.json"),
         ),
-        ("jailer_harden_bin", final_dir.join("bin/m80-jailer-harden")),
-        ("net_helper_bin", final_dir.join("bin/m80-net-helper")),
+        ("jailer_harden_bin", bin.join("m80-jailer-harden")),
+        ("net_helper_bin", bin.join("m80-net-helper")),
         ("run_root", install_root.join("run")),
     ] {
         require_toml_string(
@@ -321,11 +322,12 @@ struct InstalledProfilePaths {
 }
 
 fn verify_host_binaries_manifest(
+    install_root: &Path,
     final_dir: &Path,
     profile: &InstalledProfilePaths,
     repair_command: &str,
 ) -> Result<(), FcError> {
-    let path = final_dir.join("artifacts/host-binaries.manifest.json");
+    let path = install_root.join("artifacts/host-binaries.manifest.json");
     let manifest = HostBinariesManifest::read(&path).map_err(|err| {
         reinstall_error(
             format!("installed host-binaries manifest is unreadable: {err}"),
@@ -382,21 +384,21 @@ fn verify_host_binaries_manifest(
     require_host_binary(
         &manifest,
         HostBinaryName::M80,
-        &final_dir.join("bin/m80"),
+        &install_root.join("bin/m80"),
         Some(m80_sha256.as_str()),
         repair_command,
     )?;
     require_host_binary(
         &manifest,
         HostBinaryName::M80JailerHarden,
-        &final_dir.join("bin/m80-jailer-harden"),
+        &install_root.join("bin/m80-jailer-harden"),
         Some(jailer_harden_sha256.as_str()),
         repair_command,
     )?;
     require_host_binary(
         &manifest,
         HostBinaryName::M80NetHelper,
-        &final_dir.join("bin/m80-net-helper"),
+        &install_root.join("bin/m80-net-helper"),
         Some(net_helper_sha256.as_str()),
         repair_command,
     )?;
@@ -410,12 +412,12 @@ fn verify_host_binaries_manifest(
 }
 
 fn installed_binary_sha256(
-    final_dir: &Path,
+    root: &Path,
     relative: &str,
     label: &'static str,
     repair_command: &str,
 ) -> Result<String, FcError> {
-    bundle::sha256_file(&final_dir.join(relative)).map_err(|err| {
+    bundle::sha256_file(&root.join(relative)).map_err(|err| {
         reinstall_error(
             format!("installed {label} could not be hashed: {err}"),
             repair_command,
@@ -733,7 +735,7 @@ fn repair_command(bundle_url: &str, install_root: &Path, final_dir: &Path) -> St
     )
 }
 
-fn reinstall_error(reason: String, repair_command: &str) -> FcError {
+pub(super) fn reinstall_error(reason: String, repair_command: &str) -> FcError {
     reinstall_error_with_field("install.reinstall", reason, repair_command)
 }
 

@@ -36,18 +36,21 @@ public-access receipt because GitHub's latest API lagged the latest promotion.
 version bump accidentally rewrote the locked `libc 0.2.186` entry. `v0.2.20`
 keeps the installer fix, restores the lockfile, and retries only transient
 stale-latest observations before declaring the public-access receipt failed.
+`v0.2.21` carries the flat `/opt/m80/bin` and `/opt/m80/artifacts` hardlink
+projection so preflight and clients use stable paths while the versioned
+install record remains available for rollback.
 
-The current repair source therefore uses workspace package version `0.2.20`.
-The matching stable tag is `v0.2.20`; tags at or before the existing public
-latest `v0.2.11` are intentionally rejected as old-release backfill candidates
+The current repair source therefore uses workspace package version `0.2.21`.
+The matching stable tag is `v0.2.21`; tags at or before the existing public
+latest `v0.2.20` are intentionally rejected as old-release backfill candidates
 by `scripts/current_latest_repair_preflight.py`.
 
 The release runbook documents this as the real source-state expectation rather
 than a fixture-only value. Dev builds still render as `<package-version>-dev`,
-so an unreleased local build now reports `0.2.20-dev` and remains barred from
+so an unreleased local build now reports `0.2.21-dev` and remains barred from
 using mutable `releases/latest` implicitly.
 
-Fixture and release-script coverage uses `v0.2.20` as the packageable release
+Fixture and release-script coverage uses `v0.2.21` as the packageable release
 tag. Rust installer-layout fixtures derive their release tag from
 `CARGO_PKG_VERSION`, so the bundled layout tests also follow the same cutover.
 Tests may still use other tags only when they are explicitly testing mismatch,

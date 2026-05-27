@@ -247,7 +247,7 @@ fn same_version_reinstall_with_stale_host_manifest_refuses_explicit_repair() {
         &bundle_bytes,
         ReleaseFixtureOptions::default(),
     );
-    let manifest_path = install_root.join("versions/v0.0.0/artifacts/host-binaries.manifest.json");
+    let manifest_path = install_root.join("artifacts/host-binaries.manifest.json");
     rewrite_host_binary_path(
         &manifest_path,
         HostBinaryName::M80NetHelper,
@@ -277,6 +277,46 @@ fn same_version_reinstall_with_stale_host_manifest_refuses_explicit_repair() {
         "stale host manifest error should name exact repair command: {message}"
     );
     assert_no_layout_staging_dirs(&install_root, "stale host manifest reinstall");
+}
+
+#[test]
+fn same_version_reinstall_with_stale_flat_projection_refuses_explicit_repair() {
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+    let bundle_bytes = write_installable_bundle_bytes(temp.path());
+
+    seed_existing_verified_install(
+        &install_root,
+        &bundle_bytes,
+        ReleaseFixtureOptions::default(),
+    );
+    let flat_binary = install_root.join("bin/m80-net-helper");
+    fs::remove_file(&flat_binary).expect("remove hardlink");
+    fs::write(&flat_binary, b"stale but self-consistent flat helper\n").expect("write stale flat");
+    let stale_sha256 = super::super::super::super::bundle::sha256_file(&flat_binary)
+        .expect("hash stale flat helper");
+    rewrite_host_binary_sha256(
+        &install_root.join("artifacts/host-binaries.manifest.json"),
+        HostBinaryName::M80NetHelper,
+        &stale_sha256,
+    );
+
+    let err = install_layout_error_with_installable_bundle(
+        &install_root,
+        &bundle_bytes,
+        ReleaseFixtureOptions::default(),
+    );
+    let message = err.to_string();
+
+    assert!(
+        message.contains("flat projection hardlink mismatch"),
+        "stale flat projection must be rejected before same-version no-op: {message}"
+    );
+    assert!(
+        message.contains("repair_command=rm -rf --"),
+        "stale flat projection error should name exact repair command: {message}"
+    );
+    assert_no_layout_staging_dirs(&install_root, "stale flat projection reinstall");
 }
 
 #[test]
@@ -665,8 +705,9 @@ fn seed_existing_verified_install_with_m80_version(
         m80_version,
     )
     .expect("write seed proof cache");
-    write_seed_host_binaries_manifest(&final_dir);
-    write_seed_profile_and_config(install_root, &final_dir);
+    write_seed_host_binaries_manifest(&final_dir.join("artifacts"), &final_dir.join("bin"));
+    write_seed_flat_projection(install_root, &final_dir);
+    write_seed_profile_and_config(install_root);
     symlink(&final_dir, install_root.join("active")).expect("point active at seeded install");
 }
 
@@ -769,19 +810,59 @@ fn rewrite_host_binary_path(manifest_path: &Path, name: HostBinaryName, path: &s
         .expect("rewrite host-binaries manifest");
 }
 
-fn write_seed_host_binaries_manifest(final_dir: &Path) {
+fn rewrite_host_binary_sha256(manifest_path: &Path, name: HostBinaryName, sha256: &str) {
+    let mut manifest =
+        HostBinariesManifest::read(manifest_path).expect("read host-binaries manifest");
+    let binary = manifest
+        .binaries
+        .iter_mut()
+        .find(|binary| binary.name == name)
+        .expect("host binary entry exists");
+    binary.sha256 = sha256.to_owned();
+    manifest
+        .write(manifest_path)
+        .expect("rewrite host-binaries manifest");
+}
+
+fn write_seed_flat_projection(install_root: &Path, final_dir: &Path) {
+    let flat_bin = install_root.join("bin");
+    let flat_artifacts = install_root.join("artifacts");
+    fs::create_dir_all(&flat_bin).expect("create flat bin dir");
+    fs::create_dir_all(&flat_artifacts).expect("create flat artifacts dir");
+    for name in ["m80", "m80-jailer-harden", "m80-net-helper"] {
+        fs::hard_link(final_dir.join("bin").join(name), flat_bin.join(name))
+            .expect("hardlink flat binary");
+    }
+    for name in ["m80-guestd", "output.ext4", "vmlinux"] {
+        fs::hard_link(
+            final_dir.join("artifacts").join(name),
+            flat_artifacts.join(name),
+        )
+        .expect("hardlink flat artifact");
+    }
+    super::super::super::super::metadata::write_flat_artifact_metadata(
+        &final_dir.join("artifacts"),
+        &flat_artifacts,
+        &flat_artifacts,
+        "v0.0.0",
+    )
+    .expect("write flat metadata");
+    write_seed_host_binaries_manifest(&flat_artifacts, &flat_bin);
+}
+
+fn write_seed_host_binaries_manifest(artifact_dir: &Path, bin_dir: &Path) {
     HostBinariesManifest::new(
         vec![
             host_binary(HostBinaryName::Firecracker, "/opt/firecracker/firecracker"),
             host_binary(HostBinaryName::Jailer, "/opt/firecracker/jailer"),
-            installed_host_binary(HostBinaryName::M80, &final_dir.join("bin/m80")),
+            installed_host_binary(HostBinaryName::M80, &bin_dir.join("m80")),
             installed_host_binary(
                 HostBinaryName::M80JailerHarden,
-                &final_dir.join("bin/m80-jailer-harden"),
+                &bin_dir.join("m80-jailer-harden"),
             ),
             installed_host_binary(
                 HostBinaryName::M80NetHelper,
-                &final_dir.join("bin/m80-net-helper"),
+                &bin_dir.join("m80-net-helper"),
             ),
         ],
         vec![HostLaunchMaterialEntry {
@@ -791,7 +872,7 @@ fn write_seed_host_binaries_manifest(final_dir: &Path) {
             version: "fixture".to_owned(),
         }],
     )
-    .write(&final_dir.join("artifacts/host-binaries.manifest.json"))
+    .write(&artifact_dir.join("host-binaries.manifest.json"))
     .expect("write seed host-binaries manifest");
 }
 
@@ -814,8 +895,9 @@ fn installed_host_binary(name: HostBinaryName, path: &Path) -> HostBinaryEntry {
     }
 }
 
-fn write_seed_profile_and_config(install_root: &Path, final_dir: &Path) {
-    let artifacts = final_dir.join("artifacts");
+fn write_seed_profile_and_config(install_root: &Path) {
+    let artifacts = install_root.join("artifacts");
+    let bin = install_root.join("bin");
     fs::create_dir_all(install_root.join("profiles")).expect("create profiles dir");
     fs::write(
         install_root.join("profiles/default.toml"),
@@ -846,8 +928,8 @@ fn write_seed_profile_and_config(install_root: &Path, final_dir: &Path) {
             artifacts.join("output.ext4.build-receipt.json").display(),
             artifacts.join("install-provenance.json").display(),
             artifacts.join("host-binaries.manifest.json").display(),
-            final_dir.join("bin/m80-jailer-harden").display(),
-            final_dir.join("bin/m80-net-helper").display(),
+            bin.join("m80-jailer-harden").display(),
+            bin.join("m80-net-helper").display(),
             install_root.join("run").display(),
         ),
     )

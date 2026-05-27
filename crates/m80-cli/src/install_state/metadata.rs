@@ -133,15 +133,27 @@ pub(super) fn read_install_metadata(
         .clone()
         .expect("metadata reader is called only for installed profiles");
     let artifacts_dir = version_dir.join("artifacts");
+    let profile_artifacts_dir = profile
+        .artifact_dir
+        .as_deref()
+        .unwrap_or(artifacts_dir.as_path());
+    let profile_metadata_root = if profile_artifacts_dir == artifacts_dir {
+        version_dir.clone()
+    } else {
+        profile_artifacts_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| profile_artifacts_dir.to_path_buf())
+    };
     let bundle_path = version_dir.join(BUNDLE_METADATA_NAME);
     let provenance_path = profile
         .install_provenance
         .clone()
-        .unwrap_or_else(|| artifacts_dir.join(INSTALL_PROVENANCE_NAME));
+        .unwrap_or_else(|| profile_artifacts_dir.join(INSTALL_PROVENANCE_NAME));
     let host_manifest_path = profile
         .host_binaries_manifest
         .clone()
-        .unwrap_or_else(|| artifacts_dir.join(HOST_BINARIES_MANIFEST_NAME));
+        .unwrap_or_else(|| profile_artifacts_dir.join(HOST_BINARIES_MANIFEST_NAME));
     let proof_cache_manifest_path = artifacts_dir
         .join(PROOF_CACHE_DIR)
         .join(PROOF_CACHE_MANIFEST_NAME);
@@ -149,14 +161,14 @@ pub(super) fn read_install_metadata(
     let (bundle_metadata, bundle) =
         bundle::read_bundle_metadata(&version_dir, &bundle_path, diagnostics);
     let (install_provenance, provenance) = read_install_provenance(
-        &version_dir,
+        &profile_metadata_root,
         &profile_report.release_tag,
         profile,
         &provenance_path,
         diagnostics,
     );
     let (host_binaries_manifest, host_binaries) =
-        read_host_binaries_manifest(&version_dir, &host_manifest_path, diagnostics);
+        read_host_binaries_manifest(&profile_metadata_root, &host_manifest_path, diagnostics);
     let (proof_cache_manifest, proof_cache) = proof_cache::read_proof_cache_manifest(
         &version_dir,
         &proof_cache_manifest_path,
@@ -228,14 +240,14 @@ pub(crate) fn read_proof_cache_metadata_from_artifact_dir(
 }
 
 fn read_install_provenance(
-    version_dir: &Path,
+    metadata_root: &Path,
     expected_release_tag: &Option<String>,
     profile: &RuntimeProfile,
     path: &Path,
     diagnostics: &mut Vec<InstallStateDiagnostic>,
 ) -> (MetadataFileReport, Option<InstallProvenanceReport>) {
     let Some((raw, sha256)) =
-        read_required_file(version_dir, path, "install_provenance", diagnostics)
+        read_required_file(metadata_root, path, "install_provenance", diagnostics)
     else {
         let status = if diagnostics.iter().any(|diagnostic| {
             diagnostic.path.as_deref() == Some(path)
@@ -263,7 +275,7 @@ fn read_install_provenance(
         }
     };
     if let Err(reason) =
-        validate_install_provenance(version_dir, expected_release_tag, profile, &provenance)
+        validate_install_provenance(metadata_root, expected_release_tag, profile, &provenance)
     {
         stale_metadata(diagnostics, "install_provenance", path, reason);
         return (
@@ -281,12 +293,12 @@ fn read_install_provenance(
 }
 
 fn read_host_binaries_manifest(
-    version_dir: &Path,
+    metadata_root: &Path,
     path: &Path,
     diagnostics: &mut Vec<InstallStateDiagnostic>,
 ) -> (MetadataFileReport, Option<HostBinariesReport>) {
     let Some((raw, sha256)) =
-        read_required_file(version_dir, path, "host_binaries_manifest", diagnostics)
+        read_required_file(metadata_root, path, "host_binaries_manifest", diagnostics)
     else {
         let status = if diagnostics.iter().any(|diagnostic| {
             diagnostic.path.as_deref() == Some(path)
@@ -369,7 +381,7 @@ fn read_required_file(
 }
 
 fn validate_install_provenance(
-    version_dir: &Path,
+    metadata_root: &Path,
     expected_release_tag: &Option<String>,
     profile: &RuntimeProfile,
     provenance: &InstallProvenance,
@@ -407,7 +419,7 @@ fn validate_install_provenance(
             }
         }
         verify_version_path_digest(
-            version_dir,
+            metadata_root,
             &transform.installed_path,
             &transform.installed_sha256,
         )?;

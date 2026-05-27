@@ -44,14 +44,12 @@ fn relative_install_root_is_normalized_before_state_is_written() {
 
     let profile_path = expected_root.join("profiles/default.toml");
     let profile = fs::read_to_string(&profile_path).unwrap();
+    let flat_artifacts = expected_root.join("artifacts");
     for required in [
-        version_dir.join("artifacts").display().to_string(),
-        version_dir
-            .join("artifacts/output.ext4")
-            .display()
-            .to_string(),
-        version_dir
-            .join("artifacts/host-binaries.manifest.json")
+        flat_artifacts.display().to_string(),
+        flat_artifacts.join("output.ext4").display().to_string(),
+        flat_artifacts
+            .join("host-binaries.manifest.json")
             .display()
             .to_string(),
         expected_root.join("run").display().to_string(),
@@ -67,6 +65,10 @@ fn relative_install_root_is_normalized_before_state_is_written() {
         version_dir.join("artifacts/output.ext4.build-receipt.json"),
         version_dir.join("artifacts/install-provenance.json"),
         version_dir.join("artifacts/host-binaries.manifest.json"),
+        flat_artifacts.join("output.ext4.manifest.json"),
+        flat_artifacts.join("output.ext4.build-receipt.json"),
+        flat_artifacts.join("install-provenance.json"),
+        flat_artifacts.join("host-binaries.manifest.json"),
     ] {
         let value = serde_json::from_str::<Value>(&fs::read_to_string(&path).unwrap())
             .unwrap_or_else(|err| panic!("parse {}: {err}", path.display()));
