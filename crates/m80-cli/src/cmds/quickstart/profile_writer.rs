@@ -16,6 +16,7 @@ pub(in crate::cmds) struct InstalledDefaultProfile<'a> {
     pub(in crate::cmds) profile_dir: &'a Path,
     pub(in crate::cmds) config_path: &'a Path,
     pub(in crate::cmds) binary_config: m80_preflight::BinaryDiscoveryConfig,
+    pub(in crate::cmds) include_jailer_harden: bool,
     pub(in crate::cmds) release_tag: Option<String>,
     pub(in crate::cmds) m80_version: String,
     pub(in crate::cmds) host_binaries_manifest: &'a Path,
@@ -37,7 +38,8 @@ struct RuntimeProfileToml {
     firecracker_bin: PathBuf,
     firecracker_seccomp_filter: PathBuf,
     jailer_bin: PathBuf,
-    jailer_harden_bin: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jailer_harden_bin: Option<PathBuf>,
     net_helper_bin: PathBuf,
     run_root: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,7 +102,9 @@ fn profile_toml(input: &InstalledDefaultProfile<'_>) -> Result<String, FcError> 
         firecracker_bin: input.binary_config.firecracker_bin.clone(),
         firecracker_seccomp_filter: input.binary_config.firecracker_seccomp_filter.clone(),
         jailer_bin: input.binary_config.jailer_bin.clone(),
-        jailer_harden_bin: input.binary_config.jailer_harden_bin.clone(),
+        jailer_harden_bin: input
+            .include_jailer_harden
+            .then(|| input.binary_config.jailer_harden_bin.clone()),
         net_helper_bin: input.binary_config.net_helper_bin.clone(),
         run_root: input.run_root.to_path_buf(),
         release_tag: input.release_tag.clone(),
@@ -207,7 +211,6 @@ fn is_installed_default_profile(existing: &str) -> bool {
         "firecracker_bin",
         "firecracker_seccomp_filter",
         "jailer_bin",
-        "jailer_harden_bin",
         "net_helper_bin",
         "run_root",
         "m80_version",
@@ -410,6 +413,26 @@ description = "m80 installed default profile"
 "#;
 
         assert!(is_installed_default_profile(generated));
+        let generated_without_wrapper = r#"
+artifact_dir = "/opt/m80/artifacts"
+kernel_image = "/opt/m80/artifacts/vmlinux"
+rootfs_image = "/opt/m80/artifacts/output.ext4"
+kernel_kind = "stock"
+guestd = "/opt/m80/artifacts/m80-guestd"
+guest_manifest = "/opt/m80/artifacts/output.ext4.manifest.json"
+build_receipt = "/opt/m80/artifacts/output.ext4.build-receipt.json"
+install_provenance = "/opt/m80/artifacts/install-provenance.json"
+host_binaries_manifest = "/opt/m80/artifacts/host-binaries.manifest.json"
+firecracker_bin = "/usr/bin/firecracker"
+firecracker_seccomp_filter = "/opt/m80/seccomp.json"
+jailer_bin = "/usr/bin/jailer"
+net_helper_bin = "/opt/m80/bin/m80-net-helper"
+run_root = "/opt/m80/run"
+m80_version = "v0.0.0"
+description = "m80 installed default profile"
+"#;
+
+        assert!(is_installed_default_profile(generated_without_wrapper));
         assert!(!is_installed_default_profile(
             r#"description = "m80 installed default profile""#
         ));

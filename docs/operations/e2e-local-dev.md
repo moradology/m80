@@ -40,7 +40,7 @@ Artifacts". If you keep a local artifact cache elsewhere, point
 Build the host-side helper used by the wrapper:
 
 ```sh
-cargo build -p m80-jailer-harden
+cargo build -p m80-jailer-harden --features no-systemd-launch
 ```
 
 Run one privileged test directly when debugging a behavior:

@@ -28,14 +28,22 @@ const RUN_ECHO_PROBE_ENV_REMOVALS: &[&str] = &[
     "M80_PHASE_TRACE",
 ];
 
-pub(super) fn write_host_binaries_manifest_for_probe(artifact_dir: &Path) -> Result<(), FcError> {
+pub(super) fn write_host_binaries_manifest_for_probe(artifact_dir: &Path) -> Result<bool, FcError> {
     let current = std::env::current_exe()
         .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
     let mut config = m80_preflight::HostBinariesManifestConfig::from_env();
     config.m80_bin = current;
+    config.include_jailer_harden = include_jailer_harden_for_probe()?;
     let manifest_path = artifact_dir.join("host-binaries.manifest.json");
     m80_preflight::write_host_binaries_manifest(&config, &manifest_path)?;
-    Ok(())
+    Ok(config.include_jailer_harden)
+}
+
+pub(super) fn include_jailer_harden_for_probe() -> Result<bool, FcError> {
+    Ok(
+        m80_preflight::select_host_launch_path(&m80_preflight::BinaryDiscoveryConfig::from_env())?
+            == m80_preflight::LaunchPath::Wrapper,
+    )
 }
 
 pub(super) fn run_echo_probe() -> Result<(), FcError> {

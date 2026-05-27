@@ -96,7 +96,9 @@ jobs:
             M80_RELEASE_TAG="$GITHUB_REF_NAME" \
               M80_RELEASE_COMMIT="$release_commit" \
               M80_RELEASE_TARGET_TRIPLE="$release_target_triple" \
-              cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
+              cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper \
+                --features m80-jailer-harden/no-systemd-launch \
+                --release
           fi
 
       - name: Write minimal image config

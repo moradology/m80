@@ -3,7 +3,7 @@
 //! Run manually:
 //!
 //! ```sh
-//! sudo cargo test -p m80-jailer-harden --test integration_root -- --ignored
+//! sudo cargo test -p m80-jailer-harden --features no-systemd-launch --test integration_root -- --ignored
 //! ```
 
 use std::io::Write;

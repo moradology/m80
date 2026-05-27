@@ -42,7 +42,11 @@ pub const SCHEMA_VERSION: u32 = 5;
 /// `4` — records version strings for every host binary and launch-material
 /// entry, and removes the stale `m80_cli` entry. The shipped CLI executable is
 /// `m80`; there is no second installed `m80-cli` binary in the release bundle.
-pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 4;
+///
+/// `5` — adds `conditional_binaries`, used to declare that
+/// `m80_jailer_harden` may be absent when preflight selected the systemd launch
+/// path. No version conversion: older manifests must be regenerated.
+pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 5;
 
 /// Schema version for m80 build receipts.
 pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
@@ -165,6 +169,24 @@ pub struct HostLaunchMaterialEntry {
     pub version: String,
 }
 
+/// Host condition that makes a binary optional in `host-binaries.manifest.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum HostBinaryAbsentWhen {
+    /// Preflight selected the systemd transient-unit launch path.
+    SystemdPathChosen,
+}
+
+/// One host-side TCB binary that may be absent under a named host condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConditionalHostBinaryEntry {
+    /// Logical binary name.
+    pub name: HostBinaryName,
+    /// Host condition that allows this binary to be absent.
+    pub absent_when: HostBinaryAbsentWhen,
+}
+
 /// Install-time manifest for host-side TCB binaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,6 +195,8 @@ pub struct HostBinariesManifest {
     pub binaries: Vec<HostBinaryEntry>,
     /// Host launch material files covered by this manifest.
     pub launch_material: Vec<HostLaunchMaterialEntry>,
+    /// Host TCB binaries allowed to be absent under a named host condition.
+    pub conditional_binaries: Vec<ConditionalHostBinaryEntry>,
     /// Always [`HOST_BINARIES_SCHEMA_VERSION`].
     schema_version: u32,
 }
@@ -190,9 +214,20 @@ impl HostBinariesManifest {
         binaries: Vec<HostBinaryEntry>,
         launch_material: Vec<HostLaunchMaterialEntry>,
     ) -> Self {
+        Self::new_with_conditional_binaries(binaries, launch_material, Vec::new())
+    }
+
+    /// Construct a host-binaries manifest with explicit conditional binaries.
+    #[must_use]
+    pub fn new_with_conditional_binaries(
+        binaries: Vec<HostBinaryEntry>,
+        launch_material: Vec<HostLaunchMaterialEntry>,
+        conditional_binaries: Vec<ConditionalHostBinaryEntry>,
+    ) -> Self {
         Self {
             binaries,
             launch_material,
+            conditional_binaries,
             schema_version: HOST_BINARIES_SCHEMA_VERSION,
         }
     }

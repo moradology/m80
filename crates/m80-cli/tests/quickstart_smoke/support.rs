@@ -139,6 +139,7 @@ pub(crate) fn write_release_tarball_inner(
         let extra_payload: &[u8] = if relpath.ends_with("host-binaries.manifest.json") {
             br#"{
   "binaries": [],
+  "conditional_binaries": [],
   "launch_material": [
     {
       "name": "firecracker_seccomp_filter",
@@ -147,7 +148,7 @@ pub(crate) fn write_release_tarball_inner(
       "version": "v1.15.1"
     }
   ],
-  "schema_version": 4
+  "schema_version": 5
 }
 "#
         } else {

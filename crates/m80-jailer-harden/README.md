@@ -1,6 +1,7 @@
 # `m80-jailer-harden`
 
-Small exec wrapper that applies process hardening which safely survives into
+Fallback exec wrapper for hosts where m80 cannot use the systemd transient-unit
+launch path. It applies process hardening which safely survives into
 Firecracker's official jailer, then `exec`s that jailer.
 
 ## Reason For Being
@@ -8,8 +9,14 @@ Firecracker's official jailer, then `exec`s that jailer.
 Some Group B hardening is inheritable and one-way: supplementary groups,
 ambient capabilities, `no_new_privs`, signal mask, and umask can be fixed before
 the official jailer starts without interfering with its mount, chroot, mknod,
-resource-limit, and PID-namespace setup. Keeping this in a binary gives m80 a
-real process boundary to test without putting raw FFI into `m80-jailer`.
+resource-limit, and PID-namespace setup. On systemd hosts, m80 uses
+`systemd-run` as the default launch hardening surface. Keeping this fallback in
+a binary gives no-systemd hosts a real process boundary without putting raw FFI
+into `m80-jailer`.
+
+The binary target is built only with `--features no-systemd-launch`; default
+workspace builds compile the library surface but do not produce
+`m80-jailer-harden`.
 
 ## Black-Box Contract
 
@@ -48,9 +55,11 @@ exits before parsing hardening arguments or touching process state. The
 install-time host-binaries manifest records that version string beside the
 binary hash.
 
-The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
+The fallback installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 `m80-preflight` and launch configuration may override that path with
-`M80_JAILER_HARDEN_BIN`.
+`M80_JAILER_HARDEN_BIN`. Systemd-selected hosts may omit the binary when the
+installed `host-binaries.manifest.json` records the conditional
+`m80_jailer_harden` absence.
 
 ## Public Surface
 
@@ -69,6 +78,12 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 | `apply_process_hardening(resource_limits, new_cgroup_ns, new_net_ns)` | Applies the inheritable hardening sequence without execing. |
 | `exec_jailer(args)` | Clears the environment and replaces the current process with the official jailer. Returns only if `exec` fails. |
 
+## Features
+
+- `default = []`: builds the library API only; no wrapper binary target.
+- `no-systemd-launch`: enables the `m80-jailer-harden` binary and root
+  integration tests for no-systemd fallback hosts.
+
 ## Non-Goals
 
 - No fallback if hardening fails. A failed syscall aborts launch.
@@ -84,9 +99,10 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 - Unit tests cover CLI parsing, missing argument errors, the fail-fast root
   guard, and the official jailer capability allowlist so future audits see any
   drift.
-- `tests/version.rs` proves `--version` returns the package version without
-  entering the hardening path.
-- Ignored root integration tests verify the wrapper's inherited process state
+- With `--features no-systemd-launch`, `tests/version.rs` proves `--version`
+  returns the package version without entering the hardening path.
+- With `--features no-systemd-launch`, ignored root integration tests verify
+  the wrapper's inherited process state
   via `/proc/self/status` including `CapBnd`, `CapPrm`, and `CapEff`,
   environment clearing, and inherited-fd closure inside the exec target. They
   also verify `--new-cgroup-ns` makes `/proc/self/cgroup` appear rooted at `/`

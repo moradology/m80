@@ -27,9 +27,15 @@ Install the release binaries as `root:root`, mode `0755` or narrower:
 sudo install -o root -g root -m 0755 firecracker /opt/firecracker/bin/firecracker
 sudo install -o root -g root -m 0755 jailer /opt/firecracker/bin/jailer
 sudo install -o root -g root -m 0755 m80 /opt/m80/bin/m80
-sudo install -o root -g root -m 0755 m80-jailer-harden /opt/m80/bin/m80-jailer-harden
 sudo install -o root -g root -m 0755 m80-net-helper /opt/m80/bin/m80-net-helper
 sudo install -o root -g root -m 0644 firecracker-seccomp-filter.bin /opt/firecracker/bin/firecracker-seccomp-filter.bin
+```
+
+Install `m80-jailer-harden` only on hosts where preflight selects the wrapper
+fallback path:
+
+```sh
+sudo install -o root -g root -m 0755 m80-jailer-harden /opt/m80/bin/m80-jailer-harden
 ```
 
 Write `/opt/m80/artifacts/host-binaries.manifest.json` from the exact installed
@@ -58,16 +64,16 @@ material, not as an executable host binary. The manifest schema is:
       "version": "m80 0.0.0"
     },
     {
-      "name": "m80_jailer_harden",
-      "path": "/opt/m80/bin/m80-jailer-harden",
-      "sha256": "<64 lowercase hex chars>",
-      "version": "m80-jailer-harden 0.0.0"
-    },
-    {
       "name": "m80_net_helper",
       "path": "/opt/m80/bin/m80-net-helper",
       "sha256": "<64 lowercase hex chars>",
       "version": "m80-net-helper 0.0.0"
+    }
+  ],
+  "conditional_binaries": [
+    {
+      "name": "m80_jailer_harden",
+      "absent_when": "systemd_path_chosen"
     }
   ],
   "launch_material": [
@@ -78,17 +84,22 @@ material, not as an executable host binary. The manifest schema is:
       "version": "v1.15.1"
     }
   ],
-  "schema_version": 4
+  "schema_version": 5
 }
 ```
+
+On wrapper-fallback hosts, move `m80_jailer_harden` from
+`conditional_binaries` into `binaries` with its path, sha256, and version.
 
 Use `m80-preflight`'s host-binaries manifest generator, `sha256sum`, or an
 equivalent structured release tool to populate the hash and version fields. Do
 not hand-edit the digest after copying a replacement binary; replace the binary
 and regenerate the manifest from the installed bytes.
 
-`m80-preflight` checks the configured Firecracker, jailer, hardening-wrapper,
-network-helper, and Firecracker seccomp-filter paths against this manifest. It
+`m80-preflight` checks the configured Firecracker, jailer, network-helper, and
+Firecracker seccomp-filter paths against this manifest. It checks
+`m80-jailer-harden` only when the wrapper row is present or the wrapper launch
+path is selected. It
 opens every manifest path with `O_NOFOLLOW`, hashes the opened file
 descriptor, and rejects non-root-owned or writable binaries and launch
 material. A version string alone is not accepted as binary identity.

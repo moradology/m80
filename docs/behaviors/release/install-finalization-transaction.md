@@ -59,9 +59,11 @@ install root, active profile, config path, profile directory, process
 stdout/stderr, and the remediation command `m80 preflight`. GitHub release
 bundle URLs use live host preflight. Local bundles without the fixture switch
 also use live host preflight before activation. The host-binaries manifest is
-generated from the final installed paths: `bin/m80`, `bin/m80-jailer-harden`,
-`bin/m80-net-helper`, the configured Firecracker binary, the configured jailer
-binary, and the configured Firecracker seccomp filter.
+generated from the final installed paths: `bin/m80`, `bin/m80-net-helper`, the
+configured Firecracker binary, the configured jailer binary, and the configured
+Firecracker seccomp filter. Wrapper-selected installs also include
+`bin/m80-jailer-harden`; systemd-selected installs record its conditional
+absence instead.
 
 ## Active Pointer Rule
 

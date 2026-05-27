@@ -10,10 +10,10 @@ use super::{
     DEFAULT_NET_HELPER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER,
     ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN, ENV_NET_HELPER_BIN,
 };
-use crate::PreflightError;
+use crate::{LaunchPath, PreflightError};
 use m80_image_manifest::{
-    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
-    HostLaunchMaterialName,
+    ConditionalHostBinaryEntry, HostBinariesManifest, HostBinaryAbsentWhen, HostBinaryEntry,
+    HostBinaryName, HostLaunchMaterialEntry, HostLaunchMaterialName,
 };
 
 fn write_executable(path: &Path, body: &str) {
@@ -162,7 +162,16 @@ fn verify_fixture_host_binaries(
     manifest_path: &Path,
 ) -> Result<(), PreflightError> {
     let discovery = fixture_discovery(config, "v1.15.1");
-    verify_host_binaries(config, &discovery, manifest_path)
+    verify_host_binaries(config, &discovery, manifest_path, LaunchPath::Wrapper)
+}
+
+fn verify_fixture_host_binaries_for_launch_path(
+    config: &BinaryDiscoveryConfig,
+    manifest_path: &Path,
+    launch_path: LaunchPath,
+) -> Result<(), PreflightError> {
+    let discovery = fixture_discovery(config, "v1.15.1");
+    verify_host_binaries(config, &discovery, manifest_path, launch_path)
 }
 
 fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
@@ -261,7 +270,7 @@ fn env_config_defaults_to_opt_firecracker_paths_without_version_pin() {
 fn discovery_returns_resolved_paths_and_probed_firecracker_version() {
     let (_dir, config) = fixture_config("v1.15.1");
 
-    let discovery = discover_binaries(&config, None, None).unwrap();
+    let discovery = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap();
 
     assert_eq!(discovery.firecracker_bin, config.firecracker_bin);
     assert_eq!(
@@ -284,7 +293,13 @@ fn cached_train_versions_skip_version_subprocesses() {
     )
     .unwrap();
 
-    let discovery = discover_binaries(&config, Some("v1.15.1"), Some("v1.15.1")).unwrap();
+    let discovery = discover_binaries(
+        &config,
+        Some("v1.15.1"),
+        Some("v1.15.1"),
+        LaunchPath::Wrapper,
+    )
+    .unwrap();
 
     assert_eq!(discovery.firecracker_version, "v1.15.1");
     assert_eq!(discovery.jailer_version, "v1.15.1");
@@ -303,7 +318,7 @@ fn missing_firecracker_binary_fails_closed() {
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::FirecrackerBinaryNotFound { path } => {
@@ -326,7 +341,7 @@ fn relative_firecracker_binary_path_fails_closed() {
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -342,7 +357,7 @@ fn missing_firecracker_seccomp_filter_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.firecracker_seccomp_filter = dir.path().join("missing-seccomp-filter.json");
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::FirecrackerSeccompFilterNotFound { path } => {
@@ -358,7 +373,7 @@ fn empty_firecracker_seccomp_filter_fails_closed() {
     config.firecracker_seccomp_filter = dir.path().join("empty-seccomp-filter.json");
     fs::write(&config.firecracker_seccomp_filter, b"").unwrap();
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::FirecrackerSeccompFilterEmpty { path } => {
@@ -373,7 +388,7 @@ fn relative_firecracker_seccomp_filter_path_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
     config.firecracker_seccomp_filter = Path::new("firecracker-seccomp-filter.bin").to_path_buf();
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -389,7 +404,7 @@ fn missing_jailer_binary_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.jailer_bin = dir.path().join("missing-jailer");
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::JailerBinaryNotFound { path } => {
@@ -404,7 +419,7 @@ fn missing_jailer_hardening_wrapper_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.jailer_harden_bin = dir.path().join("missing-m80-jailer-harden");
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::JailerHardenBinaryNotFound { path } => {
@@ -415,11 +430,21 @@ fn missing_jailer_hardening_wrapper_fails_closed() {
 }
 
 #[test]
+fn missing_jailer_hardening_wrapper_is_allowed_for_systemd_discovery() {
+    let (dir, mut config) = fixture_config("v1.15.1");
+    config.jailer_harden_bin = dir.path().join("missing-m80-jailer-harden");
+
+    let discovery = discover_binaries(&config, None, None, LaunchPath::Systemd).unwrap();
+
+    assert_eq!(discovery.jailer_harden_bin, config.jailer_harden_bin);
+}
+
+#[test]
 fn missing_network_helper_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.net_helper_bin = dir.path().join("missing-m80-net-helper");
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::NetHelperBinaryNotFound { path } => {
@@ -434,7 +459,7 @@ fn firecracker_version_mismatch_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
     config.expected_firecracker_version = Some("v1.14.0".to_owned());
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::FirecrackerVersionMismatch {
@@ -462,7 +487,7 @@ fn jailer_version_mismatch_fails_closed() {
     )
     .unwrap();
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::JailerVersionMismatch {
@@ -485,7 +510,7 @@ fn jailer_version_mismatch_fails_closed() {
 fn firecracker_cve_floor_rejects_known_affected_version() {
     let (_dir, config) = fixture_config("v1.15.0");
 
-    let err = discover_binaries(&config, None, None).unwrap_err();
+    let err = discover_binaries(&config, None, None, LaunchPath::Wrapper).unwrap_err();
 
     match err {
         PreflightError::FirecrackerCveFloorViolation {
@@ -516,6 +541,7 @@ fn host_binaries_manifest_generator_records_final_paths_hashes_and_versions() {
         firecracker_seccomp_filter: config.firecracker_seccomp_filter.clone(),
         jailer_bin: config.jailer_bin.clone(),
         jailer_harden_bin: config.jailer_harden_bin.clone(),
+        include_jailer_harden: true,
         net_helper_bin: config.net_helper_bin.clone(),
         m80_bin: m80.clone(),
         expected_firecracker_version: config.expected_firecracker_version.clone(),
@@ -528,6 +554,7 @@ fn host_binaries_manifest_generator_records_final_paths_hashes_and_versions() {
         m80_image_manifest::HOST_BINARIES_SCHEMA_VERSION
     );
     assert_eq!(manifest.binaries.len(), 5);
+    assert!(manifest.conditional_binaries.is_empty());
     assert_eq!(manifest.launch_material.len(), 1);
     let firecracker = manifest
         .binaries
@@ -555,6 +582,40 @@ fn host_binaries_manifest_generator_records_final_paths_hashes_and_versions() {
     assert_eq!(seccomp.version, "v1.15.1");
 }
 
+#[test]
+fn host_binaries_manifest_generator_can_omit_systemd_wrapper() {
+    let (dir, config) = fixture_config("v1.15.1");
+    let m80 = dir.path().join("m80");
+    write_executable(
+        &m80,
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 0.1.0\\n'; fi\n",
+    );
+    let generator = HostBinariesManifestConfig {
+        firecracker_bin: config.firecracker_bin.clone(),
+        firecracker_seccomp_filter: config.firecracker_seccomp_filter.clone(),
+        jailer_bin: config.jailer_bin.clone(),
+        jailer_harden_bin: dir.path().join("missing-m80-jailer-harden"),
+        include_jailer_harden: false,
+        net_helper_bin: config.net_helper_bin.clone(),
+        m80_bin: m80,
+        expected_firecracker_version: config.expected_firecracker_version.clone(),
+    };
+
+    let manifest = generate_host_binaries_manifest(&generator).unwrap();
+
+    assert!(!manifest
+        .binaries
+        .iter()
+        .any(|entry| entry.name == HostBinaryName::M80JailerHarden));
+    assert_eq!(
+        manifest.conditional_binaries,
+        vec![ConditionalHostBinaryEntry {
+            name: HostBinaryName::M80JailerHarden,
+            absent_when: HostBinaryAbsentWhen::SystemdPathChosen,
+        }]
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn host_binary_manifest_exact_match_succeeds() {
@@ -580,6 +641,94 @@ fn host_binary_manifest_exact_match_succeeds() {
     };
 
     verify_fixture_host_binaries(&config, &manifest_path).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_allows_absent_wrapper_only_for_systemd_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest
+        .binaries
+        .retain(|entry| entry.name != HostBinaryName::M80JailerHarden);
+    manifest.conditional_binaries = vec![ConditionalHostBinaryEntry {
+        name: HostBinaryName::M80JailerHarden,
+        absent_when: HostBinaryAbsentWhen::SystemdPathChosen,
+    }];
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: dir.path().join("missing-m80-jailer-harden"),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    verify_fixture_host_binaries_for_launch_path(&config, &manifest_path, LaunchPath::Systemd)
+        .unwrap();
+    let err =
+        verify_fixture_host_binaries_for_launch_path(&config, &manifest_path, LaunchPath::Wrapper)
+            .unwrap_err();
+
+    match err {
+        PreflightError::HostBinaryMissing { name } => {
+            assert_eq!(name, "m80_jailer_harden");
+        }
+        other => panic!("expected wrapper missing for wrapper path, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_without_conditional_wrapper_fails_for_systemd_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest
+        .binaries
+        .retain(|entry| entry.name != HostBinaryName::M80JailerHarden);
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: dir.path().join("missing-m80-jailer-harden"),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err =
+        verify_fixture_host_binaries_for_launch_path(&config, &manifest_path, LaunchPath::Systemd)
+            .unwrap_err();
+
+    match err {
+        PreflightError::HostBinaryMissing { name } => {
+            assert_eq!(name, "m80_jailer_harden");
+        }
+        other => panic!("expected wrapper missing without conditional, got {other:?}"),
+    }
 }
 
 #[cfg(target_os = "linux")]

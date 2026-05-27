@@ -50,7 +50,8 @@ the probe exercises.
 - `firecracker_bin`
 - `firecracker_seccomp_filter`
 - `jailer_bin`
-- `jailer_harden_bin`
+- `jailer_harden_bin`, only when the installed flat host-binaries manifest
+  lists the wrapper binary
 - `net_helper_bin`
 - `run_root`
 - `release_tag`, when the artifact URL contains `/releases/download/<tag>/`
@@ -82,8 +83,9 @@ closed through the normal config loader.
 `m80 run` resolves `default_profile` from the effective config, loads the named
 profile, and passes its artifact and host-helper paths directly into preflight
 before building the backend. The installed config supplies the default run-root.
-This path does not require ambient `M80_KERNEL_IMAGE`, `M80_ROOTFS_IMAGE`, or
-host-helper environment variables.
+Systemd-selected installs omit `jailer_harden_bin`; wrapper-selected installs
+record it. This path does not require ambient `M80_KERNEL_IMAGE`,
+`M80_ROOTFS_IMAGE`, or host-helper environment variables.
 
 `m80 preflight` uses the same selected runtime profile when checking artifact
 and helper paths. Human output prints the selected profile report before the

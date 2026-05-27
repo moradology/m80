@@ -6,10 +6,12 @@ metadata are unchanged.
 
 After a successful full preflight, m80 writes
 `/run/m80-preflight-ok-<sha256>`. The hash input includes the kernel boot id,
-the configured Firecracker version pin, the optional kernel-kind override, and
-file identity metadata for the Firecracker binary, Firecracker seccomp filter,
-jailer binary, `m80-jailer-harden`, `m80-net-helper`, selected kernel,
-selected rootfs, and rootfs manifest.
+the selected launch path, the configured Firecracker version pin, the optional
+kernel-kind override, and file identity metadata for the Firecracker binary,
+Firecracker seccomp filter, jailer binary, `m80-net-helper`, selected kernel,
+selected rootfs, and rootfs manifest. Wrapper-path sentinels also fingerprint
+`m80-jailer-harden`; systemd-path sentinels do not require or fingerprint the
+wrapper.
 
 On a matching sentinel, m80 reuses the cached Firecracker version, jailer
 version, and manifest, skipping `firecracker --version`, `jailer --version`,
@@ -18,16 +20,18 @@ privilege, host-binaries manifest validation, launch-material validation,
 run-root, run-root filesystem, and storage helper checks.
 
 Corrupt sentinels, boot-id changes, rootfs metadata changes, manifest metadata
-changes, binary metadata changes, version-pin changes, and kernel-kind override
-changes are cache misses. A miss runs the full checks and rewrites the sentinel
-only after success. `M80_FORCE_PREFLIGHT=1` disables cache reads and writes for
-that invocation.
+changes, binary metadata changes, selected-launch-path changes, version-pin
+changes, and kernel-kind override changes are cache misses. A miss runs the
+full checks and rewrites the sentinel only after success. `M80_FORCE_PREFLIGHT=1`
+disables cache reads and writes for that invocation.
 
 Tests:
 
 - `crates/m80-preflight/src/cache.rs::tests::corrupt_sentinel_is_ignored_and_rewritten`
 - `crates/m80-preflight/src/cache.rs::tests::rootfs_mtime_change_invalidates_sentinel`
 - `crates/m80-preflight/src/cache.rs::tests::boot_id_change_invalidates_sentinel`
+- `crates/m80-preflight/src/cache.rs::tests::launch_path_change_invalidates_sentinel`
+- `crates/m80-preflight/src/cache.rs::tests::systemd_launch_path_cache_does_not_require_wrapper_file`
 - `crates/m80-preflight/src/cache.rs::tests::matching_sentinel_reuses_cached_manifest`
 - `crates/m80-preflight/src/cache.rs::tests::force_preflight_env_disables_cache_reads_and_writes`
 - `crates/m80-preflight/src/binary/tests.rs::cached_train_versions_skip_version_subprocesses`

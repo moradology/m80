@@ -14,10 +14,10 @@ use crate::firecracker_train::{
     enforce_configured_firecracker_version, enforce_jailer_pairing,
     parse_firecracker_version_output, parse_jailer_version_output, FirecrackerTrainPolicy,
 };
-use crate::PreflightError;
+use crate::{LaunchPath, PreflightError};
 use m80_image_manifest::{
-    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
-    HostLaunchMaterialName,
+    ConditionalHostBinaryEntry, HostBinariesManifest, HostBinaryAbsentWhen, HostBinaryEntry,
+    HostBinaryName, HostLaunchMaterialEntry, HostLaunchMaterialName,
 };
 use nix::libc::O_NOFOLLOW;
 use sha2::{Digest, Sha256};
@@ -77,6 +77,8 @@ pub struct HostBinariesManifestConfig {
     pub jailer_bin: PathBuf,
     /// m80 jailer hardening wrapper path.
     pub jailer_harden_bin: PathBuf,
+    /// Whether the generated manifest should require and record the wrapper.
+    pub include_jailer_harden: bool,
     /// m80 network helper path.
     pub net_helper_bin: PathBuf,
     /// Installed m80 CLI executable path.
@@ -123,6 +125,7 @@ impl HostBinariesManifestConfig {
             firecracker_seccomp_filter: binary.firecracker_seccomp_filter,
             jailer_bin: binary.jailer_bin,
             jailer_harden_bin: binary.jailer_harden_bin,
+            include_jailer_harden: true,
             net_helper_bin: binary.net_helper_bin,
             m80_bin: PathBuf::from(DEFAULT_M80_BIN),
             expected_firecracker_version: binary.expected_firecracker_version,
@@ -165,6 +168,7 @@ pub(crate) fn discover_binaries(
     config: &BinaryDiscoveryConfig,
     cached_firecracker_version: Option<&str>,
     cached_jailer_version: Option<&str>,
+    launch_path: LaunchPath,
 ) -> Result<BinaryDiscovery, PreflightError> {
     require_absolute_binary("firecracker", &config.firecracker_bin)?;
     require_absolute_binary(
@@ -172,7 +176,9 @@ pub(crate) fn discover_binaries(
         &config.firecracker_seccomp_filter,
     )?;
     require_absolute_binary("jailer", &config.jailer_bin)?;
-    require_absolute_binary("m80-jailer-harden", &config.jailer_harden_bin)?;
+    if launch_path == LaunchPath::Wrapper {
+        require_absolute_binary("m80-jailer-harden", &config.jailer_harden_bin)?;
+    }
     require_absolute_binary("m80-net-helper", &config.net_helper_bin)?;
 
     if !config.firecracker_bin.exists() {
@@ -203,7 +209,7 @@ pub(crate) fn discover_binaries(
     };
     enforce_jailer_pairing(&actual_version, &jailer_version)?;
 
-    if !config.jailer_harden_bin.exists() {
+    if launch_path == LaunchPath::Wrapper && !config.jailer_harden_bin.exists() {
         return Err(PreflightError::JailerHardenBinaryNotFound {
             path: config.jailer_harden_bin.clone(),
         });
@@ -234,44 +240,60 @@ pub fn generate_host_binaries_manifest(
     config: &HostBinariesManifestConfig,
 ) -> Result<HostBinariesManifest, PreflightError> {
     require_absolute_binary("m80", &config.m80_bin)?;
-    let discovery = discover_binaries(&config.binary_discovery_config(), None, None)?;
+    let launch_path = if config.include_jailer_harden {
+        LaunchPath::Wrapper
+    } else {
+        LaunchPath::Systemd
+    };
+    let discovery = discover_binaries(&config.binary_discovery_config(), None, None, launch_path)?;
 
-    Ok(HostBinariesManifest::new(
-        vec![
-            record_host_binary(
-                HostBinaryName::Firecracker,
-                &discovery.firecracker_bin,
-                discovery.firecracker_version.clone(),
-            )?,
-            record_host_binary(
-                HostBinaryName::Jailer,
-                &discovery.jailer_bin,
-                discovery.jailer_version.clone(),
-            )?,
-            record_host_binary(
-                HostBinaryName::M80,
-                &config.m80_bin,
-                host_binary_version(HostBinaryName::M80, &config.m80_bin)?,
-            )?,
-            record_host_binary(
+    let mut binaries = vec![
+        record_host_binary(
+            HostBinaryName::Firecracker,
+            &discovery.firecracker_bin,
+            discovery.firecracker_version.clone(),
+        )?,
+        record_host_binary(
+            HostBinaryName::Jailer,
+            &discovery.jailer_bin,
+            discovery.jailer_version.clone(),
+        )?,
+        record_host_binary(
+            HostBinaryName::M80,
+            &config.m80_bin,
+            host_binary_version(HostBinaryName::M80, &config.m80_bin)?,
+        )?,
+    ];
+    let mut conditional_binaries = Vec::new();
+    if config.include_jailer_harden {
+        binaries.push(record_host_binary(
+            HostBinaryName::M80JailerHarden,
+            &discovery.jailer_harden_bin,
+            host_binary_version(
                 HostBinaryName::M80JailerHarden,
                 &discovery.jailer_harden_bin,
-                host_binary_version(
-                    HostBinaryName::M80JailerHarden,
-                    &discovery.jailer_harden_bin,
-                )?,
             )?,
-            record_host_binary(
-                HostBinaryName::M80NetHelper,
-                &discovery.net_helper_bin,
-                host_binary_version(HostBinaryName::M80NetHelper, &discovery.net_helper_bin)?,
-            )?,
-        ],
+        )?);
+    } else {
+        conditional_binaries.push(ConditionalHostBinaryEntry {
+            name: HostBinaryName::M80JailerHarden,
+            absent_when: HostBinaryAbsentWhen::SystemdPathChosen,
+        });
+    }
+    binaries.push(record_host_binary(
+        HostBinaryName::M80NetHelper,
+        &discovery.net_helper_bin,
+        host_binary_version(HostBinaryName::M80NetHelper, &discovery.net_helper_bin)?,
+    )?);
+
+    Ok(HostBinariesManifest::new_with_conditional_binaries(
+        binaries,
         vec![record_host_launch_material(
             HostLaunchMaterialName::FirecrackerSeccompFilter,
             &discovery.firecracker_seccomp_filter,
             discovery.firecracker_version,
         )?],
+        conditional_binaries,
     ))
 }
 
@@ -330,6 +352,7 @@ pub(crate) fn verify_host_binaries(
     config: &BinaryDiscoveryConfig,
     discovery: &BinaryDiscovery,
     manifest_path: &Path,
+    launch_path: LaunchPath,
 ) -> Result<(), PreflightError> {
     let manifest =
         HostBinariesManifest::read(manifest_path).map_err(PreflightError::HostBinaryManifest)?;
@@ -343,11 +366,6 @@ pub(crate) fn verify_host_binaries(
             HostBinaryName::Jailer,
             Some(config.jailer_bin.as_path()),
             Some(discovery.jailer_version.as_str()),
-        ),
-        (
-            HostBinaryName::M80JailerHarden,
-            Some(config.jailer_harden_bin.as_path()),
-            None,
         ),
         (
             HostBinaryName::M80NetHelper,
@@ -369,6 +387,30 @@ pub(crate) fn verify_host_binaries(
         verify_host_binary_entry(entry)?;
         verify_host_binary_version(entry, expected_version)?;
     }
+    match optional_host_binary_entry(&manifest, HostBinaryName::M80JailerHarden)? {
+        Some(entry) => {
+            if entry.path != config.jailer_harden_bin {
+                return Err(PreflightError::HostBinaryPathMismatch {
+                    name: HostBinaryName::M80JailerHarden.as_str(),
+                    expected: config.jailer_harden_bin.clone(),
+                    actual: entry.path.clone(),
+                });
+            }
+            verify_host_binary_entry(entry)?;
+            verify_host_binary_version(entry, None)?;
+        }
+        None if launch_path == LaunchPath::Systemd
+            && manifest_allows_absent_binary(
+                &manifest,
+                HostBinaryName::M80JailerHarden,
+                HostBinaryAbsentWhen::SystemdPathChosen,
+            )? => {}
+        None => {
+            return Err(PreflightError::HostBinaryMissing {
+                name: HostBinaryName::M80JailerHarden.as_str(),
+            });
+        }
+    }
     let seccomp_filter = one_host_launch_material_entry(
         &manifest,
         HostLaunchMaterialName::FirecrackerSeccompFilter,
@@ -389,18 +431,48 @@ fn one_host_binary_entry(
     manifest: &HostBinariesManifest,
     name: HostBinaryName,
 ) -> Result<&HostBinaryEntry, PreflightError> {
-    let mut matches = manifest.binaries.iter().filter(|entry| entry.name == name);
-    let Some(entry) = matches.next() else {
+    let Some(entry) = optional_host_binary_entry(manifest, name)? else {
         return Err(PreflightError::HostBinaryMissing {
             name: name.as_str(),
         });
+    };
+    Ok(entry)
+}
+
+fn optional_host_binary_entry(
+    manifest: &HostBinariesManifest,
+    name: HostBinaryName,
+) -> Result<Option<&HostBinaryEntry>, PreflightError> {
+    let mut matches = manifest.binaries.iter().filter(|entry| entry.name == name);
+    let Some(entry) = matches.next() else {
+        return Ok(None);
     };
     if matches.next().is_some() {
         return Err(PreflightError::HostBinaryDuplicate {
             name: name.as_str(),
         });
     }
-    Ok(entry)
+    Ok(Some(entry))
+}
+
+fn manifest_allows_absent_binary(
+    manifest: &HostBinariesManifest,
+    name: HostBinaryName,
+    condition: HostBinaryAbsentWhen,
+) -> Result<bool, PreflightError> {
+    let mut matches = manifest
+        .conditional_binaries
+        .iter()
+        .filter(|entry| entry.name == name);
+    let Some(entry) = matches.next() else {
+        return Ok(false);
+    };
+    if matches.next().is_some() {
+        return Err(PreflightError::HostBinaryDuplicate {
+            name: name.as_str(),
+        });
+    }
+    Ok(entry.absent_when == condition)
 }
 
 fn one_host_launch_material_entry(

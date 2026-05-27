@@ -12,7 +12,7 @@ Commands and verification from the trial:
 ```sh
 cargo test -p m80-preflight
 cargo test -p m80-storage
-cargo build --release -p m80-cli -p m80-jailer-harden
+cargo build --release -p m80-cli -p m80-jailer-harden --features m80-jailer-harden/no-systemd-launch
 N=50 KIND=minimal KERNEL_KIND=stripped ./scripts/bench-cold-launch.sh --cold-isolation
 ```
 

@@ -8,6 +8,25 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+no-systemd-launch = []
+
+[[bin]]
+name = "m80-jailer-harden"
+path = "src/main.rs"
+required-features = ["no-systemd-launch"]
+
+[[test]]
+name = "integration_root"
+path = "tests/integration_root.rs"
+required-features = ["no-systemd-launch"]
+
+[[test]]
+name = "version"
+path = "tests/version.rs"
+required-features = ["no-systemd-launch"]
+
 [lints]
 workspace = true
 

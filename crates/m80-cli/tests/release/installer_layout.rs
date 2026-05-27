@@ -361,6 +361,78 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
 }
 
 #[test]
+fn install_bundle_layout_omits_flat_wrapper_when_systemd_launch_is_selected() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install(
+        &bundle,
+        &install_root,
+        Some(&host),
+        &[("M80_INSTALL_FORCE_SYSTEMD_FLAT_PROJECTION", "1")],
+        &[],
+    );
+
+    assert!(
+        output.status.success(),
+        "install failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let version_dir = install_root.join("versions").join(&bundle.release_tag);
+    assert!(
+        version_dir.join("bin/m80-jailer-harden").is_file(),
+        "versioned rollback record should keep the packaged wrapper"
+    );
+    assert!(
+        !install_root.join("bin/m80-jailer-harden").exists(),
+        "systemd-selected flat projection must omit the wrapper"
+    );
+
+    let host_binaries_manifest = install_root
+        .join("artifacts")
+        .join("host-binaries.manifest.json");
+    let host_manifest_json: Value =
+        serde_json::from_str(&fs::read_to_string(&host_binaries_manifest).unwrap()).unwrap();
+    let binary_paths = host_manifest_json["binaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        !binary_paths.contains(&install_root.join("bin/m80-jailer-harden").to_str().unwrap()),
+        "{binary_paths:?}"
+    );
+    assert_eq!(
+        host_manifest_json["conditional_binaries"],
+        serde_json::json!([
+            {
+                "name": "m80_jailer_harden",
+                "absent_when": "systemd_path_chosen"
+            }
+        ])
+    );
+
+    let profile = fs::read_to_string(install_root.join("profiles/default.toml")).unwrap();
+    assert!(
+        !profile.contains("jailer_harden_bin = "),
+        "systemd-selected default profile must not name an absent wrapper: {profile}"
+    );
+    assert!(
+        profile.contains(
+            &install_root
+                .join("bin/m80-net-helper")
+                .display()
+                .to_string()
+        ),
+        "{profile}"
+    );
+}
+
+#[test]
 fn failed_bundle_verification_records_diagnostic_attempt_metadata() {
     let bundle = write_release_bundle_with_hook(None, |src| {
         fs::write(src.join("bin/m80"), b"corrupted after metadata").unwrap();
@@ -1108,6 +1180,7 @@ fn clear_install_env(command: &mut assert_cmd::Command) {
         "M80_INSTALL_INJECT_PROOF_CACHE_MODE_FAILURE",
         "M80_INSTALL_INJECT_ACTIVE_FLIP_FAILURE",
         "M80_INSTALL_INJECT_ATTEMPT_METADATA_FAILURE",
+        "M80_INSTALL_FORCE_SYSTEMD_FLAT_PROJECTION",
         "M80_RELEASE_ATTESTATION_GH",
     ] {
         command.env_remove(key);

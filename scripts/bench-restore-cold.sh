@@ -73,7 +73,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 mkdir -p "$(dirname "$SNAPSHOT_OUT")"
-cargo build --release -p m80-jailer-harden
+cargo build --release -p m80-jailer-harden --features no-systemd-launch
 cargo build --release -p m80-firecracker --bench snapshot_restore_latency
 
 bench_bin=""

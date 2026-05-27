@@ -147,6 +147,7 @@ impl InstallRootFixture {
             firecracker_seccomp_filter: binary.firecracker_seccomp_filter,
             jailer_bin: binary.jailer_bin,
             jailer_harden_bin: binary.jailer_harden_bin,
+            include_jailer_harden: true,
             net_helper_bin: binary.net_helper_bin,
             m80_bin: self.m80_bin.clone(),
             expected_firecracker_version: binary.expected_firecracker_version,

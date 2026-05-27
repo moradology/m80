@@ -59,20 +59,26 @@ The pairing rule is owned by
 
 After path discovery and version probing, preflight reads
 `<artifact_dir>/host-binaries.manifest.json`. The manifest must contain exactly
-one entry for each TCB binary:
+one entry for each always-required TCB binary:
 
 - `firecracker`
 - `jailer`
 - `m80`
-- `m80_jailer_harden`
 - `m80_net_helper`
+
+`m80_jailer_harden` is path-dependent. Wrapper-selected hosts must carry exactly
+one concrete `m80_jailer_harden` row and the configured wrapper binary must
+exist. Systemd-selected hosts may omit the row only when
+`conditional_binaries` contains `{ "name": "m80_jailer_harden",
+"absent_when": "systemd_path_chosen" }`.
 
 The manifest must also contain exactly one `launch_material` entry for
 `firecracker_seccomp_filter`. That file is launch-critical Firecracker material
 but not an executable host binary.
 
-For `firecracker`, `jailer`, `m80_jailer_harden`, and `m80_net_helper`, the
-manifest path must match the runtime-configured path. The
+For `firecracker`, `jailer`, and `m80_net_helper`, the manifest path must match
+the runtime-configured path. `m80_jailer_harden` is checked the same way when
+its row is present or when the wrapper path is selected. The
 `firecracker_seccomp_filter` launch-material path must match
 `M80_FIRECRACKER_SECCOMP_FILTER` or the default seccomp-filter path. Every
 recorded path is opened with `O_NOFOLLOW`; preflight hashes the opened file

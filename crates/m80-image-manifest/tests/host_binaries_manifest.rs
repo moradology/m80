@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use m80_image_manifest::{
-    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
-    HostLaunchMaterialName, ManifestError, HOST_BINARIES_SCHEMA_VERSION,
+    ConditionalHostBinaryEntry, HostBinariesManifest, HostBinaryAbsentWhen, HostBinaryEntry,
+    HostBinaryName, HostLaunchMaterialEntry, HostLaunchMaterialName, ManifestError,
+    HOST_BINARIES_SCHEMA_VERSION,
 };
 
 fn fixture_manifest() -> HostBinariesManifest {
@@ -46,6 +47,25 @@ fn fixture_manifest() -> HostBinariesManifest {
             version: "v1.15.1".to_owned(),
         }],
     )
+}
+
+#[test]
+fn host_binaries_manifest_round_trips_conditional_binaries() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("host-binaries.manifest.json");
+    let mut manifest = fixture_manifest();
+    manifest
+        .binaries
+        .retain(|entry| entry.name != HostBinaryName::M80JailerHarden);
+    manifest.conditional_binaries = vec![ConditionalHostBinaryEntry {
+        name: HostBinaryName::M80JailerHarden,
+        absent_when: HostBinaryAbsentWhen::SystemdPathChosen,
+    }];
+
+    manifest.write(&path).unwrap();
+    let read = HostBinariesManifest::read(&path).unwrap();
+
+    assert_eq!(read, manifest);
 }
 
 #[test]
@@ -124,9 +144,10 @@ fn host_binaries_manifest_rejects_v3_without_versions() {
 fn host_binaries_manifest_rejects_unknown_fields() {
     let raw = br#"{
   "binaries": [],
+  "conditional_binaries": [],
   "future_field": true,
   "launch_material": [],
-  "schema_version": 4
+  "schema_version": 5
 }"#;
 
     let err = HostBinariesManifest::from_bytes(raw).unwrap_err();

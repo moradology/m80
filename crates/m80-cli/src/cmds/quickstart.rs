@@ -232,15 +232,18 @@ fn run_quickstart(
     )?;
 
     let host_binaries_manifest = artifact_dir.join("host-binaries.manifest.json");
-    if !no_run {
-        write_host_binaries_manifest_for_probe(artifact_dir)?;
-    }
+    let include_jailer_harden = if no_run {
+        true
+    } else {
+        write_host_binaries_manifest_for_probe(artifact_dir)?
+    };
     let profile_path = write_installed_default_profile(InstalledDefaultProfile {
         artifact_dir,
         run_root,
         profile_dir,
         config_path,
         binary_config: m80_preflight::BinaryDiscoveryConfig::from_env(),
+        include_jailer_harden,
         release_tag: release_tag_from_artifact_url(artifact_url),
         m80_version: identity.binary_version,
         host_binaries_manifest: &host_binaries_manifest,

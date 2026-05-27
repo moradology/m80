@@ -9,7 +9,7 @@ use m80_image_manifest::{
 };
 
 use super::bundle;
-use super::reinstall::reinstall_error;
+use super::reinstall::{host_manifest_requires_jailer_harden, reinstall_error};
 
 pub(super) fn verify_flat_projection(
     install_root: &Path,
@@ -19,12 +19,26 @@ pub(super) fn verify_flat_projection(
 ) -> Result<(), FcError> {
     let flat_bin = install_root.join("bin");
     let flat_artifacts = install_root.join("artifacts");
-    for name in ["m80", "m80-jailer-harden", "m80-net-helper"] {
+    let expect_flat_jailer_harden = host_manifest_requires_jailer_harden(
+        &flat_artifacts.join("host-binaries.manifest.json"),
+        "installed flat host-binaries manifest",
+        repair_command,
+    )?;
+    for name in ["m80", "m80-net-helper"] {
         require_same_inode(
             &final_dir.join("bin").join(name),
             &flat_bin.join(name),
             repair_command,
         )?;
+    }
+    if expect_flat_jailer_harden {
+        require_same_inode(
+            &final_dir.join("bin/m80-jailer-harden"),
+            &flat_bin.join("m80-jailer-harden"),
+            repair_command,
+        )?;
+    } else {
+        require_path_absent(&flat_bin.join("m80-jailer-harden"), repair_command)?;
     }
     for name in ["m80-guestd", "output.ext4", "vmlinux"] {
         require_same_inode(
@@ -197,6 +211,26 @@ fn require_same_inode(
         ),
         repair_command,
     ))
+}
+
+fn require_path_absent(path: &Path, repair_command: &str) -> Result<(), FcError> {
+    match fs::symlink_metadata(path) {
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(reinstall_error(
+            format!(
+                "installed flat projection target is unreadable: path={} source={source}",
+                path.display()
+            ),
+            repair_command,
+        )),
+        Ok(_) => Err(reinstall_error(
+            format!(
+                "systemd-selected flat projection must not leave m80-jailer-harden installed: path={}",
+                path.display()
+            ),
+            repair_command,
+        )),
+    }
 }
 
 fn require_manifest_path(

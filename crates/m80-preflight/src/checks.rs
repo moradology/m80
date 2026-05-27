@@ -175,18 +175,28 @@ pub fn run_with_configs(
     let privilege = substrate.privilege;
     let launch_path = select_launch_path(&binary_config)?;
 
-    let cache = PreflightCache::load(&binary_config, &artifact_config);
+    let cache = PreflightCache::load(
+        &binary_config,
+        &artifact_config,
+        launch_path.chosen_launch_path,
+    );
 
     // Firecracker and jailer binaries
     let binaries = discover_binaries(
         &binary_config,
         cache.hit().map(|hit| hit.firecracker_version.as_str()),
         cache.hit().map(|hit| hit.jailer_version.as_str()),
+        launch_path.chosen_launch_path,
     )?;
     let host_binary_manifest = artifact_config
         .artifact_dir
         .join("host-binaries.manifest.json");
-    verify_host_binaries(&binary_config, &binaries, &host_binary_manifest)?;
+    verify_host_binaries(
+        &binary_config,
+        &binaries,
+        &host_binary_manifest,
+        launch_path.chosen_launch_path,
+    )?;
     report.push(CheckRow::pass(
         HostPrerequisiteCheckId::FirecrackerBinary,
         format!(
@@ -219,7 +229,16 @@ pub fn run_with_configs(
     ));
     report.push(CheckRow::pass(
         HostPrerequisiteCheckId::JailerHardeningWrapper,
-        binaries.jailer_harden_bin.display().to_string(),
+        if launch_path.chosen_launch_path == LaunchPath::Systemd
+            && !binaries.jailer_harden_bin.exists()
+        {
+            format!(
+                "not installed at {}; systemd launch selected",
+                binaries.jailer_harden_bin.display()
+            )
+        } else {
+            binaries.jailer_harden_bin.display().to_string()
+        },
     ));
     report.push(CheckRow::pass(
         HostPrerequisiteCheckId::NetworkHelper,
@@ -313,6 +332,14 @@ fn select_launch_path(
         config.jailer_harden_bin.exists(),
         &config.jailer_harden_bin,
     )
+}
+
+/// Select the host launch path from the same systemd/wrapper probes used by
+/// full preflight.
+pub fn select_host_launch_path(
+    config: &BinaryDiscoveryConfig,
+) -> Result<LaunchPath, PreflightError> {
+    Ok(select_launch_path(config)?.chosen_launch_path)
 }
 
 fn select_launch_path_from_probe(

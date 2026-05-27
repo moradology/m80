@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::artifacts::{discover_kernel, manifest_path_for_rootfs, ArtifactPreflightConfig};
 use crate::binary::BinaryDiscoveryConfig;
+use crate::LaunchPath;
 
 pub(crate) const ENV_FORCE_PREFLIGHT: &str = "M80_FORCE_PREFLIGHT";
 const BOOT_ID_PATH: &str = "/proc/sys/kernel/random/boot_id";
@@ -47,7 +48,8 @@ struct PreflightCacheKey {
     firecracker: FileIdentity,
     firecracker_seccomp_filter: FileIdentity,
     jailer: FileIdentity,
-    jailer_harden: FileIdentity,
+    launch_path: String,
+    jailer_harden: Option<FileIdentity>,
     net_helper: FileIdentity,
     kernel: FileIdentity,
     rootfs: FileIdentity,
@@ -69,6 +71,7 @@ impl PreflightCache {
     pub(crate) fn load(
         binary_config: &BinaryDiscoveryConfig,
         artifact_config: &ArtifactPreflightConfig,
+        launch_path: LaunchPath,
     ) -> Self {
         if std::env::var_os(ENV_FORCE_PREFLIGHT).is_some() {
             return Self::disabled();
@@ -78,6 +81,7 @@ impl PreflightCache {
             Path::new(BOOT_ID_PATH),
             binary_config,
             artifact_config,
+            launch_path,
         )
     }
 
@@ -118,9 +122,14 @@ impl PreflightCache {
         boot_id_path: &Path,
         binary_config: &BinaryDiscoveryConfig,
         artifact_config: &ArtifactPreflightConfig,
+        launch_path: LaunchPath,
     ) -> Self {
-        let Ok(key) = PreflightCacheKey::from_configs(boot_id_path, binary_config, artifact_config)
-        else {
+        let Ok(key) = PreflightCacheKey::from_configs(
+            boot_id_path,
+            binary_config,
+            artifact_config,
+            launch_path,
+        ) else {
             return Self::disabled();
         };
         let path = sentinel_dir.join(format!("{}{}", SENTINEL_PREFIX, key.digest()));
@@ -150,6 +159,7 @@ impl PreflightCacheKey {
         boot_id_path: &Path,
         binary_config: &BinaryDiscoveryConfig,
         artifact_config: &ArtifactPreflightConfig,
+        launch_path: LaunchPath,
     ) -> Result<Self, std::io::Error> {
         let rootfs = artifact_config.rootfs_image.as_ref().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "rootfs image not configured")
@@ -165,7 +175,11 @@ impl PreflightCacheKey {
                 &binary_config.firecracker_seccomp_filter,
             )?,
             jailer: FileIdentity::read(&binary_config.jailer_bin)?,
-            jailer_harden: FileIdentity::read(&binary_config.jailer_harden_bin)?,
+            launch_path: launch_path_cache_key(launch_path).to_owned(),
+            jailer_harden: match launch_path {
+                LaunchPath::Systemd => None,
+                LaunchPath::Wrapper => Some(FileIdentity::read(&binary_config.jailer_harden_bin)?),
+            },
             net_helper: FileIdentity::read(&binary_config.net_helper_bin)?,
             kernel: FileIdentity::read(&kernel)?,
             rootfs: FileIdentity::read(rootfs)?,
@@ -176,6 +190,13 @@ impl PreflightCacheKey {
     fn digest(&self) -> String {
         let bytes = serde_json::to_vec(self).expect("preflight cache key serializes");
         hex::encode(Sha256::digest(bytes))
+    }
+}
+
+fn launch_path_cache_key(launch_path: LaunchPath) -> &'static str {
+    match launch_path {
+        LaunchPath::Systemd => "systemd",
+        LaunchPath::Wrapper => "wrapper",
     }
 }
 
@@ -290,6 +311,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         fs::write(cache.path.as_ref().unwrap(), b"not-json").unwrap();
 
@@ -298,6 +320,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
 
         assert!(cache.hit().is_none());
@@ -308,6 +331,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         assert_eq!(cache.hit().unwrap().firecracker_version, "v1.15.1");
         assert_eq!(cache.hit().unwrap().jailer_version, "v1.15.1");
@@ -323,6 +347,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         cache.store("v1.15.1", "v1.15.1", &manifest);
 
@@ -333,6 +358,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         assert!(cache.hit().is_none());
     }
@@ -347,6 +373,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         cache.store("v1.15.1", "v1.15.1", &manifest);
 
@@ -357,8 +384,62 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         assert!(cache.hit().is_none());
+    }
+
+    #[test]
+    fn launch_path_change_invalidates_sentinel() {
+        let (dir, boot_id, binary_config, artifact_config, manifest) = fixture();
+        let sentinel_dir = dir.path().join("sentinels");
+        fs::create_dir(&sentinel_dir).unwrap();
+        let wrapper_cache = PreflightCache::load_from_dir(
+            &sentinel_dir,
+            &boot_id,
+            &binary_config,
+            &artifact_config,
+            crate::LaunchPath::Wrapper,
+        );
+        wrapper_cache.store("v1.15.1", "v1.15.1", &manifest);
+
+        let systemd_cache = PreflightCache::load_from_dir(
+            &sentinel_dir,
+            &boot_id,
+            &binary_config,
+            &artifact_config,
+            crate::LaunchPath::Systemd,
+        );
+
+        assert!(systemd_cache.hit().is_none());
+        assert_ne!(wrapper_cache.path, systemd_cache.path);
+    }
+
+    #[test]
+    fn systemd_launch_path_cache_does_not_require_wrapper_file() {
+        let (dir, boot_id, binary_config, artifact_config, manifest) = fixture();
+        let sentinel_dir = dir.path().join("sentinels");
+        fs::create_dir(&sentinel_dir).unwrap();
+        fs::remove_file(&binary_config.jailer_harden_bin).unwrap();
+
+        let cache = PreflightCache::load_from_dir(
+            &sentinel_dir,
+            &boot_id,
+            &binary_config,
+            &artifact_config,
+            crate::LaunchPath::Systemd,
+        );
+        assert!(cache.path.is_some());
+        cache.store("v1.15.1", "v1.15.1", &manifest);
+
+        let cache = PreflightCache::load_from_dir(
+            &sentinel_dir,
+            &boot_id,
+            &binary_config,
+            &artifact_config,
+            crate::LaunchPath::Systemd,
+        );
+        assert_eq!(cache.hit().unwrap().firecracker_version, "v1.15.1");
     }
 
     #[test]
@@ -371,6 +452,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
         cache.store("v1.15.1", "v1.15.1", &manifest);
 
@@ -379,6 +461,7 @@ mod tests {
             &boot_id,
             &binary_config,
             &artifact_config,
+            crate::LaunchPath::Wrapper,
         );
 
         let hit = cache.hit().unwrap();
@@ -398,7 +481,8 @@ mod tests {
         let (_dir, _boot_id, binary_config, artifact_config, manifest) = fixture();
         let _force = EnvGuard::set_str(ENV_FORCE_PREFLIGHT, "1");
 
-        let cache = PreflightCache::load(&binary_config, &artifact_config);
+        let cache =
+            PreflightCache::load(&binary_config, &artifact_config, crate::LaunchPath::Wrapper);
         cache.store("v1.15.1", "v1.15.1", &manifest);
 
         assert!(cache.key.is_none());

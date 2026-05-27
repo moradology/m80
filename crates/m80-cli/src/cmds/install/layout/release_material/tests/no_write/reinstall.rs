@@ -1,7 +1,7 @@
 use super::*;
 use m80_image_manifest::{
-    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
-    HostLaunchMaterialName,
+    ConditionalHostBinaryEntry, HostBinariesManifest, HostBinaryAbsentWhen, HostBinaryEntry,
+    HostBinaryName, HostLaunchMaterialEntry, HostLaunchMaterialName,
 };
 
 #[test]
@@ -60,6 +60,49 @@ fn same_version_reinstall_with_identical_proof_material_is_idempotent() {
         "same-version no-op must not rewrite installed release bytes"
     );
     assert_no_layout_staging_dirs(&install_root, "idempotent reinstall");
+}
+
+#[test]
+fn same_version_reinstall_with_systemd_conditional_flat_wrapper_is_idempotent() {
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+    let bundle_bytes = write_installable_bundle_bytes(temp.path());
+
+    seed_existing_verified_install(
+        &install_root,
+        &bundle_bytes,
+        ReleaseFixtureOptions::default(),
+    );
+    fs::remove_file(install_root.join("bin/m80-jailer-harden")).unwrap();
+    write_seed_systemd_host_binaries_manifest(
+        &install_root.join("artifacts"),
+        &install_root.join("bin"),
+    );
+    remove_seed_profile_wrapper_field(&install_root);
+    let profile_before = fs::read(install_root.join("profiles/default.toml")).unwrap();
+
+    let second = install_layout_with_installable_bundle(
+        &install_root,
+        &bundle_bytes,
+        ReleaseFixtureOptions::default(),
+    );
+
+    let reinstall = second
+        .reinstall
+        .as_ref()
+        .expect("systemd conditional same-version reinstall should report idempotency");
+    assert_eq!(second.state, "already_installed");
+    assert_eq!(reinstall.status, "idempotent_same_material");
+    assert_eq!(second.files_copied, 0);
+    assert!(!second.profile_written);
+    assert!(
+        !install_root.join("bin/m80-jailer-harden").exists(),
+        "same-version no-op must not recreate the omitted flat wrapper"
+    );
+    assert_eq!(
+        fs::read(install_root.join("profiles/default.toml")).unwrap(),
+        profile_before
+    );
 }
 
 #[test]
@@ -876,6 +919,32 @@ fn write_seed_host_binaries_manifest(artifact_dir: &Path, bin_dir: &Path) {
     .expect("write seed host-binaries manifest");
 }
 
+fn write_seed_systemd_host_binaries_manifest(artifact_dir: &Path, bin_dir: &Path) {
+    HostBinariesManifest::new_with_conditional_binaries(
+        vec![
+            host_binary(HostBinaryName::Firecracker, "/opt/firecracker/firecracker"),
+            host_binary(HostBinaryName::Jailer, "/opt/firecracker/jailer"),
+            installed_host_binary(HostBinaryName::M80, &bin_dir.join("m80")),
+            installed_host_binary(
+                HostBinaryName::M80NetHelper,
+                &bin_dir.join("m80-net-helper"),
+            ),
+        ],
+        vec![HostLaunchMaterialEntry {
+            name: HostLaunchMaterialName::FirecrackerSeccompFilter,
+            path: "/opt/firecracker/seccomp.json".into(),
+            sha256: "b".repeat(64),
+            version: "fixture".to_owned(),
+        }],
+        vec![ConditionalHostBinaryEntry {
+            name: HostBinaryName::M80JailerHarden,
+            absent_when: HostBinaryAbsentWhen::SystemdPathChosen,
+        }],
+    )
+    .write(&artifact_dir.join("host-binaries.manifest.json"))
+    .expect("write seed systemd host-binaries manifest");
+}
+
 fn host_binary(name: HostBinaryName, path: &str) -> HostBinaryEntry {
     HostBinaryEntry {
         name,
@@ -942,4 +1011,16 @@ fn write_seed_profile_and_config(install_root: &Path) {
         ),
     )
     .expect("write seed config");
+}
+
+fn remove_seed_profile_wrapper_field(install_root: &Path) {
+    let profile_path = install_root.join("profiles/default.toml");
+    let profile = fs::read_to_string(&profile_path).expect("read seed profile");
+    let without_wrapper = profile
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("jailer_harden_bin ="))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(profile_path, without_wrapper).expect("rewrite seed profile without wrapper");
 }

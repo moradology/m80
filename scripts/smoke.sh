@@ -102,6 +102,31 @@ fi
 
 FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
 
+systemd_launch_available() {
+    local systemd_run
+    if ! systemd_run="$(command -v systemd-run 2>/dev/null)"; then
+        return 1
+    fi
+    local runner=()
+    if [[ "$(id -u)" -ne 0 ]]; then
+        runner=(sudo -n)
+    fi
+    "${runner[@]}" "$systemd_run" --version >/dev/null 2>&1 \
+        && "${runner[@]}" "$systemd_run" \
+            --quiet \
+            --collect \
+            --wait \
+            --pipe \
+            --property=NoNewPrivileges=yes \
+            /bin/true >/dev/null 2>&1
+}
+
+if systemd_launch_available; then
+    INSTALL_JAILER_HARDEN=0
+else
+    INSTALL_JAILER_HARDEN=1
+fi
+
 mode="${1:-full}"
 
 manifest_schema_ok() {
@@ -191,7 +216,11 @@ echo "  firecracker: $FIRECRACKER_BIN"
 echo "  seccomp:     $FIRECRACKER_SECCOMP_FILTER"
 echo "  jailer:      $JAILER_BIN"
 echo "  m80:         $M80_BIN"
-echo "  harden:      $JAILER_HARDEN_BIN"
+if [[ "$INSTALL_JAILER_HARDEN" -eq 1 ]]; then
+    echo "  harden:      $JAILER_HARDEN_BIN"
+else
+    echo "  harden:      not installed; systemd launch selected"
+fi
 echo "  net-helper:  $NET_HELPER_BIN"
 echo "  kernel:      $KERNEL_IMAGE"
 echo "  rootfs:      $ROOTFS_IMAGE"
@@ -206,8 +235,10 @@ cargo build --release \
     -p m80-cli \
     -p m80-image-build \
     -p m80-guestd \
-    -p m80-jailer-harden \
     -p m80-net-helper
+if [[ "$INSTALL_JAILER_HARDEN" -eq 1 ]]; then
+    cargo build --release -p m80-jailer-harden --features no-systemd-launch
+fi
 
 # For minimal kinds, additionally build a static (musl) m80-guestd.
 if [[ "$IMAGE_KIND" == "minimal" || "$IMAGE_KIND" == "minimal-erofs" ]]; then
@@ -396,7 +427,11 @@ rm -f "$relocated_manifest_tmp" "$relocated_receipt_tmp" "$install_provenance_tm
 
 # --- install host-side TCB binaries and write matching manifest ---
 echo "=== install host binaries ==="
-for built_binary in target/release/m80 target/release/m80-jailer-harden target/release/m80-net-helper; do
+host_binaries=(target/release/m80 target/release/m80-net-helper)
+if [[ "$INSTALL_JAILER_HARDEN" -eq 1 ]]; then
+    host_binaries+=(target/release/m80-jailer-harden)
+fi
+for built_binary in "${host_binaries[@]}"; do
     if [[ ! -x "$built_binary" ]]; then
         echo "missing built binary: $built_binary" >&2
         exit 1
@@ -406,7 +441,11 @@ sudo install -d -o root -g root -m 0755 "$(dirname "$M80_BIN")"
 sudo install -d -o root -g root -m 0755 "$(dirname "$JAILER_HARDEN_BIN")"
 sudo install -d -o root -g root -m 0755 "$(dirname "$NET_HELPER_BIN")"
 sudo install -o root -g root -m 0755 target/release/m80 "$M80_BIN"
-sudo install -o root -g root -m 0755 target/release/m80-jailer-harden "$JAILER_HARDEN_BIN"
+if [[ "$INSTALL_JAILER_HARDEN" -eq 1 ]]; then
+    sudo install -o root -g root -m 0755 target/release/m80-jailer-harden "$JAILER_HARDEN_BIN"
+else
+    sudo rm -f "$JAILER_HARDEN_BIN"
+fi
 sudo install -o root -g root -m 0755 target/release/m80-net-helper "$NET_HELPER_BIN"
 
 echo "=== write host-binaries manifest ==="
@@ -419,7 +458,8 @@ python3 - \
     "$JAILER_HARDEN_BIN" \
     "$NET_HELPER_BIN" \
     "$FIRECRACKER_SECCOMP_FILTER" \
-    "$FIRECRACKER_VERSION" <<'PY'
+    "$FIRECRACKER_VERSION" \
+    "$INSTALL_JAILER_HARDEN" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -427,7 +467,8 @@ import subprocess
 import sys
 
 out_path = pathlib.Path(sys.argv[1])
-firecracker, jailer, m80, harden, net_helper, seccomp, firecracker_version = sys.argv[2:]
+firecracker, jailer, m80, harden, net_helper, seccomp, firecracker_version, install_harden = sys.argv[2:]
+install_harden = install_harden == "1"
 
 def sha256(path: str) -> str:
     digest = hashlib.sha256()
@@ -439,8 +480,7 @@ def sha256(path: str) -> str:
 def host_version(path: str) -> str:
     return subprocess.check_output([path, "--version"], text=True).strip()
 
-manifest = {
-    "binaries": [
+binaries = [
         {
             "name": "firecracker",
             "path": firecracker,
@@ -459,19 +499,31 @@ manifest = {
             "sha256": sha256(m80),
             "version": host_version(m80),
         },
-        {
+]
+conditional_binaries = []
+if install_harden:
+    binaries.append({
             "name": "m80_jailer_harden",
             "path": harden,
             "sha256": sha256(harden),
             "version": host_version(harden),
-        },
+    })
+else:
+    conditional_binaries.append({
+        "name": "m80_jailer_harden",
+        "absent_when": "systemd_path_chosen",
+    })
+binaries.append(
         {
             "name": "m80_net_helper",
             "path": net_helper,
             "sha256": sha256(net_helper),
             "version": host_version(net_helper),
-        },
-    ],
+        }
+)
+manifest = {
+    "binaries": binaries,
+    "conditional_binaries": conditional_binaries,
     "launch_material": [
         {
             "name": "firecracker_seccomp_filter",
@@ -480,7 +532,7 @@ manifest = {
             "version": firecracker_version,
         }
     ],
-    "schema_version": 4,
+    "schema_version": 5,
 }
 out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 PY
@@ -494,6 +546,7 @@ sudo chown "$(id -u):$(id -g)" "$RUN_ROOT"
 
 # --- common env block ---
 M80_ENV=(
+    M80_DEFAULT_PROFILE=env
     M80_ARTIFACT_DIR="$ARTIFACT_DIR"
     M80_FIRECRACKER_BIN="$FIRECRACKER_BIN"
     M80_FIRECRACKER_SECCOMP_FILTER="$FIRECRACKER_SECCOMP_FILTER"

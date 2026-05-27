@@ -24,13 +24,14 @@ Local coverage already pinned each behavior:
 - `cargo test -p m80-jailer bind_mount_flags --lib`
 - `cargo test -p m80-jailer --test jailer asset_binding`
 - `cargo test -p m80-jailer`
-- `cargo test -p m80-jailer-harden`
+- `cargo test -p m80-jailer-harden --features no-systemd-launch`
 - `cargo test --manifest-path support/m80-close-range/Cargo.toml`
 
 Privileged smoke:
 
 ```sh
-sudo env PATH="$PATH" cargo test -p m80-jailer-harden --test integration_root \
+sudo env PATH="$PATH" cargo test -p m80-jailer-harden --features no-systemd-launch \
+  --test integration_root \
   wrapper_applies_inherited_hardening_before_exec -- --ignored --exact --nocapture
 ```
 

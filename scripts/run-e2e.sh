@@ -575,7 +575,7 @@ if [[ "$list_only" -eq 0 ]]; then
 fi
 
 write_ignore_reason_map "$package" "$ignore_reasons"
-cargo build -p m80-jailer-harden >/dev/null
+cargo build -p m80-jailer-harden --features no-systemd-launch >/dev/null
 cargo test -p "$package" --tests --no-run --message-format=json > "$build_json"
 
 python3 - "$build_json" > "$executables" <<'PY'

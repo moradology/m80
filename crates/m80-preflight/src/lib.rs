@@ -137,9 +137,10 @@ pub use binary::{
     DEFAULT_M80_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
 };
 pub use checks::{
-    run, run_with_configs, verify_host_substrate, verify_host_substrate_fixture,
-    CgroupPreflightMode, HostFeaturePreflightConfig, HostSubstrateDiscovery, HostSubstrateFixture,
-    HostSubstrateFixtureKvm, HostSubstrateProofKind, SYSTEMD_MIN_VERSION,
+    run, run_with_configs, select_host_launch_path, verify_host_substrate,
+    verify_host_substrate_fixture, CgroupPreflightMode, HostFeaturePreflightConfig,
+    HostSubstrateDiscovery, HostSubstrateFixture, HostSubstrateFixtureKvm, HostSubstrateProofKind,
+    SYSTEMD_MIN_VERSION,
 };
 pub use cve_floor::{
     active_firecracker_cve_floors, FirecrackerCveFloor, FIRECRACKER_CVE_FLOOR_SOURCE,

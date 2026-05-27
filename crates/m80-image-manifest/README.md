@@ -52,12 +52,12 @@ once.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
 - `host-binaries.manifest.json` is a separate install-time manifest with
-  `schema_version: 4`. It records logical binary names, launch-material names,
+  `schema_version: 5`. It records logical binary names, launch-material names,
   absolute paths, sha256 digests, and version strings for `firecracker`,
-  `jailer`, `m80`, `m80_jailer_harden`, `m80_net_helper`, and the
-  `firecracker_seccomp_filter`. `m80-preflight` owns live path matching,
-  open-by-fd hashing, and root-owned/mode checks because those are host state,
-  not guest image state.
+  `jailer`, `m80`, `m80_net_helper`, the conditionally-present
+  `m80_jailer_harden`, and the `firecracker_seccomp_filter`. `m80-preflight`
+  owns live path matching, open-by-fd hashing, and root-owned/mode checks
+  because those are host state, not guest image state.
 - `<rootfs>.build-receipt.json` is a deploy-time receipt with
   `schema_version: 1`. It records the sha256 of `<rootfs>.manifest.json` plus
   the artifact path/hash tuples that the manifest described.
@@ -70,16 +70,18 @@ once.
 
 ## Schema
 
-### host-binaries v4
+### host-binaries v5
 
-`schema_version: 4`. Records `binaries: Vec<HostBinaryEntry>` for executable
-host-side TCB files and `launch_material: Vec<HostLaunchMaterialEntry>` for
-non-executable launch inputs. Each entry carries `name`, `path`, `sha256`, and
-`version`. The Firecracker seccomp filter version is the accepted Firecracker
-release train it belongs to; it is not an executable host binary. v4 removes
-the stale `m80_cli` logical entry because the release bundle ships the `m80`
-binary, not a second `/opt/m80/bin/m80-cli` executable. Unknown fields fail
-closed. Existing v1/v2/v3 manifests must be regenerated.
+`schema_version: 5`. Records `binaries: Vec<HostBinaryEntry>` for executable
+host-side TCB files, `launch_material: Vec<HostLaunchMaterialEntry>` for
+non-executable launch inputs, and
+`conditional_binaries: Vec<ConditionalHostBinaryEntry>` for binaries allowed to
+be absent under a named host condition. Each concrete entry carries `name`,
+`path`, `sha256`, and `version`. The Firecracker seccomp filter version is the
+accepted Firecracker release train it belongs to; it is not an executable host
+binary. v5 allows `m80_jailer_harden` to be omitted when preflight selected
+the systemd launch path. Unknown fields fail closed. Existing v1/v2/v3/v4
+manifests must be regenerated.
 
 ### build-receipt v1
 
@@ -135,9 +137,12 @@ artifacts.
 - `RootfsFormat { Ext4, Erofs }` — read-only base rootfs filesystem
   discriminator. Serializes as `"ext4"` / `"erofs"`.
 - `HostBinariesManifest::new(Vec<HostBinaryEntry>, Vec<HostLaunchMaterialEntry>)`,
-  `read`, `write`, `from_bytes`, and `schema_version`.
+  `new_with_conditional_binaries`, `read`, `write`, `from_bytes`, and
+  `schema_version`.
 - `HostBinaryEntry { name, path, sha256, version }`.
 - `HostBinaryName { Firecracker, Jailer, M80, M80JailerHarden, M80NetHelper }`.
+- `ConditionalHostBinaryEntry { name, absent_when }`.
+- `HostBinaryAbsentWhen { SystemdPathChosen }`.
 - `HostLaunchMaterialEntry { name, path, sha256, version }`.
 - `HostLaunchMaterialName { FirecrackerSeccompFilter }`.
 - `BuildReceipt::new(manifest_path, manifest_sha256, artifacts)`, `read`,
@@ -159,7 +164,7 @@ artifacts.
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 5`.
-- `HOST_BINARIES_SCHEMA_VERSION: u32 = 4`.
+- `HOST_BINARIES_SCHEMA_VERSION: u32 = 5`.
 - `BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1`.
 - `INSTALL_PROVENANCE_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for

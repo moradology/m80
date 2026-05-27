@@ -132,21 +132,26 @@ which is the right place for a security review to start.
   23. **Jailer binary** — absolute path, discovered via env override or
       default. `jailer --version` must parse as an official release and match
       the accepted Firecracker version exactly.
-  24. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
-     `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
+  24. **Jailer hardening wrapper** — required only when the wrapper launch path
+     is selected. `M80_JAILER_HARDEN_BIN` or
+     `/opt/m80/bin/m80-jailer-harden` names the fallback path; systemd-selected
+     hosts may omit the binary.
   25. **Network helper** — `m80-net-helper`, discovered via
      `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
   26. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
-      `firecracker`, `jailer`, `m80`, `m80_jailer_harden`, and
-      `m80_net_helper`, plus a `launch_material` entry for
-      `firecracker_seccomp_filter`. It checks the configured paths for the
-      runtime-selected binaries and seccomp filter, opens every recorded path
-      with `O_NOFOLLOW`, hashes the opened file descriptor, rejects
-      non-root-owned or group/world-writable binaries and launch material, and
-      rejects empty launch-material files. It also compares recorded versions
-      against live Firecracker/jailer discovery, m80 helper `--version`
-      output, and the seccomp filter's owning Firecracker train.
+      `firecracker`, `jailer`, `m80`, and `m80_net_helper`, plus a
+      `launch_material` entry for `firecracker_seccomp_filter`.
+      `m80_jailer_harden` is required for the wrapper path; for the systemd
+      path it may be absent only when `conditional_binaries` explicitly records
+      `{ name = "m80_jailer_harden", absent_when = "systemd_path_chosen" }`.
+      It checks the configured paths for the runtime-selected binaries and
+      seccomp filter, opens every recorded path with `O_NOFOLLOW`, hashes the
+      opened file descriptor, rejects non-root-owned or group/world-writable
+      binaries and launch material, and rejects empty launch-material files. It
+      also compares recorded versions against live Firecracker/jailer
+      discovery, m80 helper `--version` output, and the seccomp filter's owning
+      Firecracker train.
   27. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
@@ -174,9 +179,10 @@ which is the right place for a security review to start.
   immutable-artifact outputs: `firecracker --version`, `jailer --version`, and
   `m80-image-manifest::verify`. Host binary sha256 verification still runs on
   every preflight invocation. The key includes the kernel boot id, configured
-  Firecracker version pin, kernel kind override, and metadata for the
-  Firecracker, Firecracker seccomp filter, jailer, hardening wrapper, network
-  helper, kernel, rootfs, and manifest files.
+  Firecracker version pin, selected launch path, kernel kind override, and
+  metadata for the Firecracker, Firecracker seccomp filter, jailer, network
+  helper, kernel, rootfs, and manifest files. Wrapper-path cache keys also
+  fingerprint the hardening wrapper; systemd-path cache keys do not require it.
   Corrupt or mismatched sentinels are ignored and rewritten after a successful
   full check. `M80_FORCE_PREFLIGHT=1` disables the cache for that invocation.
 - Env keys are exact and case-sensitive. Preflight recognizes
@@ -223,7 +229,7 @@ which is the right place for a security review to start.
   `Default`; callers must use `from_env()` or construct the full effective
   config.
 - `HostBinariesManifestConfig { firecracker_bin, firecracker_seccomp_filter,
-  jailer_bin, jailer_harden_bin, net_helper_bin, m80_bin,
+  jailer_bin, jailer_harden_bin, include_jailer_harden, net_helper_bin, m80_bin,
   expected_firecracker_version }`, `HostBinariesManifestConfig::from_env()`,
   `generate_host_binaries_manifest(&config)`, and
   `write_host_binaries_manifest(&config, path)` for install-time manifest

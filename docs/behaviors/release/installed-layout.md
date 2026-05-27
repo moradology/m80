@@ -55,7 +55,6 @@ The installer also publishes a flat hardlink projection:
 
 ```text
 <install-root>/bin/m80
-<install-root>/bin/m80-jailer-harden
 <install-root>/bin/m80-net-helper
 <install-root>/artifacts/vmlinux
 <install-root>/artifacts/output.ext4
@@ -65,6 +64,12 @@ The installer also publishes a flat hardlink projection:
 <install-root>/artifacts/install-provenance.json
 <install-root>/artifacts/host-binaries.manifest.json
 ```
+
+On wrapper-fallback hosts the flat projection also contains
+`<install-root>/bin/m80-jailer-harden`. On systemd-selected hosts the versioned
+directory still keeps the bundled wrapper for rollback/multi-version records,
+but the flat client-facing projection omits the wrapper and records the
+conditional absence in `host-binaries.manifest.json`.
 
 The flat binaries and payload artifacts are hardlinks to the selected versioned
 directory, not symlinks. Flat guest metadata is regenerated with flat absolute
