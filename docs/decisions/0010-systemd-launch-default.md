@@ -11,39 +11,41 @@ m80 → m80-jailer (bind plan + chroot materialize)
             → exec firecracker (VMM inside the chroot)
 ```
 
-`m80-jailer-harden` is a ~700-line privileged wrapper
-(`crates/m80-jailer-harden/`) that applies hardening which inherits across
-the upcoming `exec` into the official jailer. The wrapper exists because the
-official jailer needs `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_SYS_CHROOT`,
-`CAP_SETUID`, and friends to do its mount/mknod/chroot/uid-drop work;
-pre-shrinking those caps would break the official jailer, but
-pre-shrinking *everything else* and applying `NoNewPrivileges`, ambient-cap
-clear, supplementary-group drop, signal mask reset, `close_range`, and
-`env_clear` is fine and inherits cleanly.
+`m80-jailer-harden` is a privileged wrapper
+(`crates/m80-jailer-harden/`; roughly 400 functional lines plus its tests)
+that applies hardening which inherits across the upcoming `exec` into the
+official jailer. The wrapper exists because the official jailer needs
+`CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_SYS_CHROOT`, `CAP_SETUID`, and friends
+to do its mount/mknod/chroot/uid-drop work; pre-shrinking those caps would
+break the official jailer, but pre-shrinking *everything else* and applying
+one-way process state before the official-jailer `exec` is useful.
 
-Concretely, the wrapper applies:
+Concretely, `apply_process_hardening` applies, in order:
 
+- Optional `unshare(CLONE_NEWCGROUP)` / `unshare(CLONE_NEWNET)`
+- Optional `setrlimit` for `no-file`, `fsize`, `nproc`, `memlock`, `as`,
+  `core`, `stack`
+- `setgroups([])`
+- Clear inheritable and ambient capability sets
 - Prune the bounding capability set to the seven-cap official-jailer minimum
   (`CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
   `CAP_SETUID`, `CAP_SETGID`, `CAP_SYS_ADMIN`)
-- Clear inheritable and ambient capability sets
 - Retain only the allowed seven in effective and permitted
 - `PR_SET_NO_NEW_PRIVS`
 - `PR_SET_PDEATHSIG=SIGKILL`
-- `setgroups([])`
 - `umask 0077`
 - Signal mask reset
 - `close_range(3, UINT_MAX, 0)`
-- `env_clear()` before exec
-- Optional `setrlimit` for `nproc`, `memlock`, `as`, `core`, `stack`
-- Optional `unshare(CLONE_NEWCGROUP)` / `unshare(CLONE_NEWNET)`
 
-Every wrapper directive is also expressible as a systemd unit directive, and
-systemd ships additional hardening primitives the wrapper does not — at minimum
-`RestrictNamespaces=`, `LockPersonality=`, `ProtectKernelModules=`,
-`ProtectKernelTunables=`, `ProtectKernelLogs=`, `ProtectClock=`,
-`RestrictAddressFamilies=`, `RestrictSUIDSGID=`, `KeyringMode=`,
-`SystemCallArchitectures=`.
+The wrapper's `exec_jailer` caller also clears the environment before
+spawning the official jailer command.
+
+Most wrapper behavior is expressible as systemd unit policy, and systemd also
+ships hardening primitives the wrapper does not. The central case is narrower
+than "systemd adds eight new protections": several directives close surfaces
+the jailer geometry already reduces. The real incremental systemd coverage is
+the per-unit keyring, personality, namespace, address-family, SUID/SGID, and
+kernel-interface policy envelope around the privileged jailer window.
 
 systemd is present and supported on roughly 95% of realistic m80 deployment
 hosts (Ubuntu, Debian, RHEL family, Fedora, SUSE, Amazon Linux, all major
@@ -63,7 +65,8 @@ preflight. Exactly one is chosen per host. There is no silent fallback.
 
 Fully transient. No installed unit files. The arg-builder in
 `m80-firecracker` produces
-`systemd-run --unit=m80-vm-<id> --collect --property=...` per launch.
+`systemd-run --unit=m80-vm-<derived-token> --collect --property=...` per
+launch.
 Per-VM-variable directives — rlimits derived from `JailerConfig`, optional
 cgroup/net namespace requests — are inline `--property=` flags. The static
 unit-template alternative was rejected because:
@@ -80,25 +83,37 @@ restricted directive envelope.
 
 ### B. systemd version floor
 
-Floor: **245**. The full directive set commits to:
+Floor: **245**. The VM-launch directive set commits to:
 
-- `CapabilityBoundingSet=`, `AmbientCapabilities=`, `NoNewPrivileges=`,
-  `UMask=`, `SupplementaryGroups=`, `Environment=`, `KeyringMode=`
+- `CapabilityBoundingSet=`, `AmbientCapabilities=` (explicit empty for VM
+  launch), `NoNewPrivileges=`, `UMask=`, `SupplementaryGroups=`,
+  `KeyringMode=private`
 - `LockPersonality=`, `RestrictNamespaces=`, `RestrictSUIDSGID=`,
-  `RestrictAddressFamilies=`
+  `RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_VSOCK`
 - `ProtectKernelModules=`, `ProtectKernelTunables=`, `ProtectKernelLogs=`,
-  `ProtectClock=`
-- `SystemCallArchitectures=`, `SystemCallFilter=`
-  (Firecracker-compatible profile; cannot be tighter than what Firecracker
-  itself installs via `--seccomp-filter`)
+  `ProtectClock=`, `PrivateDevices=`
+- `SystemCallArchitectures=native`
+- `StandardOutput=append:<console-log>`,
+  `StandardError=append:<console-log>` when a VM console log is configured;
+  otherwise both are `null`
 - Per-launch `LimitNOFILE=`, `LimitFSIZE=`, `LimitNPROC=`, `LimitMEMLOCK=`,
   `LimitAS=`, `LimitCORE=`, `LimitSTACK=` from `JailerConfig`
 
 The floor reflects the highest-required directive in the chosen set
-(`ProtectClock=`). The implementing PR pins the exact version constant in
-`crates/m80-preflight/src/checks.rs` and a test ties the constant to the
-directive list — if the directive set ever grows to need newer systemd, the
-floor moves with it and the test fails closed.
+(`ProtectClock=`). That means the floor depends on one directive with
+relatively small incremental value because the wrapper and official jailer
+already remove `CAP_SYS_TIME`; keeping it is a deliberate simplicity choice,
+not the strongest security argument in the table. The implementing PR pins
+the exact version constant in `crates/m80-preflight/src/checks.rs` and a test
+ties the constant to the directive list — if the directive set ever grows to
+need newer systemd, the floor moves with it and the test fails closed.
+
+The VM-launch path deliberately does **not** add an outer
+`SystemCallFilter=` in Phase 1. The official jailer needs syscalls
+Firecracker itself does not need (`mount`, `pivot_root`, `mknod`, namespace
+setup), while Firecracker installs its own restrictive seccomp filter once
+it starts. A looser outer filter adds little; a tighter one breaks the
+jailer. Phase 2 (`m80-92eor`) owns any final-exec-site seccomp change.
 
 Excluded from the systemd path:
 
@@ -116,6 +131,10 @@ Covered by the systemd path:
 - Amazon Linux 2023
 
 RHEL 8 family upstream EOL is 2029. The wrapper fallback covers it until then.
+NixOS, Fedora CoreOS, Flatcar, Talos, and Bottlerocket are not rejected by
+name; they pass only if the live host exposes a root system bus and can create
+a transient unit with the chosen directive set. Immutable/declarative service
+management is an operator packaging concern, not a separate m80 launch path.
 
 ### C. m80 backend launch model
 
@@ -133,11 +152,15 @@ install and preflight does not check for it.
 
 `m80-cgroup` retains direct cgroup v2 writes for hot-path knobs.
 `systemd-run --property=MemoryMax=...`, `--property=CPUWeight=...`,
-`--property=IOWeight=...`, `--property=TasksMax=...` cover static-at-launch
-values only. Anything mid-flight — retroactive memory cap, dynamic CPU
+`--property=IOWeight=...`, `--property=TasksMax=...` can cover
+static-at-launch values only. Anything mid-flight — retroactive memory cap,
+dynamic CPU
 adjustment, sub-cgroup creation per warm-pool slot, the cgroup-favordynmods
 work — keeps direct cgroup writes. The DBus `set-property` round-trip is
-too slow for the hot path; see `docs/perf/cgroup-microcuts.md`.
+not the core argument: `docs/perf/cgroup-microcuts.md` measured only a small
+P50 delta and no material tail change. The retained boundary is ownership:
+m80 already owns dynamic per-VM cgroup topology and direct controller writes,
+while systemd transient-unit properties cover launch-time service envelope.
 
 ### E. Rootless / user-mode systemd
 
@@ -154,15 +177,18 @@ All degraded states fail closed.
 
 - **Both paths absent** (no systemd ≥ 245, no wrapper binary installed):
   typed preflight error pointing at install docs.
-- **systemd present but below 245**: typed preflight error naming the
-  observed version and the required version. Does *not* silently fall back
-  to wrapper. Silent downgrade is a footgun — operators would believe they
-  have systemd hardening and they would not.
+- **systemd present but below 245, wrapper present**: preflight explicitly
+  chooses the wrapper path and reports systemd as unavailable for the primary
+  path. This is not silent fallback; the chosen path is recorded in
+  `Discovery` and the preflight table.
+- **systemd present but below 245, wrapper absent**: typed preflight error
+  naming the observed version, required version, and missing fallback.
 - **Both paths present** (systemd ≥ 245 and the wrapper binary on disk):
   systemd path used; wrapper binary remains on disk unused. No harm.
 - **systemd unit creation fails at launch** (DBus unreachable, transient-name
-  collision, etc.): launch fails with a typed error. Does *not* fall back to
-  the wrapper. Same reason: silent downgrade.
+  collision, DBus disconnect, malformed property, etc.): launch fails with a
+  typed error. It does *not* fall back to the wrapper after preflight has
+  selected systemd.
 
 ### G. Reversibility triggers
 
@@ -191,12 +217,23 @@ path. The guest-image doctrine — `m80-guestd` runs as PID 1 without
 systemd, per `docs/behaviors/image-build/minimal-image-design.md` — stays
 unchanged and is out of scope for this ADR.
 
+### I. Sequencing note for Phase 2
+
+The Phase 2 investigation (`m80-92eor`) may prove the final-exec-site gap is
+empty or smaller than expected because Firecracker already drops privilege and
+installs its own seccomp filter at startup. That result would narrow the value
+of Phase 1 but would not make Phase 1 useless: systemd still hardens the
+privileged official-jailer setup window and the network helper. The
+implementation may proceed, but the final release note must keep the claim
+bounded to Phase 1 and must not imply that systemd closes final-exec-site
+capability/seccomp ownership.
+
 ## Alternatives considered
 
 | Alternative | Where it beats us | Where it loses | Verdict |
 |---|---|---|---|
 | systemd-driven launch (chosen) | Wide directive coverage; battle-tested code path; declarative; absorbs maintenance | Excludes hosts on systemd < 245 from the primary path | Default |
-| `m80-jailer-harden` only (status quo) | Works anywhere with KVM; small audit surface; no version pin | Misses ~8 hardening primitives systemd ships; m80 owns the syscall code; cap-allowlist drift risk against upstream Firecracker jailer | Retained as fallback |
+| `m80-jailer-harden` only (status quo) | Works anywhere with KVM; small audit surface; no version pin | Misses the systemd-only keyring/personality/namespace/address-family/kernel-interface envelope; m80 owns the syscall code; cap-allowlist drift risk against upstream Firecracker jailer | Retained as fallback |
 | OCI container runtime (Kata-style, firecracker-containerd) | Strong declarative hardening via OCI runtime spec | m80 is itself the sandbox; layering an outer container doubles the work and pushes the security boundary out to whatever runs the container | Wrong shape for m80 |
 | Inline `pre_exec` closure in `m80-jailer` | No extra binary on disk; same security delivered as wrapper | Loses the testable process boundary; raw FFI inside `m80-jailer` grows the audit-sweep-ineligible surface; needs a new safe-wrapper crate anyway, which is what the existing wrapper already is | Same code with worse testability |
 | Generic sandbox wrapper (`minijail`, `nsjail`, `bubblewrap`) | Battle-tested upstream | ~10k LOC of C as a runtime dep, with per-distro variation; not part of Firecracker's documented launch path | Wrong dep surface |
@@ -218,15 +255,16 @@ unchanged and is out of scope for this ADR.
 - `Discovery` (and downstream consumers) carry a `chosen_launch_path`
   discriminator: `LaunchPath::Systemd | LaunchPath::Wrapper`.
 - `m80-firecracker` launch site branches on `chosen_launch_path` between
-  `Command::new("systemd-run")` and `Command::new(jailer_harden_bin)`.
+  the preflight-resolved absolute `systemd-run` path and the wrapper path.
 - New arg-builder module in `m80-firecracker` for the `systemd-run`
   invocation. Unit-tested for directive coverage against a pinned snapshot.
-  The cap-bounding allowlist is constructed from the same
-  `OFFICIAL_JAILER_CAPABILITIES` constant the wrapper uses, with a
-  cross-crate test pinning the two against each other so they cannot
-  drift.
-- `m80-net-outbound` learns the same `chosen_launch_path` and branches
-  its net-helper invocation accordingly.
+  The cap-bounding allowlist mirrors the wrapper's
+  `OFFICIAL_JAILER_CAPABILITIES` list, with tests pinning the two so they
+  cannot drift.
+- `m80-net-helper` launch uses the same preflight-resolved
+  `chosen_launch_path`, but it does not reuse the VM-launch directive set:
+  the helper needs `CAP_NET_ADMIN` and netlink, not the official jailer's
+  mount/chroot/mknod capability envelope.
 - `crates/m80-jailer-harden/Cargo.toml` grows `[features]` with
   `default = []` and `no-systemd-launch = []`. Default workspace builds
   with the feature unset produce no wrapper binary.
@@ -260,22 +298,27 @@ Net effect: VMs survive an m80-backend crash on the systemd path, which
 they do not on the wrapper path. m80's existing recovery code
 (`crates/m80-jailer/src/recover.rs`) reconciles partial state on next
 startup. The recovery story has to learn to discover live VMs via systemd
-unit names (`m80-vm-<id>.service`) in addition to its current pid-file
-discovery, which is wrapper-path-only. This is implementation work in the
-launch-branching child (`m80-9wm35.4`).
+unit names in addition to its current pid-file discovery, which is
+wrapper-path-only. The unit name cannot be derived solely from the run-dir
+basename because two different parents can carry the same basename and
+because systemd unit names have a restricted character set. The
+implementation uses a collision-resistant, systemd-safe name derived from
+the run directory and records it in the persisted plan/state before unit
+creation.
 
-This shift is arguably an improvement for reliability — VMs no longer die
-because the launcher hiccups — but it is a behavior change and warrants
-explicit handling, not a silent one.
+This shift improves one reliability property — VMs no longer die merely
+because the launcher hiccups — while removing the wrapper's `PDEATHSIG`
+crash-safety property. That is a real behavior change and must be tested by
+crash/recovery proof before the systemd path becomes the default.
 
 ### What does NOT change
 
 - `m80-guestd` PID-1 behavior. Guest image stays no-systemd per
   `docs/behaviors/image-build/minimal-image-design.md`.
 - `m80-cgroup` hot path. Direct cgroup v2 writes stay.
-- `m80-jailer` bind plan, chroot materialization, and recovery code. The
-  host-side jailer crate is unaffected; both launch paths consume its
-  `MaterializedJail` the same way.
+- `m80-jailer` bind plan and chroot materialization. Recovery does change:
+  it must reconcile both pid-file-backed wrapper launches and
+  systemd-unit-backed launches.
 - The wrapper binary's internal logic. It survives unchanged behind the
   feature flag for the non-systemd path.
 - The official Firecracker jailer's role. Both paths exec the official
@@ -292,11 +335,12 @@ explicit handling, not a silent one.
 
 ### Maintenance trade
 
-The wrapper-only world owned ~700 lines of privileged Rust plus the
-`support/m80-close-range/` helper. The systemd-first world owns the
-arg-builder (smaller; pure data construction; no FFI) plus the
-directive-snapshot test plus the cap-allowlist alignment test. The wrapper
-survives behind the feature gate for the no-systemd population.
+The wrapper-only world owned roughly 400 functional lines of privileged Rust,
+the wrapper tests, plus the `support/m80-close-range/` helper. The
+systemd-first world owns the arg-builder (smaller; pure data construction;
+no FFI), the transient-unit recovery logic, the directive-snapshot test, and
+the cap-allowlist alignment test. The wrapper survives behind the feature
+gate for the no-systemd population.
 
 The new cost: a systemd version pin (245). CI test paths exercising the
 systemd launch must run on a host with systemd ≥ 245. The
