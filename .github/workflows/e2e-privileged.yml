@@ -20,6 +20,10 @@ on:
         description: "scripts/smoke.sh mode: full or launch-only"
         required: false
         default: full
+      smoke_launch_paths:
+        description: "Launch paths to smoke: both, systemd, or wrapper"
+        required: false
+        default: both
       external_network:
         description: Run tests marked requires-external-network with M80_RUN_EXTERNAL_NETWORK_E2E=1
         required: false
@@ -56,6 +60,7 @@ env:
   M80_E2E_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '180' }}
   M80_E2E_RUN_SMOKE: ${{ inputs.run_smoke || 'true' }}
   M80_E2E_SMOKE_MODE: ${{ inputs.smoke_mode || 'full' }}
+  M80_E2E_SMOKE_LAUNCH_PATHS: ${{ inputs.smoke_launch_paths || 'both' }}
   M80_E2E_EXTERNAL_NETWORK: ${{ inputs.external_network || 'false' }}
   M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
   M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}
@@ -133,6 +138,10 @@ jobs:
             full|launch-only) ;;
             *) echo "smoke_mode must be full or launch-only, got $M80_E2E_SMOKE_MODE" >&2; exit 2 ;;
           esac
+          case "$M80_E2E_SMOKE_LAUNCH_PATHS" in
+            both|systemd|wrapper) ;;
+            *) echo "smoke_launch_paths must be both, systemd, or wrapper; got $M80_E2E_SMOKE_LAUNCH_PATHS" >&2; exit 2 ;;
+          esac
           case "$M80_E2E_EXTERNAL_NETWORK" in
             true|false) ;;
             *) echo "external_network must be true or false, got $M80_E2E_EXTERNAL_NETWORK" >&2; exit 2 ;;
@@ -195,6 +204,7 @@ jobs:
             checked_out_sha="$(git rev-parse HEAD)"
             printf 'M80_E2E_CHECKED_OUT_SHA=%s\n' "$checked_out_sha"
             printf 'M80_E2E_EXTERNAL_NETWORK=%s\n' "$M80_E2E_EXTERNAL_NETWORK"
+            printf 'M80_E2E_SMOKE_LAUNCH_PATHS=%s\n' "$M80_E2E_SMOKE_LAUNCH_PATHS"
             printf 'M80_RUN_ROOT=%s\n' "$M80_RUN_ROOT"
             printf 'M80_IMAGE_KIND=%s\n' "$M80_IMAGE_KIND"
             printf 'M80_ARTIFACT_DIR=%s\n' "$M80_ARTIFACT_DIR"
@@ -213,11 +223,28 @@ jobs:
             echo "scripts/smoke.sh skipped by operator input" >"$RUNNER_TEMP/m80-smoke.log"
             exit 0
           fi
-          if [[ "$M80_E2E_SMOKE_MODE" == "full" ]]; then
-            scripts/smoke.sh >"$RUNNER_TEMP/m80-smoke.log" 2>&1
-          else
-            scripts/smoke.sh "$M80_E2E_SMOKE_MODE" >"$RUNNER_TEMP/m80-smoke.log" 2>&1
-          fi
+          : >"$RUNNER_TEMP/m80-smoke.log"
+          run_smoke() {
+            local label="$1"
+            local mode="$2"
+            shift 2
+            {
+              printf '=== privileged smoke: %s mode=%s ===\n' "$label" "$mode"
+              "$@"
+            } >>"$RUNNER_TEMP/m80-smoke.log" 2>&1
+          }
+          case "$M80_E2E_SMOKE_LAUNCH_PATHS" in
+            systemd)
+              run_smoke systemd "$M80_E2E_SMOKE_MODE" scripts/smoke.sh "$M80_E2E_SMOKE_MODE"
+              ;;
+            wrapper)
+              run_smoke wrapper "$M80_E2E_SMOKE_MODE" scripts/smoke-wrapper-path.sh "$M80_E2E_SMOKE_MODE"
+              ;;
+            both)
+              run_smoke systemd "$M80_E2E_SMOKE_MODE" scripts/smoke.sh "$M80_E2E_SMOKE_MODE"
+              run_smoke wrapper launch-only scripts/smoke-wrapper-path.sh launch-only
+              ;;
+          esac
 
       - name: Run ignored privileged tests
         run: |

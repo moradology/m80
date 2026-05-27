@@ -38,6 +38,13 @@ configuration, ready listener, admission permit, and cleanup guards are live,
 but `InstanceStart` has not been sent. `PreparedSandbox::abort()` tears that
 state down and deletes the run directory. Phases are sub-steps, not states —
 failures at any phase return a typed `FcError` and drop the admission permit.
+Phase 9 dispatches on `m80-preflight::Discovery::chosen_launch_path`: the
+`Systemd` path starts the official Firecracker jailer through a transient
+`systemd-run` unit and records `jailer-systemd-unit` before unit creation;
+the `Wrapper` path runs the existing `m80-jailer-harden` wrapper before the
+official jailer. Both paths converge on the official jailer's pid file and
+`jailer-state.json`, so later cgroup enrollment and cleanup use the same live
+`JailedFirecracker` handle.
 When `SandboxConfig::request_id` is set, launch, request, stop, and delete
 events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
 After the Firecracker API socket opens, cold and restored launches configure

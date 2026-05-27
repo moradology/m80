@@ -237,6 +237,23 @@ impl Backend {
                     kill_orphan_pids(jailer_pid, firecracker_pid);
                     self.remove_run_dir(&subdir)?;
                 }
+                Ok(m80_jailer::InspectionDecision::LiveSystemdUnit { unit_name }) => {
+                    tracing::warn!(
+                        path = %subdir.display(),
+                        unit_name,
+                        "recover_stale_run_root: stopping orphaned systemd firecracker unit"
+                    );
+                    if let Err(e) = stop_systemd_unit(&unit_name) {
+                        warn!(
+                            path = %subdir.display(),
+                            unit_name,
+                            err = %e,
+                            "recover_stale_run_root: systemd unit stop failed; preserving run-dir"
+                        );
+                        continue;
+                    }
+                    self.remove_run_dir(&subdir)?;
+                }
                 Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
                     // `reap_plan` from the plan file is ignored —
                     // `remove_run_dir` reads `/proc/self/mountinfo` for the
@@ -549,6 +566,44 @@ where
         tracing::info!(path = %subdir.display(), "recover_stale_run_root: reaped orphan run-dir");
     }
     Ok(())
+}
+
+fn stop_systemd_unit(unit_name: &str) -> Result<(), FcError> {
+    let output = std::process::Command::new("systemctl")
+        .arg("stop")
+        .arg(unit_name)
+        .output()
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: "systemctl",
+            source,
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    if systemd_stop_unit_not_loaded(&output) {
+        return Ok(());
+    }
+    Err(FcError::CommandFailed {
+        command: "systemctl",
+        status: output.status,
+        output: command_output_detail(&output.stdout, &output.stderr),
+    })
+}
+
+fn systemd_stop_unit_not_loaded(output: &std::process::Output) -> bool {
+    output.status.code() == Some(5)
+        && String::from_utf8_lossy(&output.stderr).contains("not loaded")
+}
+
+fn command_output_detail(stdout: &[u8], stderr: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(stdout).trim().to_owned();
+    let stderr = String::from_utf8_lossy(stderr).trim().to_owned();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!(": {stdout}"),
+        (true, false) => format!(": {stderr}"),
+        (false, false) => format!(": {stdout}; {stderr}"),
+    }
 }
 
 /// SIGKILL any orphaned jailer / firecracker pid and poll until /proc/<pid>
@@ -886,6 +941,18 @@ done
             !*network_called.borrow(),
             "network cleanup must not mutate state after live cgroup detection"
         );
+    }
+
+    #[test]
+    fn systemd_stop_not_loaded_status_is_cleanup_noop() {
+        let output = std::process::Output {
+            status: std::os::unix::process::ExitStatusExt::from_raw(5 << 8),
+            stdout: Vec::new(),
+            stderr: b"Failed to stop m80-vm-test.service: Unit m80-vm-test.service not loaded.\n"
+                .to_vec(),
+        };
+
+        assert!(systemd_stop_unit_not_loaded(&output));
     }
 
     fn test_backend(run_root: &std::path::Path) -> Arc<Backend> {

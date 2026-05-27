@@ -11,11 +11,19 @@ environment, uses `KeyringMode=private`, restricts address families to
 `AF_UNIX AF_NETLINK AF_VSOCK`, enables the selected kernel-interface
 protections, and mirrors `JailerConfig::resource_limits` into `Limit*`
 properties. When m80 would previously request a private VMM network namespace,
-the transient unit uses `PrivateNetwork=yes`.
+the transient unit uses `PrivateNetwork=yes`. When the official jailer detaches
+because `new_pid_ns` or `daemonize` is set, the transient unit uses
+`Type=forking` plus `PIDFile=<jail-root>/<firecracker-basename>.pid` so systemd
+tracks the Firecracker child rather than treating the exited jailer parent as a
+completed service.
 
 The builder does not emit an outer `SystemCallFilter=` in Phase 1. Firecracker
 installs its own seccomp filter once it starts, and an outer jailer filter is
 either too loose to matter or tight enough to break the official jailer.
+It also does not emit `RestrictNamespaces=` because the official jailer must
+create or join the mount, pid, and network namespaces that form the VM jail.
+It does not emit `PrivateDevices=yes` because the official jailer creates the
+device nodes that Firecracker needs inside the chroot.
 
 Stdout and stderr go to `append:<console-log>` when `JailerConfig::stdio_log`
 is present; otherwise both are `null`. The unit name is derived from a sha256

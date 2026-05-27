@@ -6,7 +6,9 @@ use m80_firecracker::{ConfigError, FcError};
 use crate::args::InstallSmokeGateArg;
 
 use super::super::InstallPlan;
-use super::{shell_single_quote, source, InstallSelectorPaths};
+#[cfg(debug_assertions)]
+use super::source;
+use super::{shell_single_quote, InstallSelectorPaths};
 
 pub(super) struct SmokeGateResult {
     pub(super) selected_gate: &'static str,

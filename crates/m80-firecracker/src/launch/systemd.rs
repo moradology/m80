@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use m80_jailer::{CgroupVersion, JailerConfig, ResourceLimits};
+use m80_jailer::{jail_root_path, CgroupVersion, JailerConfig, ResourceLimits};
 use sha2::{Digest, Sha256};
 
 const VM_UNIT_PREFIX: &str = "m80-vm";
@@ -18,6 +18,7 @@ const VM_LAUNCH_CAPABILITY_BOUNDING_SET: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SystemdRunInvocation {
     pub(super) program: PathBuf,
+    pub(super) unit_name: String,
     pub(super) args: Vec<OsString>,
 }
 
@@ -41,19 +42,18 @@ pub(super) fn build_vm_launch_invocation(
         return Err(SystemdLaunchError::CgroupNamespaceUnsupported);
     }
 
+    let unit_name = vm_launch_unit_name(&input.config.run_dir, input.config.run_dir.file_name());
     let mut args = vec![
         OsString::from("--quiet"),
         OsString::from("--collect"),
-        OsString::from(format!(
-            "--unit={}",
-            vm_launch_unit_name(&input.config.run_dir, input.config.run_dir.file_name())
-        )),
+        OsString::from(format!("--unit={unit_name}")),
     ];
     push_vm_launch_properties(&mut args, input.config);
     push_jailer_command(&mut args, input.config, input.api_socket_name);
 
     Ok(SystemdRunInvocation {
         program: input.systemd_run_bin.to_path_buf(),
+        unit_name,
         args,
     })
 }
@@ -70,7 +70,6 @@ fn push_vm_launch_properties(args: &mut Vec<OsString>, config: &JailerConfig) {
     push_property(args, "SupplementaryGroups", "");
     push_property(args, "Environment", "");
     push_property(args, "KeyringMode", "private");
-    push_property(args, "RestrictNamespaces", "~mnt pid net cgroup");
     push_property(args, "RestrictSUIDSGID", "yes");
     push_property(
         args,
@@ -82,10 +81,17 @@ fn push_vm_launch_properties(args: &mut Vec<OsString>, config: &JailerConfig) {
     push_property(args, "ProtectKernelTunables", "yes");
     push_property(args, "ProtectKernelLogs", "yes");
     push_property(args, "ProtectClock", "yes");
-    push_property(args, "PrivateDevices", "yes");
     push_property(args, "SystemCallArchitectures", "native");
     if config.new_net_ns {
         push_property(args, "PrivateNetwork", "yes");
+    }
+    if config.new_pid_ns || config.daemonize {
+        push_property(args, "Type", "forking");
+        push_property(
+            args,
+            "PIDFile",
+            firecracker_pid_file_path(config).display().to_string(),
+        );
     }
     match &config.stdio_log {
         Some(path) => {
@@ -122,6 +128,15 @@ fn push_property(args: &mut Vec<OsString>, name: &str, value: impl AsRef<str>) {
         "--property={name}={}",
         value.as_ref()
     )));
+}
+
+fn firecracker_pid_file_path(config: &JailerConfig) -> PathBuf {
+    let exec_basename = config
+        .firecracker_bin
+        .file_name()
+        .expect("validated firecracker_bin has a basename");
+    jail_root_path(&config.run_dir, &config.firecracker_bin)
+        .join(format!("{}.pid", exec_basename.to_string_lossy()))
 }
 
 fn push_jailer_command(args: &mut Vec<OsString>, config: &JailerConfig, api_socket_name: &OsStr) {
@@ -257,6 +272,7 @@ mod tests {
     fn vm_launch_directive_snapshot_is_pinned() {
         let config = config();
         let invocation = invocation(&config);
+        assert_eq!(invocation.unit_name, "m80-vm-82c2fd781bc89553610853cd");
 
         assert_eq!(
             properties(&invocation),
@@ -268,7 +284,6 @@ mod tests {
                 "SupplementaryGroups=",
                 "Environment=",
                 "KeyringMode=private",
-                "RestrictNamespaces=~mnt pid net cgroup",
                 "RestrictSUIDSGID=yes",
                 "RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_VSOCK",
                 "LockPersonality=yes",
@@ -276,9 +291,10 @@ mod tests {
                 "ProtectKernelTunables=yes",
                 "ProtectKernelLogs=yes",
                 "ProtectClock=yes",
-                "PrivateDevices=yes",
                 "SystemCallArchitectures=native",
                 "PrivateNetwork=yes",
+                "Type=forking",
+                "PIDFile=/run/m80/a/vm-1/firecracker/vm-1/root/firecracker.pid",
                 "StandardOutput=append:/run/m80/a/vm-1/console.log",
                 "StandardError=append:/run/m80/a/vm-1/console.log",
                 "LimitNOFILE=4096",
@@ -355,6 +371,18 @@ mod tests {
         assert!(props.contains(&"StandardOutput=null".to_owned()));
         assert!(props.contains(&"StandardError=null".to_owned()));
         assert!(!props.contains(&"PrivateNetwork=yes".to_owned()));
+    }
+
+    #[test]
+    fn attached_jailer_omits_forking_pidfile_properties() {
+        let mut config = config();
+        config.new_pid_ns = false;
+        config.daemonize = false;
+        let invocation = invocation(&config);
+        let props = properties(&invocation);
+
+        assert!(!props.iter().any(|prop| prop == "Type=forking"));
+        assert!(!props.iter().any(|prop| prop.starts_with("PIDFile=")));
     }
 
     #[test]

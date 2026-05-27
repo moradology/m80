@@ -38,6 +38,7 @@ pub(super) fn preflight_attestation_verifier_for_bundle_url(
     validate_bundle_source_url(bundle_url)
 }
 
+#[cfg(debug_assertions)]
 pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
     if local_file_url_path(bundle_url)?.is_some() {
         return Ok(true);

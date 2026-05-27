@@ -162,6 +162,69 @@ fn fake_backend(run_root: &Path) -> Arc<crate::Backend> {
     )
 }
 
+fn fake_launch_jailer(run_dir: &Path, jailer_bin: PathBuf) -> m80_jailer::MaterializedJail {
+    let config = JailerConfig {
+        jailer_bin,
+        jailer_harden_bin: None,
+        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+        run_dir: run_dir.to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: Vec::new(),
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: true,
+        new_net_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        cgroup_version: Some(m80_jailer::CgroupVersion::V2),
+        netns_path: None,
+        seccomp_filter_path: None,
+        stdio_log: None,
+    };
+    let plan = Plan::compute(&config).unwrap();
+    m80_jailer::materialized_jail_for_test(plan)
+}
+
+fn fake_pid_writing_jailer(path: &Path) {
+    write_executable(
+        path,
+        r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+new_pid_ns=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --new-pid-ns) new_pid_ns=1; shift ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+if [ "$new_pid_ns" -eq 1 ]; then
+  /bin/sleep 30 &
+  echo $! > "$jail_root/firecracker.pid"
+  exit 0
+fi
+echo $$ > "$jail_root/firecracker.pid"
+/bin/sleep 30
+"#,
+    );
+}
+
+fn kill_pid(pid: u32) {
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+}
+
 fn pmem_layer(name: &str) -> crate::PmemLayer {
     let digest = crate::ImageDigest::parse(VALID_PMEM_DIGEST).expect("digest");
     let image = crate::ErofsImageRef::from_digest(digest);
@@ -270,7 +333,7 @@ fn launch_jailer_config_enables_pid_namespace() {
     let config = build_jailer_launch_config(
         JailerLaunchConfigInput {
             jailer_bin: &jailer_bin,
-            jailer_harden_bin: &jailer_harden_bin,
+            jailer_harden_bin: Some(&jailer_harden_bin),
             firecracker_bin: &firecracker_bin,
             uid: 3000,
             gid: 3000,
@@ -290,6 +353,133 @@ fn launch_jailer_config_enables_pid_namespace() {
     assert_eq!(
         config.seccomp_filter_path.as_deref(),
         Some(Path::new(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH))
+    );
+}
+
+#[test]
+fn launch_jailer_config_omits_wrapper_for_systemd_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = build_jailer_launch_config(
+        JailerLaunchConfigInput {
+            jailer_bin: &dir.path().join("jailer"),
+            jailer_harden_bin: None,
+            firecracker_bin: &dir.path().join("firecracker"),
+            uid: 3000,
+            gid: 3000,
+            run_dir: &dir.path().join("vm-systemd"),
+            daemonize: false,
+            netns_path: None,
+            private_netns: false,
+        },
+        Vec::new(),
+        Vec::new(),
+    );
+
+    assert_eq!(config.jailer_harden_bin, None);
+}
+
+#[test]
+fn phase_9_wrapper_launch_uses_materialized_jail_directly() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_root = dir.path().join("run-root");
+    let run_dir = run_root.join("vm-wrapper");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    let jailer_bin = dir.path().join("fake-jailer.sh");
+    fake_pid_writing_jailer(&jailer_bin);
+    let jail = fake_launch_jailer(&run_dir, jailer_bin);
+    let discovery = fake_discovery(&run_root);
+
+    let jailed = phase_9_jailer_launch(&jail, Path::new("firecracker.sock"), &discovery).unwrap();
+
+    assert_eq!(jailed.jailer_pid(), 0);
+    assert!(
+        std::path::Path::new(&format!("/proc/{}", jailed.firecracker_pid())).exists(),
+        "wrapper-launched firecracker pid must be live"
+    );
+    assert!(!run_dir.join(m80_jailer::JAILER_SYSTEMD_UNIT_FILE).exists());
+    kill_pid(jailed.firecracker_pid());
+}
+
+#[test]
+fn phase_9_systemd_launch_records_unit_marker_and_live_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_root = dir.path().join("run-root");
+    let run_dir = run_root.join("vm-systemd");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    let jailer_bin = dir.path().join("fake-jailer.sh");
+    fake_pid_writing_jailer(&jailer_bin);
+    let systemd_run_bin = dir.path().join("fake-systemd-run.sh");
+    write_executable(
+        &systemd_run_bin,
+        r#"#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --*) shift ;;
+    *) break ;;
+  esac
+done
+"$@" >/dev/null 2>/dev/null &
+exit 0
+"#,
+    );
+    let jail = fake_launch_jailer(&run_dir, jailer_bin);
+    let mut discovery = fake_discovery(&run_root);
+    discovery.chosen_launch_path = m80_preflight::LaunchPath::Systemd;
+    discovery.systemd_run_bin = Some(systemd_run_bin);
+
+    let jailed = phase_9_jailer_launch(&jail, Path::new("firecracker.sock"), &discovery).unwrap();
+
+    assert_eq!(jailed.jailer_pid(), 0);
+    let unit_name =
+        std::fs::read_to_string(run_dir.join(m80_jailer::JAILER_SYSTEMD_UNIT_FILE)).unwrap();
+    assert!(unit_name.trim().starts_with("m80-vm-"), "{unit_name}");
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["jailer_pid"], 0);
+    assert_eq!(state["firecracker_pid"], jailed.firecracker_pid());
+    kill_pid(jailed.firecracker_pid());
+}
+
+#[test]
+fn phase_9_systemd_run_failure_is_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_root = dir.path().join("run-root");
+    let run_dir = run_root.join("vm-systemd-fail");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    let jailer_bin = dir.path().join("fake-jailer.sh");
+    fake_pid_writing_jailer(&jailer_bin);
+    let systemd_run_bin = dir.path().join("fake-systemd-run.sh");
+    write_executable(
+        &systemd_run_bin,
+        r#"#!/bin/sh
+echo synthetic systemd failure >&2
+exit 77
+"#,
+    );
+    let jail = fake_launch_jailer(&run_dir, jailer_bin);
+    let mut discovery = fake_discovery(&run_root);
+    discovery.chosen_launch_path = m80_preflight::LaunchPath::Systemd;
+    discovery.systemd_run_bin = Some(systemd_run_bin.clone());
+
+    let err = phase_9_jailer_launch(&jail, Path::new("firecracker.sock"), &discovery).unwrap_err();
+
+    match err {
+        FcError::SystemdUnitCreateFailed {
+            systemd_run_bin: observed_bin,
+            unit_name,
+            output,
+            ..
+        } => {
+            assert_eq!(observed_bin, systemd_run_bin);
+            assert!(unit_name.starts_with("m80-vm-"), "{unit_name}");
+            assert!(output.contains("synthetic systemd failure"), "{output}");
+        }
+        other => panic!("expected SystemdUnitCreateFailed, got {other:?}"),
+    }
+    assert!(
+        !run_dir.join(m80_jailer::JAILER_SYSTEMD_UNIT_FILE).exists(),
+        "known systemd-run create failures must not leave a live-unit marker"
     );
 }
 

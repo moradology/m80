@@ -14,6 +14,7 @@ use std::fs;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::prelude::AsFd;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,7 +24,7 @@ use m80_firecracker_client::{Client, LoggerConfig, MetricsConfig};
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
-use m80_preflight::Discovery;
+use m80_preflight::{Discovery, LaunchPath};
 use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     Envelope, ExecExit, ExecRequest, RawEnvelope, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR,
@@ -63,9 +64,6 @@ mod failure_cleanup;
 mod prepared;
 mod ready;
 mod snapshot_prime;
-// Wired into phase 4 by the launch-branching bead; compiled here so the
-// directive contract is pinned before the kernel-touching switch.
-#[allow(dead_code)]
 mod systemd;
 
 pub use prepared::PreparedSandbox;
@@ -78,6 +76,7 @@ use snapshot_prime::prime_snapshot_files;
 
 const RUN_DIR_MODE: u32 = 0o700;
 const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.bin";
+const SYSTEMD_FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SnapshotRestoreVerification {
@@ -222,7 +221,7 @@ impl Sandbox {
                 {
                     phase_4_jailer_materialize(JailerMaterializeInput {
                         jailer_bin: &backend_config.discovery.jailer_bin,
-                        jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
+                        jailer_harden_bin: jailer_harden_bin_for_launch(&backend_config.discovery),
                         firecracker_bin: &backend_config.discovery.firecracker_bin,
                         firecracker_seccomp_filter: &backend_config
                             .discovery
@@ -317,7 +316,7 @@ impl Sandbox {
             let api_socket =
                 firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
-            // Phase 9: jailer exec's firecracker. Returns live pids.
+            // Phase 9: launch firecracker through the selected host launch path.
             let firecracker = diag_phase!(
                 current_phase,
                 &mut diagnostics,
@@ -325,7 +324,7 @@ impl Sandbox {
                 request_id.as_deref(),
                 Phase::Boot,
                 "phase_9_jailer_launch",
-                { jail.launch(&api_socket).map_err(FcError::Jailer) }
+                { phase_9_jailer_launch(&jail, &api_socket, &backend_config.discovery) }
             )?;
             let mut early_process_cleanup =
                 Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
@@ -632,7 +631,7 @@ impl Sandbox {
                 {
                     phase_4_jailer_materialize(JailerMaterializeInput {
                         jailer_bin: &backend_config.discovery.jailer_bin,
-                        jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
+                        jailer_harden_bin: jailer_harden_bin_for_launch(&backend_config.discovery),
                         firecracker_bin: &backend_config.discovery.firecracker_bin,
                         firecracker_seccomp_filter: &backend_config
                             .discovery
@@ -665,7 +664,7 @@ impl Sandbox {
             let api_socket =
                 firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
-            // Phase 9: spawn Firecracker via jailer.
+            // Phase 9: launch firecracker through the selected host launch path.
             let firecracker = diag_phase!(
                 current_phase,
                 &mut diagnostics,
@@ -673,7 +672,7 @@ impl Sandbox {
                 request_id.as_deref(),
                 Phase::Boot,
                 "phase_9_jailer_launch",
-                { jail.launch(&api_socket).map_err(FcError::Jailer) }
+                { phase_9_jailer_launch(&jail, &api_socket, &backend_config.discovery) }
             )?;
             let mut early_process_cleanup =
                 Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
@@ -1109,7 +1108,7 @@ fn preserve_launch_failure_artifact_if_run_dir_exists(
 /// Phase 4: compute a `JailerConfig`, run `Plan::compute`, and materialize.
 struct JailerMaterializeInput<'a> {
     jailer_bin: &'a Path,
-    jailer_harden_bin: &'a Path,
+    jailer_harden_bin: Option<&'a Path>,
     firecracker_bin: &'a Path,
     firecracker_seccomp_filter: &'a Path,
     uid: u32,
@@ -1126,7 +1125,7 @@ struct JailerMaterializeInput<'a> {
 
 struct JailerLaunchConfigInput<'a> {
     jailer_bin: &'a Path,
-    jailer_harden_bin: &'a Path,
+    jailer_harden_bin: Option<&'a Path>,
     firecracker_bin: &'a Path,
     uid: u32,
     gid: u32,
@@ -1217,6 +1216,137 @@ fn phase_4_jailer_materialize(
     plan.materialize().map_err(FcError::Jailer)
 }
 
+fn jailer_harden_bin_for_launch(discovery: &Discovery) -> Option<&Path> {
+    match discovery.chosen_launch_path {
+        LaunchPath::Systemd => None,
+        LaunchPath::Wrapper => Some(discovery.jailer_harden_bin.as_path()),
+    }
+}
+
+fn phase_9_jailer_launch(
+    jail: &m80_jailer::MaterializedJail,
+    api_socket: &Path,
+    discovery: &Discovery,
+) -> Result<m80_jailer::JailedFirecracker, FcError> {
+    match discovery.chosen_launch_path {
+        LaunchPath::Wrapper => jail.launch(api_socket).map_err(FcError::Jailer),
+        LaunchPath::Systemd => {
+            let systemd_run_bin = discovery.systemd_run_bin.as_deref().ok_or_else(|| {
+                FcError::SystemdLaunchConfig {
+                    reason: "preflight selected systemd but did not record systemd_run_bin"
+                        .to_owned(),
+                }
+            })?;
+            phase_9_systemd_jailer_launch(jail, api_socket, systemd_run_bin)
+        }
+    }
+}
+
+fn phase_9_systemd_jailer_launch(
+    jail: &m80_jailer::MaterializedJail,
+    api_socket: &Path,
+    systemd_run_bin: &Path,
+) -> Result<m80_jailer::JailedFirecracker, FcError> {
+    let api_socket_name = api_socket.file_name().ok_or_else(|| {
+        path_io(
+            api_socket,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("api socket has no filename: {}", api_socket.display()),
+            ),
+        )
+    })?;
+    let invocation = systemd::build_vm_launch_invocation(systemd::VmLaunchInvocationInput {
+        systemd_run_bin,
+        config: jail.config(),
+        api_socket_name,
+    })
+    .map_err(|err| FcError::SystemdLaunchConfig {
+        reason: err.to_string(),
+    })?;
+
+    jail.record_systemd_unit(&invocation.unit_name)
+        .map_err(FcError::Jailer)?;
+
+    let output = Command::new(&invocation.program)
+        .env_clear()
+        .args(&invocation.args)
+        .output()
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: "systemd-run",
+            source,
+        })?;
+    if !output.status.success() {
+        remove_systemd_unit_marker_best_effort(jail);
+        return Err(FcError::SystemdUnitCreateFailed {
+            systemd_run_bin: invocation.program,
+            unit_name: invocation.unit_name,
+            status: output.status,
+            output: command_output_detail(&output),
+        });
+    }
+
+    let Some(firecracker_pid) = jail
+        .wait_for_firecracker_pid_file(Instant::now() + SYSTEMD_FIRECRACKER_PID_TIMEOUT)
+        .map_err(FcError::Jailer)?
+    else {
+        if stop_systemd_unit_best_effort(&invocation.unit_name) {
+            remove_systemd_unit_marker_best_effort(jail);
+        }
+        return Err(FcError::Jailer(
+            m80_jailer::JailerError::FirecrackerPidTimeout {
+                jail_path: jail.jail_root().to_path_buf(),
+            },
+        ));
+    };
+
+    let jailed = m80_jailer::JailedFirecracker::new(0, firecracker_pid);
+    if let Err(err) = jail.record_live_state(&jailed) {
+        if stop_systemd_unit_best_effort(&invocation.unit_name) {
+            remove_systemd_unit_marker_best_effort(jail);
+        }
+        return Err(FcError::Jailer(err));
+    }
+    Ok(jailed)
+}
+
+fn stop_systemd_unit_best_effort(unit_name: &str) -> bool {
+    let Ok(output) = Command::new("systemctl")
+        .arg("stop")
+        .arg(unit_name)
+        .output()
+    else {
+        return false;
+    };
+    output.status.success() || command_output_detail(&output).contains("not loaded")
+}
+
+fn remove_systemd_unit_marker_best_effort(jail: &m80_jailer::MaterializedJail) {
+    let path = jail.run_dir().join(m80_jailer::JAILER_SYSTEMD_UNIT_FILE);
+    match fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            tracing::warn!(
+                path = %path.display(),
+                err = %err,
+                "failed to remove systemd unit marker after launch failure"
+            );
+        }
+    }
+}
+
+fn command_output_detail(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!(": {stdout}"),
+        (true, false) => format!(": {stderr}"),
+        (false, false) => format!(": {stdout}; {stderr}"),
+    }
+}
+
 fn push_pmem_backing_bindings(
     bindings: &mut Vec<Binding>,
     backings: &[crate::types::ResolvedPmemBacking],
@@ -1259,7 +1389,7 @@ fn build_jailer_launch_config(
 ) -> JailerConfig {
     JailerConfig {
         jailer_bin: input.jailer_bin.to_path_buf(),
-        jailer_harden_bin: Some(input.jailer_harden_bin.to_path_buf()),
+        jailer_harden_bin: input.jailer_harden_bin.map(Path::to_path_buf),
         firecracker_bin: input.firecracker_bin.to_path_buf(),
         run_dir: input.run_dir.to_path_buf(),
         uid: input.uid,

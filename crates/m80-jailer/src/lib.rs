@@ -19,5 +19,5 @@ pub use materialized::{JailedFirecracker, MaterializedJail};
 pub use recover::{inspect_run_dir, InspectionDecision, ReapPlan};
 pub use types::{
     jail_root_path, BindMode, Binding, CgroupVersion, JailerConfig, JailerSocket, Plan,
-    ResourceLimits, JAILER_PLAN_FILE, JAILER_STATE_FILE,
+    ResourceLimits, JAILER_PLAN_FILE, JAILER_STATE_FILE, JAILER_SYSTEMD_UNIT_FILE,
 };

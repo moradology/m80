@@ -72,9 +72,10 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
         FcError::ExecTimeoutHost { .. } => EXIT_TIMEOUT,
         FcError::CleanupDeadlineExceeded { .. } => EXIT_TIMEOUT,
-        FcError::ApiSocketTimeout { .. } | FcError::HostInfrastructure { .. } => {
-            EXIT_HOST_INFRASTRUCTURE
-        }
+        FcError::ApiSocketTimeout { .. }
+        | FcError::HostInfrastructure { .. }
+        | FcError::SystemdLaunchConfig { .. }
+        | FcError::SystemdUnitCreateFailed { .. } => EXIT_HOST_INFRASTRUCTURE,
         FcError::GuestdReadyTimeout { .. } => EXIT_GUESTD_READY,
         FcError::RunDirOwnershipAmbiguous { .. }
         | FcError::RunDirAlreadyOwned { .. }
@@ -473,6 +474,25 @@ mod tests {
         let env = envelope(&err);
         assert_eq!(exit_code_for(&err), EXIT_HOST_INFRASTRUCTURE);
         assert_eq!(env.variant, "ApiSocketTimeout");
+        assert_eq!(env.exit_code, EXIT_HOST_INFRASTRUCTURE);
+    }
+
+    #[test]
+    fn systemd_launch_errors_are_host_infrastructure() {
+        let config_err = FcError::SystemdLaunchConfig {
+            reason: "missing systemd-run path".into(),
+        };
+        assert_eq!(exit_code_for(&config_err), EXIT_HOST_INFRASTRUCTURE);
+
+        let create_err = FcError::SystemdUnitCreateFailed {
+            systemd_run_bin: "/usr/bin/systemd-run".into(),
+            unit_name: "m80-vm-test".into(),
+            status: std::os::unix::process::ExitStatusExt::from_raw(1 << 8),
+            output: ": synthetic failure".into(),
+        };
+        let env = envelope(&create_err);
+        assert_eq!(exit_code_for(&create_err), EXIT_HOST_INFRASTRUCTURE);
+        assert_eq!(env.variant, "SystemdUnitCreateFailed");
         assert_eq!(env.exit_code, EXIT_HOST_INFRASTRUCTURE);
     }
 

@@ -691,6 +691,10 @@ fn maybe_inject_mode_failure(paths: &[PathBuf]) -> Result<(), FcError> {
             })?;
         }
     }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = paths;
+    }
     Ok(())
 }
 

@@ -39,6 +39,7 @@ caps.workspace = true
 
 [dev-dependencies]
 ipnet.workspace = true
+m80-jailer = { workspace = true, features = ["_test_internal"] }
 m80-jailer-harden.workspace = true
 m80-test-helpers.workspace = true
 tempfile.workspace = true

@@ -83,6 +83,20 @@ DRY_RUN=0
 PHASE_JSONL="${PHASE_JSONL:-}"
 PERF_STAT="${PERF_STAT:-0}"
 PERF_STAT_SECONDS="${PERF_STAT_SECONDS:-2}"
+M80_PREFLIGHT_ENV=()
+for optional_env in \
+    M80_SKIP_CHECK_KSM \
+    M80_SKIP_CHECK_SMT \
+    M80_SMT_CHECK \
+    M80_SKIP_CHECK_SWAP \
+    M80_SKIP_CHECK_NESTED_VIRT \
+    M80_SKIP_CHECK_KVM_TIMER \
+    M80_SKIP_CHECK_CGROUP_FAVORDYNMODS
+do
+    if [[ -n "${!optional_env:-}" ]]; then
+        M80_PREFLIGHT_ENV+=("$optional_env=${!optional_env}")
+    fi
+done
 
 case "$EGRESS" in
     none|outbound) ;;
@@ -367,7 +381,8 @@ cleanup_run_root() {
     local kernel_image rootfs_image
     kernel_image="$(kernel_image_for_kind "$image_dir")"
     rootfs_image="$(rootfs_image_for_kind "$kind" "$image_dir")"
-    sudo IMAGE_BUILD_DIR="$image_dir" \
+    sudo "${M80_PREFLIGHT_ENV[@]}" \
+         IMAGE_BUILD_DIR="$image_dir" \
          M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
          M80_JAILER_BIN=/opt/firecracker/bin/jailer \
          M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
@@ -524,7 +539,8 @@ run_one() {
         rm -f "$perf_raw"
     fi
 
-    timeout 90 sudo M80_PHASE_TRACE=1 \
+    timeout 90 sudo "${M80_PREFLIGHT_ENV[@]}" \
+            M80_PHASE_TRACE=1 \
             IMAGE_BUILD_DIR="$image_dir" \
             M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
             M80_JAILER_BIN=/opt/firecracker/bin/jailer \

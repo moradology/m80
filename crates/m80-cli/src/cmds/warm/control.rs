@@ -113,6 +113,8 @@ pub(super) enum WarmErrorKind {
     InvalidState,
     ApiSocketTimeout,
     HostInfrastructure,
+    SystemdLaunchConfig,
+    SystemdUnitCreateFailed,
     GuestdReadyTimeout,
     RunDirOwnershipAmbiguous,
     RunDirAlreadyOwned,
@@ -175,6 +177,8 @@ impl WarmErrorKind {
             FcError::InvalidState { .. } => Self::InvalidState,
             FcError::ApiSocketTimeout { .. } => Self::ApiSocketTimeout,
             FcError::HostInfrastructure { .. } => Self::HostInfrastructure,
+            FcError::SystemdLaunchConfig { .. } => Self::SystemdLaunchConfig,
+            FcError::SystemdUnitCreateFailed { .. } => Self::SystemdUnitCreateFailed,
             FcError::GuestdReadyTimeout { .. } => Self::GuestdReadyTimeout,
             FcError::RunDirOwnershipAmbiguous { .. } => Self::RunDirOwnershipAmbiguous,
             FcError::RunDirAlreadyOwned { .. } => Self::RunDirAlreadyOwned,
@@ -233,6 +237,8 @@ impl WarmErrorKind {
             Self::InvalidState => "InvalidState",
             Self::ApiSocketTimeout => "ApiSocketTimeout",
             Self::HostInfrastructure => "HostInfrastructure",
+            Self::SystemdLaunchConfig => "SystemdLaunchConfig",
+            Self::SystemdUnitCreateFailed => "SystemdUnitCreateFailed",
             Self::GuestdReadyTimeout => "GuestdReadyTimeout",
             Self::RunDirOwnershipAmbiguous => "RunDirOwnershipAmbiguous",
             Self::RunDirAlreadyOwned => "RunDirAlreadyOwned",
@@ -477,6 +483,18 @@ mod tests {
         assert_eq!(err.variant, WarmErrorKind::SandboxDead);
         assert_eq!(err.variant.as_str(), "SandboxDead");
         assert_eq!(err.exit_code, errors::EXIT_SANDBOX_DEAD);
+        assert_eq!(err.target_ready, None);
+    }
+
+    #[test]
+    fn systemd_owner_error_preserves_variant_and_exit_code() {
+        let err = WarmErrorResponse::from_error(&FcError::SystemdLaunchConfig {
+            reason: "missing systemd-run path".into(),
+        });
+
+        assert_eq!(err.variant, WarmErrorKind::SystemdLaunchConfig);
+        assert_eq!(err.variant.as_str(), "SystemdLaunchConfig");
+        assert_eq!(err.exit_code, errors::EXIT_HOST_INFRASTRUCTURE);
         assert_eq!(err.target_ready, None);
     }
 

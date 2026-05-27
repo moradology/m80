@@ -677,6 +677,27 @@ pub enum FcError {
         /// Human-readable detail with preserved source context.
         detail: String,
     },
+    /// The selected systemd launch path violated a preflight or config invariant.
+    #[error("systemd launch configuration invalid: {reason}")]
+    SystemdLaunchConfig {
+        /// Concrete invariant that failed.
+        reason: String,
+    },
+    /// `systemd-run` rejected the transient Firecracker jailer unit.
+    #[error(
+        "systemd-run {} failed to create unit {unit_name}: {status}{output}",
+        systemd_run_bin.display()
+    )]
+    SystemdUnitCreateFailed {
+        /// `systemd-run` binary used for the launch attempt.
+        systemd_run_bin: PathBuf,
+        /// Transient unit name m80 requested.
+        unit_name: String,
+        /// Process exit status returned by `systemd-run`.
+        status: ExitStatus,
+        /// Captured stdout/stderr, prefixed with `: ` when present.
+        output: String,
+    },
     /// m80-guestd did not connect on the inverted-readiness socket within
     /// the launch/restore budget.
     #[error(
@@ -908,6 +929,8 @@ impl FcError {
             Self::InvalidState { .. } => "InvalidState",
             Self::ApiSocketTimeout { .. } => "ApiSocketTimeout",
             Self::HostInfrastructure { .. } => "HostInfrastructure",
+            Self::SystemdLaunchConfig { .. } => "SystemdLaunchConfig",
+            Self::SystemdUnitCreateFailed { .. } => "SystemdUnitCreateFailed",
             Self::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
             Self::RunDirOwnershipAmbiguous { .. } => "RunDirOwnershipAmbiguous",
             Self::RunDirAlreadyOwned { .. } => "RunDirAlreadyOwned",
@@ -965,6 +988,7 @@ impl FcError {
             | Self::SandboxDead { .. }
             | Self::ApiSocketTimeout { .. }
             | Self::HostInfrastructure { .. }
+            | Self::SystemdUnitCreateFailed { .. }
             | Self::HostIo { .. }
             | Self::CleanupDeadlineExceeded { .. }
             | Self::WarmPoolFillFailed { .. }
@@ -994,6 +1018,7 @@ impl FcError {
             | Self::InvalidState { .. }
             | Self::RunDirOwnershipAmbiguous { .. }
             | Self::StaleCgroupLeaf { .. }
+            | Self::SystemdLaunchConfig { .. }
             | Self::PathIo { .. }
             | Self::Json { .. }
             | Self::CommandSpawnFailed { .. }

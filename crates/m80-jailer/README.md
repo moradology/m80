@@ -39,9 +39,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
   host binds. Best-effort `Drop` warnings carry structured `vm_id`.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
-- `MaterializedJail::jail_root()` returns the materialized chroot root;
+- `MaterializedJail::jail_root()` returns the materialized chroot root,
   `MaterializedJail::run_dir()` returns the run directory that owns the
-  persisted plan/state files. `MaterializedJail::launch(...)` exec's
+  persisted plan/state files, and `MaterializedJail::config()` returns the
+  launch config that produced the jail. `MaterializedJail::launch(...)` exec's
   `firecracker` inside the jail
   via `m80-jailer-harden` and Firecracker's official jailer binary. The
   hardening wrapper first applies m80's extended inherited resource limits
@@ -83,11 +84,14 @@ hands a config in and gets back a launchable chroot — or a typed error.
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
 - `inspect_run_dir` reads any prior plan + state and returns
-  `LiveJail | OrphanJail { reap_plan } | NoJail`. If a replayable
-  `jailer-plan.json` exists but `jailer-state.json` is missing or
-  malformed, recovery fails closed to `OrphanJail` with the plan steps
-  captured in an opaque reverse-order `ReapPlan`. The
-  crate does not act on the decision; the caller does.
+  `LiveJail | LiveSystemdUnit | OrphanJail { reap_plan } | NoJail`. If a
+  replayable `jailer-plan.json` exists but `jailer-state.json` is missing or
+  malformed, recovery first checks `jailer-systemd-unit`; an active transient
+  or transitioning unit is live state, not an orphaned chroot. Probe errors and
+  unsupported systemd states fail closed so the caller preserves the run
+  directory. Without a live unit, recovery returns `OrphanJail` with the plan
+  steps captured in an opaque reverse-order `ReapPlan`. The crate does not act
+  on the decision; the caller does.
 - The actual chroot path is `<run_dir>/<firecracker basename>/<run_dir basename>/root/`
   — jailer's hardcoded layout, derived in `jail_root_path()`. We pre-create
   the parent dirs and bind RW sources are chowned to `uid:gid` so the
@@ -103,8 +107,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `BindMode { Ro, RoImageStore, Rw, CreateInsideJail }`, `JailerSocket`.
 - `CgroupVersion { V1, V2 }`; `V2` emits `--cgroup-version 2` to the
   official jailer, while `None` and `V1` leave the flag absent.
-- `JAILER_PLAN_FILE` and `JAILER_STATE_FILE` are the persisted run-dir file
-  names for the replayable plan and live pid state.
+- `JAILER_PLAN_FILE`, `JAILER_STATE_FILE`, and `JAILER_SYSTEMD_UNIT_FILE` are
+  the persisted run-dir file names for the replayable plan, live pid state, and
+  pre-pid transient systemd unit marker.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
   defaults are `no_file = 2048`, `fsize = None`, `nproc = None`,
   `memlock = None`, `address_space = None`, `core = Some(0)`, and
@@ -112,7 +117,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   Only `no_file` and `fsize` are forwarded to Firecracker's official jailer;
   the rest are applied by `m80-jailer-harden` before exec.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
-- `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`.
+- `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`,
+  `MaterializedJail::config()`, `MaterializedJail::firecracker_pid_file_path()`,
+  `MaterializedJail::wait_for_firecracker_pid_file()`,
+  `MaterializedJail::record_live_state()`, and
+  `MaterializedJail::record_systemd_unit()`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`, `ReapPlan`.
 - `JailerError`: `BindDestRejected` (destination policy rejection),
@@ -151,10 +160,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   bind-source paths, private jail-internal directory modes, rejected
   `/proc`/`/sys`/escaping destinations, and jail-root layout given fixed
   inputs; no filesystem access.
-- `tests/recover.rs` — `inspect_run_dir` returns `NoJail` for an empty
-  run-dir, `OrphanJail` for plan-only, partial-state, or stale-pid residue,
-  and `LiveJail` when the state JSON records a running pid, including the
-  `new_pid_ns` `jailer_pid = 0` sentinel.
+- `tests/recover.rs` and unit tests in `src/recover.rs` — `inspect_run_dir`
+  returns `NoJail` for an empty run-dir, `OrphanJail` for plan-only,
+  partial-state, stale-pid, or inactive-systemd residue, `LiveSystemdUnit` for
+  an active pre-pid transient unit marker, and `LiveJail` when the state JSON
+  records a running pid, including the `new_pid_ns` `jailer_pid = 0` sentinel.
 - `tests/jailer/cgroup_version.rs` — cgroup version selection persists in the
   replayable plan JSON; unit tests in `src/materialized_tests.rs` pin official
   jailer arg emission for `None`, `V1`, and `V2`.

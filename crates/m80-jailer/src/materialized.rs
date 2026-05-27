@@ -14,7 +14,7 @@ use tracing::warn;
 
 use crate::error::JailerError;
 use crate::plan::write_file_no_follow;
-use crate::types::{CgroupVersion, JailerState, Plan, JAILER_STATE_FILE};
+use crate::types::{CgroupVersion, JailerState, Plan, JAILER_STATE_FILE, JAILER_SYSTEMD_UNIT_FILE};
 
 const FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
 const FIRECRACKER_PID_INITIAL_POLL: Duration = Duration::from_millis(1);
@@ -81,6 +81,48 @@ impl MaterializedJail {
     #[must_use]
     pub fn run_dir(&self) -> &Path {
         &self.plan.config.run_dir
+    }
+
+    /// Launch configuration that produced this materialized jail.
+    #[must_use]
+    pub fn config(&self) -> &crate::types::JailerConfig {
+        &self.plan.config
+    }
+
+    /// Host path where Firecracker's official jailer writes the child pid.
+    #[must_use]
+    pub fn firecracker_pid_file_path(&self) -> PathBuf {
+        jailer_pid_file_path(&self.jail_path, &self.plan.config.firecracker_bin)
+    }
+
+    /// Poll the official jailer's pid file until `deadline`.
+    pub fn wait_for_firecracker_pid_file(
+        &self,
+        deadline: Instant,
+    ) -> Result<Option<u32>, JailerError> {
+        wait_for_firecracker_pid_file(&self.firecracker_pid_file_path(), deadline)
+    }
+
+    /// Persist live pid state for later stale-run recovery.
+    pub fn record_live_state(&self, jailed: &JailedFirecracker) -> Result<(), JailerError> {
+        let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
+        let state = JailerState {
+            schema_version: 1,
+            jailer_pid: Some(jailed.jailer_pid),
+            firecracker_pid: Some(jailed.firecracker_pid),
+        };
+        let state_json = serde_json::to_vec(&state).map_err(|e| JailerError::Io {
+            path: state_path.clone(),
+            source: io::Error::new(io::ErrorKind::Other, e),
+        })?;
+        write_file_no_follow(&state_path, &state_json)
+    }
+
+    /// Persist the transient systemd unit name before handing launch to systemd.
+    pub fn record_systemd_unit(&self, unit_name: &str) -> Result<(), JailerError> {
+        let unit_path = self.plan.config.run_dir.join(JAILER_SYSTEMD_UNIT_FILE);
+        let content = format!("{unit_name}\n");
+        write_file_no_follow(&unit_path, content.as_bytes())
     }
 
     /// Exec `firecracker` inside the jail via the official `jailer` binary
@@ -235,7 +277,7 @@ impl MaterializedJail {
 
         let jailer_pid = child.id();
 
-        let pid_file = jailer_pid_file_path(&self.jail_path, &self.plan.config.firecracker_bin);
+        let pid_file = self.firecracker_pid_file_path();
         let deadline = Instant::now() + FIRECRACKER_PID_TIMEOUT;
         let Some(firecracker_pid) = wait_for_firecracker_pid_file(&pid_file, deadline)? else {
             // Timeout: the jailer/Firecracker pid file never appeared. Kill
@@ -263,22 +305,13 @@ impl MaterializedJail {
             jailer_pid
         };
 
-        let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
-        let state = JailerState {
-            schema_version: 1,
-            jailer_pid: Some(recorded_jailer_pid),
-            firecracker_pid: Some(firecracker_pid),
-        };
-        let state_json = serde_json::to_vec(&state).map_err(|e| JailerError::Io {
-            path: state_path.clone(),
-            source: io::Error::new(io::ErrorKind::Other, e),
-        })?;
-        write_file_no_follow(&state_path, &state_json)?;
-
-        Ok(JailedFirecracker {
+        let jailed = JailedFirecracker {
             jailer_pid: recorded_jailer_pid,
             firecracker_pid,
-        })
+        };
+        self.record_live_state(&jailed)?;
+
+        Ok(jailed)
     }
 }
 

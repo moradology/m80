@@ -88,14 +88,16 @@ Floor: **245**. The VM-launch directive set commits to:
 - `CapabilityBoundingSet=`, `AmbientCapabilities=` (explicit empty for VM
   launch), `NoNewPrivileges=`, `UMask=`, `SupplementaryGroups=`,
   `KeyringMode=private`
-- `LockPersonality=`, `RestrictNamespaces=`, `RestrictSUIDSGID=`,
+- `LockPersonality=`, `RestrictSUIDSGID=`,
   `RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_VSOCK`
 - `ProtectKernelModules=`, `ProtectKernelTunables=`, `ProtectKernelLogs=`,
-  `ProtectClock=`, `PrivateDevices=`
+  `ProtectClock=`
 - `SystemCallArchitectures=native`
 - `StandardOutput=append:<console-log>`,
   `StandardError=append:<console-log>` when a VM console log is configured;
   otherwise both are `null`
+- `Type=forking` plus `PIDFile=<jail-root>/<firecracker-basename>.pid` when
+  the official jailer detaches for `new_pid_ns` or `daemonize`
 - Per-launch `LimitNOFILE=`, `LimitFSIZE=`, `LimitNPROC=`, `LimitMEMLOCK=`,
   `LimitAS=`, `LimitCORE=`, `LimitSTACK=` from `JailerConfig`
 
@@ -114,6 +116,12 @@ Firecracker itself does not need (`mount`, `pivot_root`, `mknod`, namespace
 setup), while Firecracker installs its own restrictive seccomp filter once
 it starts. A looser outer filter adds little; a tighter one breaks the
 jailer. Phase 2 (`m80-92eor`) owns any final-exec-site seccomp change.
+For the same reason, the VM-launch path deliberately does **not** add
+`RestrictNamespaces=`: the official jailer must be able to create or join the
+mount, pid, and network namespaces that form the jail.
+The VM-launch path also does **not** add `PrivateDevices=yes`: the official
+jailer creates the device nodes that Firecracker needs inside the chroot, and
+systemd's private device sandbox blocks that setup.
 
 Excluded from the systemd path:
 

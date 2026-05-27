@@ -10,6 +10,8 @@ use crate::error::JailerError;
 pub const JAILER_PLAN_FILE: &str = "jailer-plan.json";
 /// Name of the state JSON file persisted in the run-dir.
 pub const JAILER_STATE_FILE: &str = "jailer-state.json";
+/// Name of the transient systemd unit marker persisted before `systemd-run`.
+pub const JAILER_SYSTEMD_UNIT_FILE: &str = "jailer-systemd-unit";
 
 /// Caller-supplied configuration for one jailed VM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
