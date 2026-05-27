@@ -1,5 +1,6 @@
 self-hosted-runner:
   labels:
     - kvm
+    - m80-privileged-e2e
 
 config-variables: null

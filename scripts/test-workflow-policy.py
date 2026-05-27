@@ -145,7 +145,7 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
         workflow = privileged_e2e_workflow().replace(
-            "run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}",
+            "run-name: Privileged E2E ${{ inputs.runner_label }}",
             "",
         )
         with workflow_dir("e2e-privileged.yml", workflow) as root:
@@ -169,7 +169,13 @@ class WorkflowPolicyTest(unittest.TestCase):
             ("target_sha:", "must expose target_sha input"),
             ("M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}", "must pass through target_sha input"),
             ('[[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]', "must validate target_sha"),
+            ('[[ "$M80_E2E_RUNNER_LABEL" =~ ^m80-e2e-[A-Za-z0-9_.-]+$ ]]', "must validate broker-issued runner_label"),
             ("refs/pull/$M80_E2E_PULL_NUMBER/head", "must fetch PR head"),
+            (
+                'git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"',
+                "must reuse existing origin",
+            ),
+            ('git -C "$GITHUB_WORKSPACE" clean -ffdx', "must clean persistent self-hosted workspace"),
             ('git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"', "must check out the requested target_sha"),
             ('checked_out_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"', "must verify the checked-out commit"),
             ('checked_out_sha="$(git rev-parse HEAD)"', "must capture the checked-out SHA in diagnostics"),
@@ -178,6 +184,25 @@ class WorkflowPolicyTest(unittest.TestCase):
         for token, expected_error in cases:
             with self.subTest(token=token):
                 with workflow_dir("e2e-privileged.yml", workflow.replace(token, "")) as root:
+                    result = run_lint(root)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_error, result.stderr)
+
+    def test_privileged_e2e_rejects_implicit_kvm_event_paths(self) -> None:
+        cases = [
+            ("  pull_request:\n    types: [opened]\n", "must not auto-run from pull_request events"),
+            ("  schedule:\n    - cron: \"17 4 * * 1\"\n", "must not auto-run from schedules"),
+            ("  push:\n    tags:\n      - \"v*\"\n", "must not auto-run from tag pushes"),
+            (
+                "env:\n  M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}\n",
+                "must not fall back to a repository runner label variable",
+            ),
+        ]
+        for addition, expected_error in cases:
+            with self.subTest(addition=addition):
+                workflow = privileged_e2e_workflow().replace("permissions:\n", addition + "permissions:\n")
+                with workflow_dir("e2e-privileged.yml", workflow) as root:
                     result = run_lint(root)
 
                 self.assertNotEqual(result.returncode, 0)
@@ -2001,14 +2026,13 @@ def ci_diff_check_step() -> str:
 def privileged_e2e_workflow() -> str:
     return """
 name: Privileged E2E
-run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}
+run-name: Privileged E2E ${{ inputs.runner_label }}
 on:
   workflow_dispatch:
     inputs:
       runner_label:
-        description: Self-hosted runner label to target
-        required: false
-        default: kvm
+        description: Required unique ephemeral runner label minted by the CI broker
+        required: true
       pull_number:
         description: Pull request number whose head ref should be fetched before target_sha checkout
         required: false
@@ -2017,24 +2041,31 @@ on:
         description: Exact commit SHA to check out after fetching the public repository or PR ref
         required: false
         default: ""
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
 permissions:
   contents: read
 env:
-  M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+  M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label }}
   M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}
   M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}
 jobs:
   privileged-e2e:
     runs-on:
       - self-hosted
-      - ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}
+      - m80-privileged-e2e
+      - kvm
+      - ${{ inputs.runner_label }}
     timeout-minutes: 120
     steps:
       - name: Checkout public repository
         run: |
           set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          if git -C "$GITHUB_WORKSPACE" remote get-url origin >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          else
+            git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          fi
+          git -C "$GITHUB_WORKSPACE" clean -ffdx
           if [[ -n "$M80_E2E_TARGET_SHA" ]]; then
             if ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
               exit 2
@@ -2055,7 +2086,7 @@ jobs:
       - name: Validate operator inputs
         run: |
           set -euo pipefail
-          if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+          if ! [[ "$M80_E2E_RUNNER_LABEL" =~ ^m80-e2e-[A-Za-z0-9_.-]+$ ]]; then
             exit 2
           fi
           if [[ -n "$M80_E2E_TARGET_SHA" ]] && ! [[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then

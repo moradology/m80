@@ -24,12 +24,21 @@ jobs:
         run: |
           set -euo pipefail
           git init "$GITHUB_WORKSPACE"
-          git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          if git -C "$GITHUB_WORKSPACE" remote get-url origin >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          else
+            git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          fi
+          if git -C "$GITHUB_WORKSPACE" rev-parse --verify HEAD >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" reset --hard
+            git -C "$GITHUB_WORKSPACE" clean -ffdx
+          fi
           git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
             "+$GITHUB_REF:refs/remotes/origin/event"
           git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"
+          git -C "$GITHUB_WORKSPACE" clean -ffdx
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: changed-line whitespace check
@@ -183,12 +192,21 @@ jobs:
         run: |
           set -euo pipefail
           git init "$GITHUB_WORKSPACE"
-          git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          if git -C "$GITHUB_WORKSPACE" remote get-url origin >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          else
+            git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          fi
+          if git -C "$GITHUB_WORKSPACE" rev-parse --verify HEAD >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" reset --hard
+            git -C "$GITHUB_WORKSPACE" clean -ffdx
+          fi
           git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
             "+$GITHUB_REF:refs/remotes/origin/event"
           git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"
+          git -C "$GITHUB_WORKSPACE" clean -ffdx
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install audit toolchain
@@ -204,4 +222,16 @@ jobs:
         run: cargo +1.88 deny check advisories bans licenses sources
 
       - name: cargo audit
-        run: cargo +1.88 audit
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if cargo +1.88 audit; then
+              exit 0
+            fi
+            case "$attempt" in
+              1) sleep 10 ;;
+              2) sleep 20 ;;
+              3) sleep 30 ;;
+            esac
+          done
+          cargo +1.88 audit

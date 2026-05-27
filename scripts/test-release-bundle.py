@@ -1321,7 +1321,12 @@ class ReleaseBundleTest(unittest.TestCase):
             'git -C "$GITHUB_WORKSPACE" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"',
             workflow,
         )
+        self.assertIn(
+            'git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"',
+            workflow,
+        )
         self.assertIn('git -C "$GITHUB_WORKSPACE" checkout --force "$GITHUB_SHA"', workflow)
+        self.assertIn('git -C "$GITHUB_WORKSPACE" clean -ffdx', workflow)
         self.assertIn('git config --global --add safe.directory "$GITHUB_WORKSPACE"', workflow)
         self.assertIn("uses: actions/cache@v5", workflow)
         self.assertNotIn("uses: actions/checkout@", workflow)

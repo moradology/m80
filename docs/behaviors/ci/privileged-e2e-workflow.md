@@ -3,17 +3,17 @@
 Beads: `m80-16hx7.7`, `m80-s3r28.2`, `m80-25mdp`, `broker-jo7.2`
 
 The privileged E2E workflow is the self-hosted CI lane for real-KVM behavior.
-It targets runners labeled `self-hosted` plus the configured runner label
-(`kvm` by default), keeps GitHub permissions read-only, and refuses fork
-pull-request execution by requiring same-repository PRs plus the `run-e2e`
-label.
+It targets runners labeled `self-hosted`, `m80-privileged-e2e`, `kvm`, plus a
+broker-minted unique `m80-e2e-*` label. The workflow has only a
+`workflow_dispatch` trigger, keeps GitHub permissions read-only, and has no
+tag, schedule, or pull-request fallback to the durable `kvm` runner.
 
 Contract:
 
 - substrate checks prove `/dev/kvm`, `sudo -n`, `ip`, `iptables`, and guest
   artifact paths before the battery runs;
-- `workflow_dispatch` accepts `runner_label`, validates it as
-  `[A-Za-z0-9_.-]+`, and records the selected label in substrate diagnostics;
+- `workflow_dispatch` requires `runner_label`, validates it as
+  `m80-e2e-*`, and records the selected label in substrate diagnostics;
 - `workflow_dispatch` accepts optional `pull_number` and `target_sha` inputs
   for disposable broker runs. `target_sha` must be a full 40-character hex SHA,
   `pull_number` must be a positive integer when present, and the workflow checks

@@ -151,9 +151,10 @@ Then dispatch `.github/workflows/e2e-privileged.yml` with
 `runner_label=$label`. To prove a specific pull request commit, also pass
 `pull_number=<number>` and `target_sha=<40-hex-sha>`; the workflow fetches the
 public PR ref and checks out the exact SHA before running smoke or ignored
-tests. The registration script uses GitHub's repository runner registration-token
-API through `gh`, runs `config.sh --ephemeral` inside the L1, and starts the
-one-job runner process. Destroy the L1 after the workflow finishes and the
+tests. The registration script uses GitHub's repository runner
+registration-token API through `gh`, runs `config.sh --ephemeral` inside the
+L1, labels the runner with `$label`, `m80-privileged-e2e`, and `kvm`, and starts
+the one-job runner process. Destroy the L1 after the workflow finishes and the
 artifacts are uploaded.
 
 ## Validate A Public Release

@@ -11,6 +11,7 @@ L1_NAME="${M80_L1_NAME:-m80-l1-runner}"
 L1_WORK_ROOT="${M80_L1_WORK_ROOT:-/tank/tmp/m80-l1-runner}"
 RUNNER_NAME="${M80_GITHUB_RUNNER_NAME:-}"
 RUNNER_LABEL="${M80_GITHUB_RUNNER_LABEL:-}"
+RUNNER_CLASS_LABEL="${M80_GITHUB_RUNNER_CLASS_LABEL:-m80-privileged-e2e}"
 RUNNER_VERSION="${M80_GITHUB_RUNNER_VERSION:-latest}"
 WAIT_SECONDS="${M80_GITHUB_RUNNER_WAIT_SECONDS:-120}"
 
@@ -28,6 +29,7 @@ Options:
   --l1-work-root PATH     L1 state root, default /tank/tmp/m80-l1-runner
   --runner-name NAME      GitHub runner name, default same as --l1-name
   --runner-label LABEL    Unique label for this run, default same as runner name
+  --class-label LABEL     Static workflow class label, default m80-privileged-e2e
   --runner-version VER    actions/runner version, default latest
   --wait-seconds N        Wait for runner to become online, default 120
 
@@ -89,13 +91,17 @@ wait_runner_online() {
     while (( SECONDS < deadline )); do
         payload="$(gh api "repos/$REPO/actions/runners")"
         if found="$(
-            M80_RUNNER_NAME="$RUNNER_NAME" M80_RUNNER_LABEL="$RUNNER_LABEL" python3 -c '
+            M80_RUNNER_NAME="$RUNNER_NAME" \
+                M80_RUNNER_LABEL="$RUNNER_LABEL" \
+                M80_RUNNER_CLASS_LABEL="$RUNNER_CLASS_LABEL" \
+                python3 -c '
 import json
 import os
 import sys
 
 runner_name = os.environ["M80_RUNNER_NAME"]
 runner_label = os.environ["M80_RUNNER_LABEL"]
+class_label = os.environ["M80_RUNNER_CLASS_LABEL"]
 payload = json.load(sys.stdin)
 for runner in payload.get("runners", []):
     labels = {label["name"] for label in runner.get("labels", [])}
@@ -103,6 +109,7 @@ for runner in payload.get("runners", []):
         runner.get("name") == runner_name
         and runner.get("status") == "online"
         and runner_label in labels
+        and class_label in labels
         and "kvm" in labels
         and "self-hosted" in labels
     ):
@@ -147,6 +154,10 @@ while [[ $# -gt 0 ]]; do
             RUNNER_LABEL="${2:?--runner-label requires a value}"
             shift 2
             ;;
+        --class-label)
+            RUNNER_CLASS_LABEL="${2:?--class-label requires a value}"
+            shift 2
+            ;;
         --runner-version)
             RUNNER_VERSION="${2:?--runner-version requires a value}"
             shift 2
@@ -168,6 +179,7 @@ done
 RUNNER_NAME="${RUNNER_NAME:-$L1_NAME}"
 RUNNER_LABEL="${RUNNER_LABEL:-$RUNNER_NAME}"
 validate_label "$RUNNER_LABEL"
+validate_label "$RUNNER_CLASS_LABEL"
 validate_label "$RUNNER_NAME"
 
 require_command gh
@@ -198,7 +210,7 @@ remote_command=$(
         "$(shell_quote "$repo_url")" \
         "$(shell_quote "$registration_token")" \
         "$(shell_quote "$RUNNER_NAME")" \
-        "$(shell_quote "$RUNNER_LABEL,kvm")" \
+        "$(shell_quote "$RUNNER_LABEL,$RUNNER_CLASS_LABEL,kvm")" \
         "$(shell_quote "$asset_url")"
 )
 

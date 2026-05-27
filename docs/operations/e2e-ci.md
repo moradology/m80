@@ -1,9 +1,10 @@
 # Privileged E2E CI
 
 `.github/workflows/e2e-privileged.yml` runs the real-KVM smoke and ignored
-privileged test battery on a self-hosted runner labeled `self-hosted` and
-`kvm`. GitHub-hosted runners do not expose `/dev/kvm`, so this workflow is the
-CI lane for kernel, jailer, namespace, cgroup, and Firecracker launch behavior.
+privileged test battery through the CI broker. GitHub-hosted runners do not
+expose `/dev/kvm`, so this workflow targets self-hosted runners labeled
+`self-hosted`, `m80-privileged-e2e`, `kvm`, and a broker-minted unique
+`m80-e2e-*` label.
 
 ## Runner Contract
 
@@ -24,15 +25,14 @@ Register only runners that satisfy
 - a run root on a filesystem that permits device nodes.
 
 The workflow does not download secrets. Top-level permissions are read-only.
-Do not attach this runner to untrusted fork pull requests. The PR trigger runs
-only for same-repository pull requests with the `run-e2e` label.
+Do not attach this runner to untrusted fork pull requests. The workflow has no
+tag, schedule, or pull-request trigger; every privileged run must be dispatched
+after the broker has registered a disposable L1 runner with a unique label.
 
 ## Triggers
 
-- `workflow_dispatch` for operator-driven runs.
-- Weekly scheduled run on the default branch.
-- Tag pushes matching `v*`.
-- Same-repository pull requests after a maintainer adds `run-e2e`.
+- `workflow_dispatch` only. The broker or an operator must create and register
+  the disposable L1 runner first, then pass its unique `runner_label`.
 
 Manual inputs:
 
@@ -45,9 +45,8 @@ Manual inputs:
   export `M80_RUN_EXTERNAL_NETWORK_E2E=1` and run tests tagged
   `requires-external-network`.
 - `upload_run_dirs`: archive the run root after failure; default `true`.
-- `runner_label`: self-hosted runner label to target; default `kvm`. For a
-  disposable L1 run, set this to the unique label used when registering the
-  ephemeral runner, for example `m80-e2e-20260526T190000Z`.
+- `runner_label`: required unique self-hosted runner label. It must match
+  `m80-e2e-*` and must already be registered on a one-job ephemeral runner.
 - `pull_number`: optional pull request number. When `target_sha` is set, the
   workflow fetches `refs/pull/<pull_number>/head` before checking out the exact
   target SHA. This is the preferred path for proving a fork PR commit.
@@ -68,15 +67,10 @@ Repository or organization variables can override:
 - `M80_JAILER_HARDEN_BIN`
 - `M80_NET_HELPER_BIN`
 
-`M80_E2E_RUNNER_LABEL` can also override the default runner label for scheduled
-or tag-triggered runs. Keep this set to `kvm` unless a disposable runner has
-already been registered with a unique label.
-
 ## Disposable L1 Runners
 
-The durable `kvm` runner is acceptable for maintainer-triggered proof, but it
-is not the end state for arbitrary external code. For untrusted or higher-risk
-runs, use a fresh L1 VM and a one-job GitHub runner label:
+The privileged workflow intentionally does not target the durable `kvm` runner.
+Use a fresh L1 VM and a one-job GitHub runner label:
 
 ```sh
 label="m80-e2e-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -110,11 +104,12 @@ scripts/spawn-l1-runner.sh destroy --name "$label" --work-root "$work_root"
 `scripts/register-l1-github-runner.sh` obtains a repository runner
 registration token through `gh`, installs the current `actions/runner` release
 inside the L1 if needed, registers with `config.sh --ephemeral`, and starts the
-runner process. GitHub deregisters an ephemeral runner after one job; destroying
-the L1 removes the working directory and VM disk. The registration-token call
-requires repository runner administration authority, so this is still an
-operator-mediated control-plane step rather than something arbitrary PR code can
-start by itself.
+runner process. It registers three labels: the unique `m80-e2e-*` label, the
+static `m80-privileged-e2e` workflow class label, and `kvm`. GitHub
+deregisters an ephemeral runner after one job; destroying the L1 removes the
+working directory and VM disk. The registration-token call requires repository
+runner administration authority, so this is still an operator-mediated
+control-plane step rather than something arbitrary PR code can start by itself.
 
 ## What Runs
 

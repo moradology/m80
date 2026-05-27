@@ -738,28 +738,38 @@ def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str
 def lint_privileged_e2e_workflow(path: Path, text: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     required_tokens = {
-        "run-name: Privileged E2E ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || github.ref_name }}":
+        "run-name: Privileged E2E ${{ inputs.runner_label }}":
             "privileged E2E workflow run name must include the selected runner label",
         "runner_label:": "privileged E2E workflow must expose runner_label input",
+        "description: Required unique ephemeral runner label minted by the CI broker":
+            "privileged E2E workflow runner_label input must be broker-issued",
+        "required: true": "privileged E2E workflow runner_label input must be required",
         "pull_number:": "privileged E2E workflow must expose pull_number input for public PR-ref fetch",
         "target_sha:": "privileged E2E workflow must expose target_sha input",
-        "M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
-            "privileged E2E workflow must default runner label through inputs/vars/kvm",
+        "M80_E2E_RUNNER_LABEL: ${{ inputs.runner_label }}":
+            "privileged E2E workflow must require explicit runner label input",
         "M80_E2E_PULL_NUMBER: ${{ inputs.pull_number || '' }}":
             "privileged E2E workflow must pass through pull_number input",
         "M80_E2E_TARGET_SHA: ${{ inputs.target_sha || '' }}":
             "privileged E2E workflow must pass through target_sha input",
         "- self-hosted": "privileged E2E workflow must require the self-hosted label",
-        "- ${{ inputs.runner_label || vars.M80_E2E_RUNNER_LABEL || 'kvm' }}":
+        "- m80-privileged-e2e":
+            "privileged E2E workflow must require the ephemeral runner class label",
+        "- kvm": "privileged E2E workflow must require the KVM capability label",
+        "- ${{ inputs.runner_label }}":
             "privileged E2E workflow must target the configured runner label",
-        '[[ "$M80_E2E_RUNNER_LABEL" =~ ^[A-Za-z0-9_.-]+$ ]]':
-            "privileged E2E workflow must validate runner_label syntax before running tests",
+        '[[ "$M80_E2E_RUNNER_LABEL" =~ ^m80-e2e-[A-Za-z0-9_.-]+$ ]]':
+            "privileged E2E workflow must validate broker-issued runner_label syntax before running tests",
         '[[ "$M80_E2E_TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]':
             "privileged E2E workflow must validate target_sha as a full SHA before checkout/tests",
         '[[ "$M80_E2E_PULL_NUMBER" =~ ^[1-9][0-9]*$ ]]':
             "privileged E2E workflow must validate pull_number syntax before using PR refs",
         "refs/pull/$M80_E2E_PULL_NUMBER/head":
             "privileged E2E workflow must fetch PR head through a validated numeric pull ref",
+        'git -C "$GITHUB_WORKSPACE" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"':
+            "privileged E2E workflow must reuse existing origin on persistent self-hosted workspaces",
+        'git -C "$GITHUB_WORKSPACE" clean -ffdx':
+            "privileged E2E workflow must clean persistent self-hosted workspace state",
         'git -C "$GITHUB_WORKSPACE" fetch --no-tags --prune --no-recurse-submodules origin "$target_sha"':
             "privileged E2E workflow must support direct exact-SHA fetch",
         'git -C "$GITHUB_WORKSPACE" checkout --force "$target_sha"':
@@ -777,6 +787,16 @@ def lint_privileged_e2e_workflow(path: Path, text: str, lines: list[str]) -> lis
     }
     for token, message in required_tokens.items():
         if token not in text:
+            errors.append(f"{path}: {message}")
+    forbidden_tokens = {
+        "pull_request:": "privileged E2E workflow must not auto-run from pull_request events; use broker dispatch",
+        "schedule:": "privileged E2E workflow must not auto-run from schedules; use broker dispatch",
+        "tags:": "privileged E2E workflow must not auto-run from tag pushes; use broker dispatch",
+        "vars.M80_E2E_RUNNER_LABEL": "privileged E2E workflow must not fall back to a repository runner label variable",
+        "'kvm'": "privileged E2E workflow must not default to the durable kvm label",
+    }
+    for token, message in forbidden_tokens.items():
+        if token in text:
             errors.append(f"{path}: {message}")
     return errors
 

@@ -150,6 +150,10 @@ manual dispatch can target a unique runner label, and
 `scripts/register-l1-github-runner.sh` registers an existing L1 as a one-job
 ephemeral GitHub runner with that label. This is not full arbitrary-fork
 automation yet; runner creation remains a trusted operator/control-plane step.
+As of the v0.2.25 follow-up, `.github/workflows/e2e-privileged.yml` no longer
+has tag, schedule, or pull-request triggers and no longer falls back to the
+durable `kvm` label; every run is explicit `workflow_dispatch` to a broker
+issued `m80-e2e-*` label plus the `m80-privileged-e2e` class label.
 
 ## Long-run order
 
