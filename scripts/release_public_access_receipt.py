@@ -34,6 +34,9 @@ REQUIRED_PUBLIC_ASSETS = {
     "m80-release-integrity.attestation.jsonl",
     "m80-release-integrity.json",
 }
+POST_PUBLICATION_PUBLIC_ASSETS = {
+    "m80-latest-freshness-proof.json",
+}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -128,7 +131,7 @@ def build_receipt(
     pinned_api = fetch_json(f"{api_root}/tags/{release_tag}")
     check_release_payload(pinned_api["json"], repository, release_tag, release_url, "pinned release")
     release_assets = assets_by_name(pinned_api["json"], repository, release_tag)
-    check_asset_set(set(release_assets), REQUIRED_PUBLIC_ASSETS, "public release asset set")
+    check_public_release_asset_set(set(release_assets), "public release asset set")
 
     pinned_install = fetch_bytes(pinned_install_url)
     resolved_latest_tag = tag_from_download_result(latest_install)
@@ -611,6 +614,12 @@ def require_fields(obj: dict, expected: set[str], label: str) -> None:
 def check_asset_set(observed: set[str], expected: set[str], label: str) -> None:
     missing = sorted(expected - observed)
     extra = sorted(observed - expected)
+    check(not missing and not extra, f"{label} mismatch: missing {csv(missing)}; extra {csv(extra)}")
+
+
+def check_public_release_asset_set(observed: set[str], label: str) -> None:
+    missing = sorted(REQUIRED_PUBLIC_ASSETS - observed)
+    extra = sorted(observed - REQUIRED_PUBLIC_ASSETS - POST_PUBLICATION_PUBLIC_ASSETS)
     check(not missing and not extra, f"{label} mismatch: missing {csv(missing)}; extra {csv(extra)}")
 
 

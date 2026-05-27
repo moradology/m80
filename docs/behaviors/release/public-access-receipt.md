@@ -15,9 +15,11 @@ The receipt is valid only when:
 - `/releases/latest/download/install.sh` and
   `/releases/download/<tag>/install.sh` resolve to the same stable tag and have
   the same SHA256 digest.
-- the public release contains exactly the complete installer asset set,
-  including `install.sh`, the asset index, build manifest, integrity predicate,
+- the public release contains the complete installer asset set, including
+  `install.sh`, the asset index, build manifest, integrity predicate,
   attestation bundle, attestation metadata, and the default Linux tarball.
+  The release may also contain the post-publication
+  `m80-latest-freshness-proof.json` evidence asset.
 - every downloaded asset records HTTP status, final URL, size, and SHA256.
 - integrity subjects, build metadata, release tag, repository, and source
   commit agree with the release being promoted.

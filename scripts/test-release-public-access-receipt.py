@@ -66,6 +66,20 @@ class PublicAccessReceiptTests(unittest.TestCase):
         receipt["downloaded_asset_digests"]["extra.txt"] = extra["sha256"]
         self.assert_fails(receipt, "extra extra.txt")
 
+    def test_release_payload_allows_post_publication_freshness_proof(self) -> None:
+        public_access.check_public_release_asset_set(
+            set(public_access.REQUIRED_PUBLIC_ASSETS) | public_access.POST_PUBLICATION_PUBLIC_ASSETS,
+            "public release asset set",
+        )
+
+    def test_release_payload_rejects_unknown_extra_asset(self) -> None:
+        with self.assertRaises(public_access.VerificationError) as raised:
+            public_access.check_public_release_asset_set(
+                set(public_access.REQUIRED_PUBLIC_ASSETS) | {"debug.log"},
+                "public release asset set",
+            )
+        self.assertIn("extra debug.log", str(raised.exception))
+
     def test_digest_mismatch_fails(self) -> None:
         receipt = valid_receipt()
         receipt["downloaded_assets"][0]["sha256"] = "b" * 64
