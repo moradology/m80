@@ -46,7 +46,7 @@ The public GitHub release owner/repo source is
 must use snippets rendered by `scripts/render-release-install-snippets.py`:
 
 <!-- m80:freshness-status start -->
-Public installer status: public proof green for `v0.2.20`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](../behaviors/release/release-readiness-public-access.json).
+Public installer status: public proof green for `v0.2.22`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](../behaviors/release/release-readiness-public-access.json).
 <!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->

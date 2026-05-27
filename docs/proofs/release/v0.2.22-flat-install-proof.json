@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-27T03:36:17Z",
+  "release_tag": "v0.2.22",
+  "source_commit": "a9db15090336d1fa785c92baa035f57eb74ca9b4",
+  "summary": "Public v0.2.22 installer writes flat hardlink layout and flat manifests while preserving the versioned rollback record.",
+  "checks": [
+    {
+      "name": "public_no_auth_release_receipt",
+      "command": "GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN python3 scripts/release_public_access_receipt.py --repository moradology/m80 --release-tag v0.2.22 --commit-sha a9db15090336d1fa785c92baa035f57eb74ca9b4 --out docs/behaviors/release/release-readiness-public-access.json --write",
+      "exit_code": 0,
+      "artifact": "docs/behaviors/release/release-readiness-public-access.json"
+    },
+    {
+      "name": "fresh_install_root_public_installer",
+      "command": "curl -fsSL https://github.com/moradology/m80/releases/download/v0.2.22/install.sh | sudo M80_SKIP_CHECK_NESTED_VIRT=1 sh -s -- --install-root /tank/tmp/m80-v022-clean-install-root",
+      "exit_code": 0,
+      "observed": {
+        "install_root": "/tank/tmp/m80-v022-clean-install-root",
+        "installed_m80_path": "/tank/tmp/m80-v022-clean-install-root/bin/m80",
+        "installed_m80_version": "m80 v0.2.22",
+        "active_version_dir": "/tank/tmp/m80-v022-clean-install-root/versions/v0.2.22",
+        "host_binaries_manifest": "/tank/tmp/m80-v022-clean-install-root/artifacts/host-binaries.manifest.json",
+        "finalization_order": "bundle_verification,host_prerequisite_verification,install_provenance,release_proof_cache,host_binaries_manifest,flat_projection,default_profile,preflight_smoke_gate,active_pointer_flip"
+      }
+    },
+    {
+      "name": "fresh_install_root_flat_manifest_paths",
+      "command": "python3 -c \"import json; d=json.load(open('/tank/tmp/m80-v022-clean-install-root/artifacts/host-binaries.manifest.json')); [print(b['path']) for b in d['binaries']]\"",
+      "exit_code": 0,
+      "stdout": [
+        "/opt/firecracker/bin/firecracker",
+        "/opt/firecracker/bin/jailer",
+        "/tank/tmp/m80-v022-clean-install-root/bin/m80",
+        "/tank/tmp/m80-v022-clean-install-root/bin/m80-jailer-harden",
+        "/tank/tmp/m80-v022-clean-install-root/bin/m80-net-helper"
+      ]
+    },
+    {
+      "name": "fresh_install_root_hardlinks",
+      "command": "stat -c '%n %d:%i' /tank/tmp/m80-v022-clean-install-root/bin/m80 /tank/tmp/m80-v022-clean-install-root/versions/v0.2.22/bin/m80 /tank/tmp/m80-v022-clean-install-root/artifacts/output.ext4 /tank/tmp/m80-v022-clean-install-root/versions/v0.2.22/artifacts/output.ext4",
+      "exit_code": 0,
+      "stdout": [
+        "/tank/tmp/m80-v022-clean-install-root/bin/m80 41:566321",
+        "/tank/tmp/m80-v022-clean-install-root/versions/v0.2.22/bin/m80 41:566321",
+        "/tank/tmp/m80-v022-clean-install-root/artifacts/output.ext4 41:566053",
+        "/tank/tmp/m80-v022-clean-install-root/versions/v0.2.22/artifacts/output.ext4 41:566053"
+      ]
+    },
+    {
+      "name": "vulcan_default_profile_preflight",
+      "command": "sudo M80_SKIP_CHECK_NESTED_VIRT=1 m80 preflight",
+      "exit_code": 0,
+      "observed": {
+        "profile_path": "/etc/m80/profiles/default.toml",
+        "artifact_dir": "/opt/m80/artifacts",
+        "kernel_image": "/opt/m80/artifacts/vmlinux",
+        "rootfs_image": "/opt/m80/artifacts/output.ext4",
+        "guestd": "/opt/m80/artifacts/m80-guestd",
+        "host_binaries_manifest": "/opt/m80/artifacts/host-binaries.manifest.json",
+        "release_tag": "v0.2.22"
+      }
+    },
+    {
+      "name": "vulcan_m80_run_smoke",
+      "command": "sudo M80_SKIP_CHECK_NESTED_VIRT=1 m80 run -- echo hello",
+      "exit_code": 0,
+      "stdout": "hello"
+    },
+    {
+      "name": "vulcan_consumers_ready",
+      "commands": [
+        "kubectl -n plenum-system get pods",
+        "kubectl -n torpor-system get pods"
+      ],
+      "exit_code": 0,
+      "observed": {
+        "plenum": "api-service, control-service, model-gateway, sandbox-executor, and worker-service were 1/1 Running",
+        "torpor": "api-service, control-service, model-gateway, sandbox-executor, and worker-service were 1/1 Running"
+      }
+    }
+  ]
+}

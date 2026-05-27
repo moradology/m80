@@ -61,7 +61,11 @@ In priority order. Update freely as work lands.
    the most failure-sensitive paths and require real-KVM smoke evidence.
 
 Closed proof chain: `m80-16hx7.9`, `m80-16hx7.10`, and `m80-16hx7.11`
-produced the nested-KVM public-install smoke artifact for `v0.2.20`.
+produced the nested-KVM public-install smoke artifact for `v0.2.20`. The
+current public installer proof is `v0.2.22`: it keeps the flat
+`/opt/m80/{bin,artifacts}` hardlink layout, preserves the versioned rollback
+record, passed no-auth public release receipt verification, and installed cleanly
+on vulcan with plenum/torpor consumers Running.
 `m80-16hx7.1`, `.3`, and `.4` are now closed as of 2026-05-25: runner setup is
 documented/idempotent, ignored tests have enforced structured reasons, no-KVM
 and privileged selector proofs are green, and the pre-test reaper has seeded
