@@ -74,6 +74,11 @@ Firecracker `NetworkInterfaceConfig` for `eth0`, and the planned namespace path
 is passed to the official jailer as `--netns`. Launch failure cleanup,
 `StoppedSandbox::delete`, `StoppedSandbox::preserve_for_triage`, and stale
 run-root recovery route outbound cleanup through the same helper boundary.
+The helper is long-lived for the backend helper lifetime on both launch paths
+because it owns kernel handles while requests are in flight. On systemd hosts,
+the helper runs as a transient unit whose `/run/netns` bind mounts remain
+visible to the host namespace so the official jailer can join the VMM network
+namespace.
 
 If TAP setup fails after the run-root bridge has been created, setup rolls back
 the guest-IP claim and VM network state file, deletes the host veth and

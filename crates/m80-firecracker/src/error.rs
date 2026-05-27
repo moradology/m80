@@ -179,10 +179,16 @@ impl std::fmt::Display for CleanupDeadlinePhase {
 /// Failure while talking to the privileged m80 network helper.
 #[derive(Debug, thiserror::Error)]
 pub enum NetworkHelperError {
+    /// The selected helper launch path violated a preflight invariant.
+    #[error("network helper systemd launch configuration invalid: {reason}")]
+    SystemdLaunchConfig {
+        /// Concrete invariant that failed.
+        reason: String,
+    },
     /// Helper process could not be spawned.
     #[error("network helper {} spawn failed: {source}", path.display())]
     Spawn {
-        /// Helper executable path from preflight discovery.
+        /// Program path that could not be spawned.
         path: PathBuf,
         /// Spawn failure.
         #[source]
@@ -264,6 +270,15 @@ pub enum NetworkHelperError {
         active: PathBuf,
         /// Helper path requested by this backend.
         requested: PathBuf,
+    },
+    /// Backend construction attempted to switch helper launch modes after the
+    /// process-global helper was already started.
+    #[error("network helper launch config mismatch: active {active}, requested {requested}")]
+    LaunchConfigMismatch {
+        /// Active process-global helper launch descriptor.
+        active: String,
+        /// Requested helper launch descriptor.
+        requested: String,
     },
 }
 

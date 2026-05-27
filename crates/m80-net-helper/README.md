@@ -22,6 +22,15 @@ those operations.
   caller decides whether a failed launch or cleanup is fatal.
 - The helper is a host TCB binary. `m80-preflight` discovers it through
   `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
+- `m80-firecracker` launches the helper according to
+  `Discovery::chosen_launch_path`: directly on the wrapper path, or as one
+  long-lived transient `systemd-run` unit per backend helper lifetime on the
+  systemd path. The request/response protocol is identical on both paths.
+- The systemd path grants the helper `CAP_NET_ADMIN` plus `CAP_SYS_ADMIN`.
+  `CAP_SYS_ADMIN` is required because named network namespaces are implemented
+  with bind mounts under `/run/netns`; filesystem-hardening directives that
+  put the helper in a private mount namespace are not part of the helper
+  envelope.
 - `m80-net-helper --version` prints `m80-net-helper <package-version>` and
   exits without reading protocol input. `host-binaries.manifest.json` pins its
   path, sha256, and version.

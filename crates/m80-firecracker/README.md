@@ -280,11 +280,14 @@ Firecracker's official jailer as `--netns`, emits the Firecracker
 `NetworkInterface` PUT for the caller-created TAP, and passes static PID-1 guest
 network tokens for `eth0`.
 
-Backend initialization starts the process-global `m80-net-helper` before
-dropping `CAP_NET_ADMIN` from the backend thread's effective, permitted,
-inheritable, ambient, and bounding sets. Live backend handles in the same
-process reuse that helper; requesting a different helper path while one is
-active fails closed with `FcError::NetworkHelper`.
+Backend initialization starts the process-global `m80-net-helper` using
+`Discovery::chosen_launch_path`: the systemd path launches a long-lived
+transient helper unit with its own network capability envelope, and the wrapper
+path starts the helper directly before the backend drops `CAP_NET_ADMIN` from
+the backend thread's effective, permitted, inheritable, ambient, and bounding
+sets. Live backend handles in the same process reuse that helper; requesting a
+different helper path or launch mode while one is active fails closed with
+`FcError::NetworkHelper`.
 
 Cold and restored launches ask the official Firecracker jailer for a private
 PID namespace, so Firecracker is PID 1 in that namespace and m80 records

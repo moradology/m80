@@ -248,7 +248,7 @@ impl NetlinkLinkOps {
                 .map(|link| link.map(|link| link.header.index))
                 .map_err(|source| NetError::NetlinkOperationFailed {
                     operation: "get link index",
-                    detail: source.to_string(),
+                    detail: format!("link {name}: {source}"),
                 })
         })
     }

@@ -66,7 +66,7 @@ impl Backend {
     ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
-        let network_helper = backend_network_helper(&config.discovery.net_helper_bin)?;
+        let network_helper = backend_network_helper(&config.discovery)?;
         if parent_capability_drop == ParentCapabilityDrop::Run {
             drop_parent_cap_net_admin()?;
         }

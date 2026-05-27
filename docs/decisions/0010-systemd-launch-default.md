@@ -77,9 +77,14 @@ unit-template alternative was rejected because:
 - The transient form leaves the launch contract in one auditable place
   (a typed Rust function with directive-snapshot tests) rather than two.
 
-`m80-net-helper` invocations use the same transient shape — one transient
-unit per request, with `AmbientCapabilities=CAP_NET_ADMIN` plus the same
-restricted directive envelope.
+`m80-net-helper` uses the same transient mechanism but not the same lifetime:
+one long-lived transient unit is started for the backend helper lifetime, and
+requests continue to flow over the existing finite stdio protocol. The helper
+unit carries `AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN`; `CAP_SYS_ADMIN`
+is required for the named-network-namespace bind mounts under `/run/netns`.
+The helper directive envelope deliberately avoids filesystem protection
+directives that create a private mount namespace, because the official jailer
+must be able to join the helper-created namespace by path.
 
 ### B. systemd version floor
 
@@ -271,8 +276,9 @@ capability/seccomp ownership.
   cannot drift.
 - `m80-net-helper` launch uses the same preflight-resolved
   `chosen_launch_path`, but it does not reuse the VM-launch directive set:
-  the helper needs `CAP_NET_ADMIN` and netlink, not the official jailer's
-  mount/chroot/mknod capability envelope.
+  the helper needs `CAP_NET_ADMIN`, `CAP_SYS_ADMIN` for named netns bind
+  mounts, netlink, and a host-visible `/run/netns` handoff, not the official
+  jailer's mount/chroot/mknod capability envelope.
 - `crates/m80-jailer-harden/Cargo.toml` grows `[features]` with
   `default = []` and `no-systemd-launch = []`. Default workspace builds
   with the feature unset produce no wrapper binary.

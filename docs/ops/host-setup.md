@@ -171,10 +171,13 @@ sudo setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,
 getcap /usr/local/bin/m80
 ```
 
-`CAP_NET_ADMIN` is needed only long enough for `m80-firecracker` to start the
-pinned `m80-net-helper`; backend initialization then drops it from the
-backend thread. Keep `CAP_SETPCAP` in the launch set so that drop can remove
-`CAP_NET_ADMIN` from that thread's bounding, permitted, and effective sets.
+On wrapper-fallback hosts, `CAP_NET_ADMIN` is needed long enough for
+`m80-firecracker` to start the pinned `m80-net-helper`; backend initialization
+then drops it from the backend thread. On systemd hosts, the helper gets its
+network capability envelope from its transient unit, and the backend still
+drops `CAP_NET_ADMIN` after helper startup. Keep `CAP_SETPCAP` in the launch
+set so that drop can remove `CAP_NET_ADMIN` from that thread's bounding,
+permitted, and effective sets.
 
 Do not combine the run identity with broader host powers such as Docker daemon
 access, passwordless sudo, or write access to the artifact directory.

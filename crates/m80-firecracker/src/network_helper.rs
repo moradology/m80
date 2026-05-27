@@ -1,12 +1,12 @@
 //! Client for the privileged `m80-net-helper` process.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-#[cfg(not(test))]
 use std::sync::Arc;
 use std::sync::Mutex;
-#[cfg(not(test))]
 use std::sync::Weak;
 
 use m80_net_mode::OutboundIntent;
@@ -14,12 +14,20 @@ use m80_net_outbound::{
     NetworkHelperRequest, NetworkHelperResponse, NetworkHelperSuccess,
     NETWORK_HELPER_MAX_FRAME_BYTES,
 };
+use m80_preflight::Discovery;
 
 use crate::error::{NetworkHelperError, NetworkHelperOperation};
 
+mod launch;
+mod systemd;
+#[cfg(test)]
+mod tests;
+
+use launch::NetworkHelperLaunch;
+
 /// Lazily-spawned stdio client for finite privileged network operations.
 pub(crate) struct NetworkHelperClient {
-    path: PathBuf,
+    launch: NetworkHelperLaunch,
     child: Mutex<Option<NetworkHelperChild>>,
 }
 
@@ -29,23 +37,37 @@ static BACKEND_NETWORK_HELPER: Mutex<Option<Weak<NetworkHelperClient>>> = Mutex:
 /// Return the backend helper client and ensure its child is running.
 #[cfg(not(test))]
 pub(crate) fn backend_network_helper(
-    path: &Path,
+    discovery: &Discovery,
 ) -> Result<Arc<NetworkHelperClient>, NetworkHelperError> {
+    let launch = NetworkHelperLaunch::from_discovery(discovery)?;
     let mut slot = BACKEND_NETWORK_HELPER
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
+    backend_network_helper_from_slot(&mut slot, launch)
+}
+
+fn backend_network_helper_from_slot(
+    slot: &mut Option<Weak<NetworkHelperClient>>,
+    launch: NetworkHelperLaunch,
+) -> Result<Arc<NetworkHelperClient>, NetworkHelperError> {
     if let Some(helper) = slot.as_ref().and_then(Weak::upgrade) {
-        if helper.path != path {
+        if helper.launch.helper_bin() != launch.helper_bin() {
             return Err(NetworkHelperError::PathMismatch {
-                active: helper.path.clone(),
-                requested: path.to_path_buf(),
+                active: helper.launch.helper_bin().to_path_buf(),
+                requested: launch.helper_bin().to_path_buf(),
+            });
+        }
+        if helper.launch != launch {
+            return Err(NetworkHelperError::LaunchConfigMismatch {
+                active: helper.launch.descriptor(),
+                requested: launch.descriptor(),
             });
         }
         helper.start()?;
         return Ok(helper);
     }
 
-    let helper = Arc::new(NetworkHelperClient::new(path.to_path_buf()));
+    let helper = Arc::new(NetworkHelperClient::with_launch(launch));
     helper.start()?;
     *slot = Some(Arc::downgrade(&helper));
     Ok(Arc::clone(&helper))
@@ -54,18 +76,25 @@ pub(crate) fn backend_network_helper(
 /// Return a test-local backend helper client and ensure its child is running.
 #[cfg(test)]
 pub(crate) fn backend_network_helper(
-    path: &Path,
+    discovery: &Discovery,
 ) -> Result<std::sync::Arc<NetworkHelperClient>, NetworkHelperError> {
-    let helper = std::sync::Arc::new(NetworkHelperClient::new(path.to_path_buf()));
+    let helper = std::sync::Arc::new(NetworkHelperClient::with_launch(
+        NetworkHelperLaunch::from_discovery(discovery)?,
+    ));
     helper.start()?;
     Ok(helper)
 }
 
 impl NetworkHelperClient {
-    /// Build a client for the preflight-discovered helper executable.
+    /// Build a direct-launch client for tests and wrapper-path callers.
+    #[cfg(test)]
     pub(crate) fn new(path: PathBuf) -> Self {
+        Self::with_launch(NetworkHelperLaunch::direct(path))
+    }
+
+    fn with_launch(launch: NetworkHelperLaunch) -> Self {
         Self {
-            path,
+            launch,
             child: Mutex::new(None),
         }
     }
@@ -77,7 +106,7 @@ impl NetworkHelperClient {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if guard.is_none() {
-            *guard = Some(NetworkHelperChild::spawn(&self.path)?);
+            *guard = Some(NetworkHelperChild::spawn(&self.launch)?);
         }
         Ok(())
     }
@@ -185,46 +214,47 @@ impl NetworkHelperClient {
 impl std::fmt::Debug for NetworkHelperClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkHelperClient")
-            .field("path", &self.path)
+            .field("launch", &self.launch)
             .finish_non_exhaustive()
     }
 }
 
 struct NetworkHelperChild {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
 }
 
 impl NetworkHelperChild {
-    fn spawn(path: &Path) -> Result<Self, NetworkHelperError> {
-        let mut command = helper_command(path);
+    fn spawn(launch: &NetworkHelperLaunch) -> Result<Self, NetworkHelperError> {
+        let helper_bin = launch.helper_bin().to_path_buf();
+        let mut command = helper_command(launch);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|source| NetworkHelperError::Spawn {
-                path: path.to_path_buf(),
+                path: command.get_program().into(),
                 source,
             })?;
         let stdin = child
             .stdin
             .take()
             .ok_or_else(|| NetworkHelperError::MissingPipe {
-                path: path.to_path_buf(),
+                path: helper_bin.clone(),
                 pipe: "stdin",
             })?;
         let stdout = child
             .stdout
             .take()
             .ok_or_else(|| NetworkHelperError::MissingPipe {
-                path: path.to_path_buf(),
+                path: helper_bin,
                 pipe: "stdout",
             })?;
         Ok(Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             stdout: BufReader::new(stdout),
         })
     }
@@ -235,10 +265,14 @@ impl NetworkHelperChild {
         request: NetworkHelperRequest,
     ) -> Result<NetworkHelperSuccess, NetworkHelperError> {
         let frame = encode_request(operation, &request)?;
-        self.stdin
+        let stdin = self
+            .stdin
+            .as_mut()
+            .expect("network helper stdin is present until child drop");
+        stdin
             .write_all(&frame)
             .map_err(|source| NetworkHelperError::Io { operation, source })?;
-        self.stdin
+        stdin
             .flush()
             .map_err(|source| NetworkHelperError::Io { operation, source })?;
 
@@ -255,19 +289,34 @@ impl NetworkHelperChild {
 }
 
 #[cfg(test)]
-fn helper_command(path: &Path) -> Command {
-    let mut command = Command::new("sh");
-    command.arg(path);
-    command
+fn helper_command(launch: &NetworkHelperLaunch) -> Command {
+    match launch {
+        NetworkHelperLaunch::Direct { helper_bin } => {
+            let mut command = Command::new("sh");
+            command.arg(helper_bin);
+            command
+        }
+        NetworkHelperLaunch::Systemd {
+            systemd_run_bin,
+            helper_bin,
+        } => systemd::network_helper_systemd_command(systemd_run_bin, helper_bin),
+    }
 }
 
 #[cfg(not(test))]
-fn helper_command(path: &Path) -> Command {
-    Command::new(path)
+fn helper_command(launch: &NetworkHelperLaunch) -> Command {
+    match launch {
+        NetworkHelperLaunch::Direct { helper_bin } => Command::new(helper_bin),
+        NetworkHelperLaunch::Systemd {
+            systemd_run_bin,
+            helper_bin,
+        } => systemd::network_helper_systemd_command(systemd_run_bin, helper_bin),
+    }
 }
 
 impl Drop for NetworkHelperChild {
     fn drop(&mut self) {
+        drop(self.stdin.take());
         if let Err(error) = self.child.kill() {
             if error.kind() != std::io::ErrorKind::InvalidInput {
                 tracing::warn!(error = %error, "failed to kill network helper child");
@@ -399,99 +448,5 @@ where
 fn trim_frame_cr(frame: &mut Vec<u8>) {
     while matches!(frame.last(), Some(b'\r')) {
         frame.pop();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Write as _;
-    use std::os::unix::fs::PermissionsExt as _;
-
-    use m80_net_outbound::NetworkHelperFailureKind;
-
-    use super::*;
-
-    fn write_helper_script(dir: &Path, body: &str) -> PathBuf {
-        let path = dir.join("helper.sh");
-        let mut file = std::fs::File::create(&path).unwrap();
-        file.write_all(body.as_bytes()).unwrap();
-        file.sync_all().unwrap();
-        drop(file);
-        let mut perms = std::fs::metadata(&path).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).unwrap();
-        path
-    }
-
-    #[test]
-    fn realize_bridge_and_tap_uses_helper_protocol() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = dir.path().join("requests.log");
-        let script = format!(
-            r#"#!/bin/sh
-while IFS= read -r line; do
-  printf '%s\n' "$line" >> "{}"
-  printf '%s\n' '{{"status":"ok","success":{{"kind":"realized_network","realized":{{"bridge_name":"br-test","tap_name":"tap-test","vmm_netns_path":"/run/netns/m80-test","guest_ipv4":"172.16.0.2","guest_mac":"02:00:00:00:00:01","bridge_cidr":"172.16.0.0/24"}}}}}}'
-done
-"#,
-            log.display()
-        );
-        let helper = NetworkHelperClient::new(write_helper_script(dir.path(), &script));
-
-        let realized = helper
-            .realize_bridge_and_tap(
-                OutboundIntent {
-                    exceptions: Vec::new(),
-                },
-                "vm-a",
-                Path::new("/run/m80"),
-                Path::new("/run/m80/vm-a"),
-            )
-            .unwrap();
-
-        assert_eq!(realized.tap_name, "tap-test");
-        let requests = std::fs::read_to_string(log).unwrap();
-        assert!(requests.contains(r#""op":"realize_bridge_and_tap""#));
-        assert!(requests.contains(r#""vm_id":"vm-a""#));
-    }
-
-    #[test]
-    fn helper_operation_failure_stays_typed() {
-        let dir = tempfile::tempdir().unwrap();
-        let script = r#"#!/bin/sh
-while IFS= read -r _line; do
-  printf '%s\n' '{"status":"err","failure":{"kind":"operation_failed","detail":"synthetic helper denial"}}'
-done
-"#;
-        let helper = NetworkHelperClient::new(write_helper_script(dir.path(), script));
-
-        let err = helper
-            .cleanup_vm("vm-a", Path::new("/run/m80"))
-            .unwrap_err();
-
-        assert!(matches!(
-            err,
-            NetworkHelperError::OperationFailed {
-                operation: NetworkHelperOperation::CleanupVm,
-                kind: NetworkHelperFailureKind::OperationFailed,
-                ref detail,
-            } if detail == "synthetic helper denial"
-        ));
-    }
-
-    #[test]
-    fn oversized_helper_response_is_rejected_before_decode() {
-        let mut input = vec![b' '; NETWORK_HELPER_MAX_FRAME_BYTES + 1];
-        input.push(b'\n');
-
-        let err = read_response(NetworkHelperOperation::CleanupVm, &mut &input[..]).unwrap_err();
-
-        assert!(matches!(
-            err,
-            NetworkHelperError::OversizedResponse {
-                operation: NetworkHelperOperation::CleanupVm,
-                limit: NETWORK_HELPER_MAX_FRAME_BYTES,
-            }
-        ));
     }
 }
